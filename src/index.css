@@ -1,0 +1,248 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: Georgia, "Times New Roman", "Noto Serif SC", serif;
+  font-size: 16px;
+  line-height: 1.8;
+  color: #333;
+  background-color: #fafaf5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: #2a6496;
+  text-decoration: none;
+}
+
+a:hover {
+  color: #1a3a5c;
+  text-decoration: underline;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.app-container {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 40px 20px 60px;
+}
+
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-bottom: 2px solid #ddd;
+  padding-bottom: 16px;
+  margin-bottom: 32px;
+}
+
+.app-header h1 {
+  font-size: 1.8rem;
+  font-weight: normal;
+}
+
+.app-header h1 a {
+  color: #222;
+}
+
+.app-header nav a {
+  color: #666;
+  font-size: 0.95rem;
+}
+
+.status-text {
+  color: #999;
+  text-align: center;
+  padding: 40px 0;
+}
+
+.error-text {
+  color: #c0392b;
+  font-size: 0.9rem;
+}
+
+/* 时间线 */
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.moment-card {
+  border: 1px solid #e0e0d8;
+  border-radius: 4px;
+  padding: 18px 20px;
+  background: #fff;
+}
+
+.moment-content {
+  white-space: pre-wrap;
+  margin-bottom: 12px;
+}
+
+.moment-images {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.moment-images.single img {
+  max-width: 100%;
+  border-radius: 3px;
+}
+
+.moment-images.grid {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.moment-images.grid img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 3px;
+}
+
+.moment-meta {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  color: #999;
+  font-size: 0.82rem;
+  font-family: "Courier New", Courier, monospace;
+  margin-bottom: 10px;
+}
+
+.moment-location {
+  color: #999;
+}
+
+.moment-actions {
+  margin-bottom: 12px;
+}
+
+.like-button {
+  border: 1px solid #ddd;
+  background: #fff;
+  border-radius: 20px;
+  padding: 4px 14px;
+  font-size: 0.9rem;
+  color: #666;
+}
+
+.like-button.liked {
+  color: #c0392b;
+  border-color: #c0392b;
+}
+
+/* 评论区 */
+.comment-section {
+  border-top: 1px solid #eee;
+  padding-top: 10px;
+}
+
+.comment-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 0.9rem;
+}
+
+.comment-nickname {
+  font-weight: bold;
+  color: #555;
+}
+
+.comment-form {
+  display: flex;
+  gap: 8px;
+}
+
+.comment-form input[type="text"] {
+  flex: 1;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  font-family: inherit;
+}
+
+.comment-form input[type="text"]:nth-child(1) {
+  flex: 0 0 90px;
+}
+
+.comment-form button {
+  border: 1px solid #ddd;
+  background: #f5f5f0;
+  border-radius: 3px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+}
+
+/* 登录 / 发布表单 */
+.login-form,
+.publish-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 420px;
+}
+
+.login-form h2,
+.publish-form h2 {
+  font-size: 1.3rem;
+  font-weight: normal;
+  color: #222;
+}
+
+.login-form input,
+.publish-form input[type="text"],
+.publish-form textarea {
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  padding: 8px 12px;
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+
+.publish-form textarea {
+  resize: vertical;
+}
+
+.location-row button,
+.login-form button,
+.publish-form > button[type="submit"] {
+  border: 1px solid #2a6496;
+  background: #2a6496;
+  color: #fff;
+  border-radius: 3px;
+  padding: 8px 16px;
+  font-size: 0.95rem;
+}
+
+.location-row button {
+  background: #fff;
+  color: #2a6496;
+}
+
+@media (max-width: 600px) {
+  body {
+    font-size: 15px;
+  }
+
+  .app-container {
+    padding: 24px 16px 40px;
+  }
+
+  .moment-images.grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
