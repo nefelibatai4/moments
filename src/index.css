@@ -125,6 +125,8 @@ button {
 
 .moment-actions {
   margin-bottom: 12px;
+  display: flex;
+  gap: 10px;
 }
 
 .like-button {
@@ -137,6 +139,20 @@ button {
 }
 
 .like-button.liked {
+  color: #c0392b;
+  border-color: #c0392b;
+}
+
+.delete-button {
+  border: 1px solid #ddd;
+  background: #fff;
+  border-radius: 20px;
+  padding: 4px 14px;
+  font-size: 0.9rem;
+  color: #999;
+}
+
+.delete-button:hover {
   color: #c0392b;
   border-color: #c0392b;
 }

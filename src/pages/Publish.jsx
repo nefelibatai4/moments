@@ -66,6 +66,7 @@ export default function Publish() {
         images: imageUrls.length > 0 ? imageUrls : null,
         latitude: location?.latitude ?? null,
         longitude: location?.longitude ?? null,
+        user_id: session.user.id,
       })
       if (insertError) throw insertError
 

@@ -28,10 +28,14 @@ export default function Timeline() {
   if (error) return <p className="status-text">加载失败：{error}</p>
   if (moments.length === 0) return <p className="status-text">还没有动态。</p>
 
+  function handleDeleted(id) {
+    setMoments((prev) => prev.filter((m) => m.id !== id))
+  }
+
   return (
     <div className="timeline">
       {moments.map((m) => (
-        <MomentCard key={m.id} moment={m} />
+        <MomentCard key={m.id} moment={m} onDeleted={handleDeleted} />
       ))}
     </div>
   )
