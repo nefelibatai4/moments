@@ -13,6 +13,8 @@ export default function Publish() {
   const [locating, setLocating] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
+  const [inviteCode, setInviteCode] = useState(null)
+  const [generatingInvite, setGeneratingInvite] = useState(false)
 
   if (session === undefined) return <p className="status-text">加载中…</p>
   if (session === null) return <Login />
@@ -75,6 +77,23 @@ export default function Publish() {
     }
   }
 
+  async function handleGenerateInvite() {
+    setGeneratingInvite(true)
+    setError(null)
+    try {
+      const code = crypto.randomUUID().replace(/-/g, '').slice(0, 8)
+      const { error: insertError } = await supabase
+        .from('invite_codes')
+        .insert({ code, created_by: session.user.id })
+      if (insertError) throw insertError
+      setInviteCode(code)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setGeneratingInvite(false)
+    }
+  }
+
   return (
     <form className="publish-form" onSubmit={handleSubmit}>
       <h2>发布动态</h2>
@@ -100,6 +119,13 @@ export default function Publish() {
       <button type="submit" disabled={submitting}>
         {submitting ? '发布中…' : '发布'}
       </button>
+
+      <div className="invite-section">
+        <button type="button" onClick={handleGenerateInvite} disabled={generatingInvite}>
+          {generatingInvite ? '生成中…' : '生成邀请码'}
+        </button>
+        {inviteCode && <p className="invite-code-display">邀请码：<strong>{inviteCode}</strong></p>}
+      </div>
     </form>
   )
 }

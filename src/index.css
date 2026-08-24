@@ -233,6 +233,36 @@ button {
   color: #2a6496;
 }
 
+.auth-switch-link {
+  font-size: 0.9rem;
+  color: #999;
+}
+
+.invite-section {
+  border-top: 1px solid #eee;
+  padding-top: 12px;
+  margin-top: 8px;
+}
+
+.invite-section button {
+  border: 1px solid #ddd;
+  background: #f5f5f0;
+  border-radius: 3px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  color: #555;
+}
+
+.invite-code-display {
+  margin-top: 8px;
+  font-size: 0.95rem;
+}
+
+.invite-code-display strong {
+  font-family: "Courier New", Courier, monospace;
+  letter-spacing: 1px;
+}
+
 @media (max-width: 600px) {
   body {
     font-size: 15px;

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 
 export default function Login() {
@@ -35,6 +36,9 @@ export default function Login() {
       />
       {error && <p className="error-text">{error}</p>}
       <button type="submit" disabled={submitting}>登录</button>
+      <p className="auth-switch-link">
+        没有账号？<Link to="/register">去注册</Link>
+      </p>
     </form>
   )
 }
