@@ -1,7 +1,19 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../lib/AuthContext'
+
+function msgTimeLabel(iso) {
+  const d = new Date(iso)
+  const now = new Date()
+  const isToday = d.toDateString() === now.toDateString()
+  const hm = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+  if (isToday) return hm
+  const yesterday = new Date(now)
+  yesterday.setDate(yesterday.getDate() - 1)
+  if (d.toDateString() === yesterday.toDateString()) return `昨天 ${hm}`
+  return `${d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })} ${hm}`
+}
 
 export default function ChatThread() {
   const session = useAuth()
@@ -12,14 +24,19 @@ export default function ChatThread() {
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState(null)
+  const [showScrollBtn, setShowScrollBtn] = useState(false)
+  const msgListRef = useRef(null)
   const bottomRef = useRef(null)
   const me = session.user.id
+
+  const scrollToBottom = useCallback(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [])
 
   useEffect(() => {
     let cancelled = false
 
     async function load() {
-      setLoading(true)
       const [profileRes, messagesRes] = await Promise.all([
         supabase.from('profiles').select('id, nickname, avatar_url').eq('id', userId).single(),
         supabase
@@ -41,10 +58,12 @@ export default function ChatThread() {
       .channel(`messages-${[me, userId].sort().join('-')}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
         const m = payload.new
-        const belongsToThread =
+        if (
           (m.sender_id === me && m.recipient_id === userId) ||
           (m.sender_id === userId && m.recipient_id === me)
-        if (belongsToThread) setMessages((prev) => [...prev, m])
+        ) {
+          setMessages((prev) => [...prev, m])
+        }
       })
       .subscribe()
 
@@ -55,8 +74,19 @@ export default function ChatThread() {
   }, [me, userId])
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    const el = msgListRef.current
+    if (!el) return
+    const onScroll = () => {
+      const dist = el.scrollHeight - el.scrollTop - el.clientHeight
+      setShowScrollBtn(dist > 100)
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [])
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages, scrollToBottom])
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -73,30 +103,66 @@ export default function ChatThread() {
 
   if (loading) return <p className="status-text">加载中…</p>
 
+  let lastTimeLabel = null
+
   return (
     <div className="chat-thread">
       <div className="chat-thread-header">
-        <Link to="/chat">← 私聊</Link>
-        <h3>{otherProfile?.nickname}</h3>
+        <Link to="/chat" className="chat-back-btn">←</Link>
+        <span className="chat-header-avatar">
+          {otherProfile?.avatar_url ? (
+            <img src={otherProfile.avatar_url} alt="" />
+          ) : (
+            (otherProfile?.nickname ?? '').slice(0, 1)
+          )}
+        </span>
+        <span className="chat-header-name">{otherProfile?.nickname}</span>
       </div>
-      <div className="chat-messages">
-        {messages.map((m) => (
-          <div key={m.id} className={`chat-message ${m.sender_id === me ? 'mine' : 'theirs'}`}>
-            {m.content}
-          </div>
-        ))}
+
+      <div className="chat-messages" ref={msgListRef}>
+        {messages.map((m) => {
+          const label = msgTimeLabel(m.created_at)
+          const showLabel = label !== lastTimeLabel
+          lastTimeLabel = label
+          const isMine = m.sender_id === me
+
+          return (
+            <div key={m.id}>
+              {showLabel && <div className="chat-time-label">{label}</div>}
+              <div className={`chat-bubble-row ${isMine ? 'mine' : 'theirs'}`}>
+                <div className={`chat-bubble ${isMine ? 'mine' : 'theirs'}`}>{m.content}</div>
+              </div>
+            </div>
+          )
+        })}
         <div ref={bottomRef} />
       </div>
+
+      {showScrollBtn && (
+        <button className="chat-scroll-btn" onClick={scrollToBottom} aria-label="回到底部">
+          ↓
+        </button>
+      )}
+
       {error && <p className="error-text">{error}</p>}
-      <form className="chat-input-form" onSubmit={handleSubmit}>
+
+      <form className="chat-input-row" onSubmit={handleSubmit}>
         <input
           type="text"
           placeholder="发消息…"
           value={content}
           onChange={(e) => setContent(e.target.value)}
           maxLength={1000}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              handleSubmit(e)
+            }
+          }}
         />
-        <button type="submit" disabled={sending}>发送</button>
+        <button type="submit" disabled={sending || !content.trim()}>
+          {sending ? '…' : '发送'}
+        </button>
       </form>
     </div>
   )
