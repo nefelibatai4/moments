@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../lib/AuthContext'
+import { getTheme, setTheme } from '../lib/theme'
 
 export default function Profile() {
   const session = useAuth()
@@ -14,6 +15,9 @@ export default function Profile() {
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [changingPassword, setChangingPassword] = useState(false)
+  const [darkMode, setDarkMode] = useState(getTheme() === 'dark')
+  const [inviteCode, setInviteCode] = useState(null)
+  const [generatingInvite, setGeneratingInvite] = useState(false)
   const [error, setError] = useState(null)
   const [message, setMessage] = useState(null)
 
@@ -104,6 +108,29 @@ export default function Profile() {
     navigate('/login')
   }
 
+  function handleThemeToggle() {
+    const next = !darkMode
+    setDarkMode(next)
+    setTheme(next ? 'dark' : 'light')
+  }
+
+  async function handleGenerateInvite() {
+    setGeneratingInvite(true)
+    setError(null)
+    try {
+      const code = crypto.randomUUID().replace(/-/g, '').slice(0, 8)
+      const { error: insertError } = await supabase
+        .from('invite_codes')
+        .insert({ code, created_by: session.user.id })
+      if (insertError) throw insertError
+      setInviteCode(code)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setGeneratingInvite(false)
+    }
+  }
+
   if (loading) return <p className="status-text">加载中…</p>
 
   return (
@@ -157,6 +184,23 @@ export default function Profile() {
 
       {error && <p className="error-text">{error}</p>}
       {message && <p className="success-text">{message}</p>}
+
+      <div className="invite-section">
+        <button type="button" onClick={handleGenerateInvite} disabled={generatingInvite}>
+          {generatingInvite ? '生成中…' : '生成邀请码'}
+        </button>
+        {inviteCode && <p className="invite-code-display">邀请码：<strong>{inviteCode}</strong></p>}
+      </div>
+
+      <div className="theme-section">
+        <div className="theme-toggle-row">
+          <span>{darkMode ? '🌙 深色模式' : '☀️ 浅色模式'}</span>
+          <label className="theme-switch" onClick={handleThemeToggle}>
+            <input type="checkbox" checked={!darkMode} readOnly />
+            <span className="theme-slider" />
+          </label>
+        </div>
+      </div>
 
       <button type="button" className="sign-out-button" onClick={handleSignOut}>退出登录</button>
     </div>

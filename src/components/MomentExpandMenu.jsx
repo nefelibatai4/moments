@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../supabaseClient'
 
-export default function MomentExpandMenu({ momentId, session, likes, onLikesChanged, onRequestComment }) {
+export default function MomentExpandMenu({ momentId, session, likes, onLikesChanged, onRequestComment, isOwner, onDelete, deleting }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [pending, setPending] = useState(false)
 
@@ -34,6 +34,11 @@ export default function MomentExpandMenu({ momentId, session, likes, onLikesChan
     onRequestComment()
   }
 
+  function handleDelete() {
+    setMenuOpen(false)
+    onDelete()
+  }
+
   return (
     <div className="expand-menu">
       <button
@@ -50,6 +55,11 @@ export default function MomentExpandMenu({ momentId, session, likes, onLikesChan
             {liked ? '✓ 赞' : '赞'}
           </button>
           <button type="button" onClick={handleComment}>评论</button>
+          {isOwner && (
+            <button type="button" className="danger" onClick={handleDelete} disabled={deleting}>
+              {deleting ? '删除中…' : '删除'}
+            </button>
+          )}
         </div>
       )}
     </div>

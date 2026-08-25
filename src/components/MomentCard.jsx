@@ -75,12 +75,10 @@ export default function MomentCard({ moment, onDeleted }) {
             likes={likes}
             onLikesChanged={setLikes}
             onRequestComment={() => setCommentBoxOpen(true)}
+            isOwner={isOwner}
+            onDelete={handleDelete}
+            deleting={deleting}
           />
-        )}
-        {isOwner && (
-          <button className="delete-button" onClick={handleDelete} disabled={deleting}>
-            {deleting ? '删除中…' : '删除'}
-          </button>
         )}
       </div>
       {deleteError && <p className="error-text">{deleteError}</p>}

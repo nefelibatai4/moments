@@ -1,4 +1,60 @@
-/* Design system: Raycast (see DESIGN.md) */
+/* Design system: Raycast (see DESIGN.md) — dark + light */
+
+:root {
+  --bg-page: #07080a;
+  --bg-card: #101111;
+  --bg-elevated: #191a1b;
+  --bg-input: #07080a;
+  --bg-badge: #1b1c1e;
+  --text-primary: #f9f9f9;
+  --text-secondary: #cecece;
+  --text-tertiary: #9c9c9d;
+  --text-muted: #6a6b6c;
+  --accent-blue: #55b3ff;
+  --accent-red: #ff6363;
+  --accent-green: #5fc992;
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-standard: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.1);
+  --btn-primary-bg: hsla(0, 0%, 100%, 0.815);
+  --btn-primary-text: #18191a;
+  --btn-secondary-bg: rgba(255, 255, 255, 0.04);
+  --btn-secondary-hover: rgba(255, 255, 255, 0.06);
+  --btn-ghost-bg: transparent;
+  --card-shadow-outer: rgb(27, 28, 30) 0px 0px 0px 1px;
+  --card-shadow-inner: rgb(7, 8, 10) 0px 0px 0px 1px inset;
+  --popup-shadow: rgba(0, 0, 0, 0.5) 0px 0px 0px 1px, rgba(255, 255, 255, 0.1) 0px 0px 14px;
+  --focus-ring: hsla(202, 100%, 67%, 0.15) 0px 0px 0px 3px;
+  --hover-wrap-bg: rgba(255, 255, 255, 0.03);
+}
+
+[data-theme="light"] {
+  --bg-page: #f7f8f8;
+  --bg-card: #ffffff;
+  --bg-elevated: #f3f4f5;
+  --bg-input: #f7f8f8;
+  --bg-badge: #e8e9ea;
+  --text-primary: #18191a;
+  --text-secondary: #434345;
+  --text-tertiary: #6a6b6c;
+  --text-muted: #9c9c9d;
+  --accent-blue: #0066cc;
+  --accent-red: #cc3333;
+  --accent-green: #339955;
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-standard: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.12);
+  --btn-primary-bg: #18191a;
+  --btn-primary-text: #ffffff;
+  --btn-secondary-bg: rgba(0, 0, 0, 0.04);
+  --btn-secondary-hover: rgba(0, 0, 0, 0.06);
+  --btn-ghost-bg: transparent;
+  --card-shadow-outer: rgba(0, 0, 0, 0.06) 0px 0px 0px 1px;
+  --card-shadow-inner: none;
+  --popup-shadow: rgba(0, 0, 0, 0.08) 0px 0px 0px 1px, rgba(0, 0, 0, 0.08) 0px 4px 16px;
+  --focus-ring: hsla(202, 100%, 50%, 0.15) 0px 0px 0px 3px;
+  --hover-wrap-bg: rgba(0, 0, 0, 0.03);
+}
 
 * {
   margin: 0;
@@ -13,18 +69,18 @@ body {
   font-weight: 500;
   line-height: 1.6;
   letter-spacing: 0.2px;
-  color: #f9f9f9;
-  background-color: #07080a;
+  color: var(--text-primary);
+  background-color: var(--bg-page);
   -webkit-font-smoothing: antialiased;
 }
 
 a {
-  color: #55b3ff;
+  color: var(--accent-blue);
   text-decoration: none;
 }
 
 a:hover {
-  color: #f9f9f9;
+  color: var(--text-primary);
   text-decoration: underline;
 }
 
@@ -34,7 +90,7 @@ button {
   transition: opacity 0.15s ease;
 }
 
-button:hover {
+button:not(.no-opacity-hover):hover {
   opacity: 0.6;
 }
 
@@ -53,7 +109,7 @@ button:disabled {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--border-standard);
   padding-bottom: 16px;
   margin-bottom: 32px;
 }
@@ -65,8 +121,10 @@ button:disabled {
 }
 
 .app-header h1 a {
-  color: #f9f9f9;
+  color: var(--text-primary);
 }
+
+.app-header h1 a:hover { text-decoration: none; }
 
 .app-header nav {
   display: flex;
@@ -74,30 +132,30 @@ button:disabled {
 }
 
 .app-header nav a {
-  color: #9c9c9d;
+  color: var(--text-tertiary);
   font-size: 0.95rem;
   font-weight: 500;
   transition: color 0.15s ease;
 }
 
 .app-header nav a:hover {
-  color: #f9f9f9;
+  color: var(--text-primary);
   text-decoration: none;
 }
 
 .status-text {
-  color: #6a6b6c;
+  color: var(--text-muted);
   text-align: center;
   padding: 40px 0;
 }
 
 .error-text {
-  color: #ff6363;
+  color: var(--accent-red);
   font-size: 0.9rem;
 }
 
 .success-text {
-  color: #5fc992;
+  color: var(--accent-green);
   font-size: 0.9rem;
 }
 
@@ -109,18 +167,16 @@ button:disabled {
 }
 
 .moment-card {
-  background: #101111;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
   border-radius: 12px;
   padding: 20px 24px;
-  box-shadow:
-    rgb(27, 28, 30) 0px 0px 0px 1px,
-    rgb(7, 8, 10) 0px 0px 0px 1px inset;
+  box-shadow: var(--card-shadow-outer), var(--card-shadow-inner);
 }
 
 .moment-content {
   white-space: pre-wrap;
-  color: #f9f9f9;
+  color: var(--text-primary);
   margin-bottom: 12px;
 }
 
@@ -148,35 +204,20 @@ button:disabled {
 
 .moment-meta {
   display: flex;
-  gap: 14px;
-  align-items: baseline;
-  color: #6a6b6c;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  color: var(--text-muted);
   font-size: 0.82rem;
   font-family: "GeistMono", ui-monospace, SFMono-Regular, Menlo, monospace;
   margin-bottom: 10px;
 }
 
 .moment-location {
-  color: #6a6b6c;
+  color: var(--text-muted);
 }
 
-.delete-button {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: transparent;
-  border-radius: 6px;
-  padding: 4px 14px;
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: #6a6b6c;
-}
-
-.delete-button:hover {
-  color: #ff6363;
-  border-color: rgba(255, 99, 99, 0.4);
-  opacity: 1;
-}
-
-/* 展开菜单（点赞/评论） */
+/* 展开菜单（点赞/评论/删除） */
 .moment-meta-spacer {
   flex: 1;
 }
@@ -186,12 +227,12 @@ button:disabled {
 }
 
 .expand-trigger {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-strong);
+  background: var(--btn-secondary-bg);
   border-radius: 6px;
   padding: 2px 10px;
   font-size: 0.85rem;
-  color: #9c9c9d;
+  color: var(--text-tertiary);
   line-height: 1;
 }
 
@@ -200,12 +241,10 @@ button:disabled {
   right: 0;
   top: 100%;
   margin-top: 6px;
-  background: #191a1b;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-standard);
   border-radius: 8px;
-  box-shadow:
-    rgba(0, 0, 0, 0.5) 0px 0px 0px 1px,
-    rgba(255, 255, 255, 0.1) 0px 0px 14px;
+  box-shadow: var(--popup-shadow);
   display: flex;
   flex-direction: column;
   z-index: 10;
@@ -219,28 +258,32 @@ button:disabled {
   padding: 8px 16px;
   text-align: left;
   font-size: 0.9rem;
-  color: #f9f9f9;
+  color: var(--text-primary);
   border-radius: 0;
 }
 
 .expand-popup button:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--btn-secondary-hover);
   opacity: 1;
 }
 
 .expand-popup button.liked {
-  color: #ff6363;
+  color: var(--accent-red);
+}
+
+.expand-popup button.danger {
+  color: var(--accent-red);
 }
 
 .moment-likes-line {
-  color: #ff6363;
+  color: var(--accent-red);
   font-size: 0.85rem;
   margin-bottom: 10px;
 }
 
 /* 评论区 */
 .comment-section {
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--border-subtle);
   padding-top: 12px;
 }
 
@@ -264,9 +307,9 @@ button:disabled {
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  background: #1b1c1e;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  color: #9c9c9d;
+  background: var(--bg-badge);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -283,12 +326,12 @@ button:disabled {
 
 .comment-body {
   flex: 1;
-  color: #cecece;
+  color: var(--text-secondary);
 }
 
 .comment-nickname {
   font-weight: 600;
-  color: #f9f9f9;
+  color: var(--text-primary);
 }
 
 .comment-form {
@@ -299,32 +342,37 @@ button:disabled {
 
 .comment-form input[type="text"] {
   flex: 1;
-  background: #07080a;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-input);
+  border: 1px solid var(--border-standard);
   border-radius: 8px;
   padding: 6px 12px;
   font-size: 0.85rem;
   font-family: inherit;
-  color: #f9f9f9;
+  color: var(--text-primary);
 }
 
-.comment-form input[type="text"]:focus {
+.comment-form input[type="text"]:focus,
+.chat-input-form input:focus,
+.login-form input:focus,
+.publish-form input:focus,
+.publish-form textarea:focus,
+.profile-form input:focus {
   outline: none;
-  border-color: rgba(255, 255, 255, 0.2);
-  box-shadow: hsla(202, 100%, 67%, 0.15) 0px 0px 0px 3px;
+  border-color: var(--border-strong);
+  box-shadow: var(--focus-ring);
 }
 
 .comment-form button {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-strong);
+  background: var(--btn-secondary-bg);
   border-radius: 8px;
   padding: 6px 14px;
   font-size: 0.85rem;
   font-weight: 500;
-  color: #f9f9f9;
+  color: var(--text-primary);
 }
 
-/* 表单通用（登录/发布/我/私聊输入） */
+/* 表单通用 */
 .login-form,
 .publish-form {
   display: flex;
@@ -338,36 +386,28 @@ button:disabled {
   font-size: 1.3rem;
   font-weight: 600;
   letter-spacing: 0;
-  color: #f9f9f9;
+  color: var(--text-primary);
 }
 
 .login-form input,
 .publish-form input[type="text"],
 .publish-form textarea {
-  background: #07080a;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-input);
+  border: 1px solid var(--border-standard);
   border-radius: 8px;
   padding: 10px 14px;
   font-size: 0.95rem;
   font-family: inherit;
-  color: #f9f9f9;
+  color: var(--text-primary);
 }
 
 .login-form input::placeholder,
 .publish-form input::placeholder,
 .publish-form textarea::placeholder,
 .comment-form input::placeholder,
-.chat-input-form input::placeholder {
-  color: #6a6b6c;
-}
-
-.login-form input:focus,
-.publish-form input:focus,
-.publish-form textarea:focus,
-.profile-form input:focus {
-  outline: none;
-  border-color: rgba(255, 255, 255, 0.2);
-  box-shadow: hsla(202, 100%, 67%, 0.15) 0px 0px 0px 3px;
+.chat-input-form input::placeholder,
+.profile-form input::placeholder {
+  color: var(--text-muted);
 }
 
 .publish-form textarea {
@@ -376,62 +416,37 @@ button:disabled {
 
 .location-row button,
 .login-form button,
-.publish-form > button[type="submit"] {
-  border: none;
-  background: hsla(0, 0%, 100%, 0.815);
-  color: #18191a;
+.publish-form > button[type="submit"],
+.profile-form button[type="submit"] {
+  border: 1px solid transparent;
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
   border-radius: 86px;
-  padding: 10px 20px;
+  padding: 8px 20px;
   font-size: 0.95rem;
   font-weight: 600;
   letter-spacing: 0.3px;
-  box-shadow: rgba(255, 255, 255, 0.1) 0px 1px 0px 0px inset;
+  box-shadow: none;
 }
 
 .location-row button:hover,
 .login-form button:hover,
-.publish-form > button[type="submit"]:hover {
+.publish-form > button[type="submit"]:hover,
+.profile-form button[type="submit"]:hover {
   opacity: 0.85;
 }
 
 .location-row button {
   background: transparent;
-  color: #f9f9f9;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  font-weight: 500;
   box-shadow: none;
 }
 
 .auth-switch-link {
   font-size: 0.9rem;
-  color: #6a6b6c;
-}
-
-.invite-section {
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  padding-top: 12px;
-  margin-top: 8px;
-}
-
-.invite-section button {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: 6px;
-  padding: 6px 14px;
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: #f9f9f9;
-}
-
-.invite-code-display {
-  margin-top: 8px;
-  font-size: 0.95rem;
-  color: #cecece;
-}
-
-.invite-code-display strong {
-  font-family: "GeistMono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: 1px;
-  color: #f9f9f9;
+  color: var(--text-muted);
 }
 
 /* 我 / 个人资料页 */
@@ -443,7 +458,7 @@ button:disabled {
   font-size: 1.3rem;
   font-weight: 600;
   letter-spacing: 0;
-  color: #f9f9f9;
+  color: var(--text-primary);
   margin-bottom: 20px;
 }
 
@@ -458,9 +473,9 @@ button:disabled {
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  background: #1b1c1e;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  color: #9c9c9d;
+  background: var(--bg-badge);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -476,13 +491,13 @@ button:disabled {
 }
 
 .avatar-upload-label {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-strong);
+  background: var(--btn-secondary-bg);
   border-radius: 6px;
   padding: 6px 14px;
   font-size: 0.85rem;
   font-weight: 500;
-  color: #f9f9f9;
+  color: var(--text-primary);
   cursor: pointer;
   transition: opacity 0.15s ease;
 }
@@ -497,39 +512,28 @@ button:disabled {
   gap: 10px;
   margin-bottom: 20px;
   padding-bottom: 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .profile-form label {
   font-size: 0.85rem;
-  color: #6a6b6c;
+  color: var(--text-muted);
 }
 
 .profile-form input {
-  background: #07080a;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-input);
+  border: 1px solid var(--border-standard);
   border-radius: 8px;
   padding: 10px 14px;
   font-size: 0.95rem;
   font-family: inherit;
-  color: #f9f9f9;
-}
-
-.profile-form button {
-  align-self: flex-start;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.05);
-  color: #f9f9f9;
-  border-radius: 6px;
-  padding: 6px 14px;
-  font-size: 0.9rem;
-  font-weight: 500;
+  color: var(--text-primary);
 }
 
 .sign-out-button {
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-strong);
   background: transparent;
-  color: #9c9c9d;
+  color: var(--text-tertiary);
   border-radius: 6px;
   padding: 6px 14px;
   font-size: 0.9rem;
@@ -537,8 +541,105 @@ button:disabled {
 }
 
 .sign-out-button:hover {
-  color: #ff6363;
+  color: var(--accent-red);
   opacity: 1;
+}
+
+/* 邀请码区域 */
+.invite-section {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 16px;
+  margin-top: 8px;
+}
+
+.invite-section button {
+  border: none;
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  border-radius: 86px;
+  padding: 8px 20px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.invite-section button:hover {
+  opacity: 0.85;
+}
+
+.invite-code-display {
+  margin-top: 8px;
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+}
+
+.invite-code-display strong {
+  font-family: "GeistMono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 1px;
+  color: var(--text-primary);
+}
+
+/* 主题切换 */
+.theme-section {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 16px;
+  margin-bottom: 20px;
+}
+
+.theme-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.theme-toggle-row span {
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.theme-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.theme-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.theme-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background: var(--bg-badge);
+  border: 1px solid var(--border-strong);
+  border-radius: 24px;
+  transition: background 0.2s;
+}
+
+.theme-slider::before {
+  content: "";
+  position: absolute;
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 3px;
+  background: var(--text-primary);
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.theme-switch input:checked + .theme-slider {
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+}
+
+.theme-switch input:checked + .theme-slider::before {
+  transform: translateX(20px);
+  background: #fff;
 }
 
 /* 私聊 */
@@ -554,14 +655,14 @@ button:disabled {
   align-items: center;
   gap: 12px;
   padding: 12px 8px;
-  color: #f9f9f9;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-subtle);
   border-radius: 8px;
   transition: background 0.15s ease;
 }
 
 .chat-list-item:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--hover-wrap-bg);
   text-decoration: none;
 }
 
@@ -569,9 +670,9 @@ button:disabled {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: #1b1c1e;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  color: #9c9c9d;
+  background: var(--bg-badge);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
   font-weight: 600;
   display: flex;
   align-items: center;
@@ -594,7 +695,7 @@ button:disabled {
 }
 
 .chat-thread-header a {
-  color: #9c9c9d;
+  color: var(--text-tertiary);
   font-size: 0.9rem;
 }
 
@@ -602,7 +703,7 @@ button:disabled {
   font-size: 1.2rem;
   font-weight: 600;
   letter-spacing: 0;
-  color: #f9f9f9;
+  color: var(--text-primary);
 }
 
 .chat-messages {
@@ -624,16 +725,16 @@ button:disabled {
 
 .chat-message.mine {
   align-self: flex-end;
-  background: #55b3ff;
-  color: #07080a;
+  background: var(--accent-blue);
+  color: #fff;
   border-radius: 16px 16px 4px 16px;
 }
 
 .chat-message.theirs {
   align-self: flex-start;
-  background: #1b1c1e;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  color: #f9f9f9;
+  background: var(--bg-badge);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
   border-radius: 16px 16px 16px 4px;
 }
 
@@ -644,30 +745,23 @@ button:disabled {
 
 .chat-input-form input {
   flex: 1;
-  background: #07080a;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-input);
+  border: 1px solid var(--border-standard);
   border-radius: 8px;
   padding: 10px 14px;
   font-size: 0.95rem;
   font-family: inherit;
-  color: #f9f9f9;
-}
-
-.chat-input-form input:focus {
-  outline: none;
-  border-color: rgba(255, 255, 255, 0.2);
-  box-shadow: hsla(202, 100%, 67%, 0.15) 0px 0px 0px 3px;
+  color: var(--text-primary);
 }
 
 .chat-input-form button {
   border: none;
-  background: hsla(0, 0%, 100%, 0.815);
-  color: #18191a;
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
   border-radius: 86px;
   padding: 10px 20px;
   font-size: 0.9rem;
   font-weight: 600;
-  box-shadow: rgba(255, 255, 255, 0.1) 0px 1px 0px 0px inset;
 }
 
 @media (max-width: 600px) {
