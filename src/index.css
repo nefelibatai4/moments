@@ -159,19 +159,67 @@ button:disabled {
   font-size: 0.9rem;
 }
 
-/* 时间线 */
+/* 时间线 - X 风格 */
 .timeline {
   display: flex;
   flex-direction: column;
-  gap: 20px;
 }
 
 .moment-card {
   background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  padding: 20px 24px;
-  box-shadow: var(--card-shadow-outer), var(--card-shadow-inner);
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  padding: 16px 0;
+  box-shadow: none;
+}
+
+/* X 风格头部：头像 + 昵称 + 时间 + 展开菜单 */
+.moment-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.moment-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--bg-badge);
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  font-weight: 600;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.moment-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.moment-author {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.moment-author-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.moment-author-time {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-family: "GeistMono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 .moment-content {
@@ -377,12 +425,16 @@ button:disabled {
   color: var(--text-primary);
 }
 
-/* 匿名评论表单 - X 风格 */
+/* 匿名评论表单 */
 .anon-form {
   border-top: 1px dashed var(--border-subtle);
   padding-top: 10px;
   margin-top: 6px;
   gap: 6px;
+}
+
+.anon-form input:first-child {
+  flex: 0 0 100px;
 }
 
 .anon-form input {
@@ -425,6 +477,37 @@ button:disabled {
 .chat-input-form input::placeholder,
 .profile-form input::placeholder {
   color: var(--text-muted);
+}
+
+.anon-publish-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.anon-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.anon-toggle input[type="checkbox"] {
+  accent-color: var(--accent-blue);
+}
+
+.anon-publish-row input[type="text"] {
+  background: var(--bg-input);
+  border: 1px solid var(--border-standard);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: var(--text-primary);
+  font-style: italic;
 }
 
 .publish-form textarea {
@@ -783,7 +866,7 @@ button:disabled {
 .chat-thread {
   display: flex;
   flex-direction: column;
-  min-height: calc(100vh - 160px);
+  height: calc(100vh - 170px);
   position: relative;
   margin-top: -8px;
 }

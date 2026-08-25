@@ -12,6 +12,8 @@ export default function Publish() {
   const [location, setLocation] = useState(null)
   const [locating, setLocating] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [anonMode, setAnonMode] = useState(false)
+  const [anonNickname, setAnonNickname] = useState('')
   const [error, setError] = useState(null)
 
   function handleGetLocation() {
@@ -62,6 +64,7 @@ export default function Publish() {
         latitude: location?.latitude ?? null,
         longitude: location?.longitude ?? null,
         user_id: session.user.id,
+        anon_nickname: anonMode ? anonNickname.trim() || null : null,
       })
       if (insertError) throw insertError
 
@@ -93,6 +96,21 @@ export default function Publish() {
         <button type="button" onClick={handleGetLocation} disabled={locating}>
           {location ? `📍 已添加位置` : locating ? '定位中…' : '📍 添加当前位置'}
         </button>
+      </div>
+      <div className="anon-publish-row">
+        <label className="anon-toggle">
+          <input type="checkbox" checked={anonMode} onChange={(e) => setAnonMode(e.target.checked)} />
+          匿名发布
+        </label>
+        {anonMode && (
+          <input
+            type="text"
+            placeholder="自定义显示名称"
+            value={anonNickname}
+            onChange={(e) => setAnonNickname(e.target.value)}
+            maxLength={30}
+          />
+        )}
       </div>
       {error && <p className="error-text">{error}</p>}
       <button type="submit" disabled={submitting}>

@@ -25,6 +25,8 @@ export default function MomentCard({ moment, onDeleted }) {
   const [deleteError, setDeleteError] = useState(null)
   const session = useAuth()
   const isOwner = session && session.user.id === moment.user_id
+  const profile = moment.profiles
+  const displayName = moment.anon_nickname || (profile?.nickname ?? '匿名')
 
   async function handleDelete() {
     if (!window.confirm('确定要删除这条动态吗？')) return
@@ -46,28 +48,18 @@ export default function MomentCard({ moment, onDeleted }) {
 
   return (
     <article className="moment-card">
-      {moment.content && <p className="moment-content">{moment.content}</p>}
-
-      {moment.images?.length > 0 && (
-        <div className={`moment-images ${moment.images.length === 1 ? 'single' : 'grid'}`}>
-          {moment.images.map((url, i) => (
-            <img key={i} src={url} alt="" loading="lazy" />
-          ))}
-        </div>
-      )}
-
-      <div className="moment-meta">
-        <time>{formatTime(moment.created_at)}</time>
-        {moment.latitude != null && moment.longitude != null && (
-          <a
-            className="moment-location"
-            href={mapLink(moment.latitude, moment.longitude)}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            📍 查看位置
-          </a>
-        )}
+      <div className="moment-header">
+        <span className="moment-avatar">
+          {profile?.avatar_url ? (
+            <img src={profile.avatar_url} alt="" />
+          ) : (
+            displayName.slice(0, 1)
+          )}
+        </span>
+        <span className="moment-author">
+          <span className="moment-author-name">{displayName}</span>
+          <span className="moment-author-time">{formatTime(moment.created_at)}</span>
+        </span>
         <span className="moment-meta-spacer" />
         {session && (
           <MomentExpandMenu
@@ -83,11 +75,32 @@ export default function MomentCard({ moment, onDeleted }) {
           />
         )}
       </div>
+
+      {moment.content && <p className="moment-content">{moment.content}</p>}
+
+      {moment.images?.length > 0 && (
+        <div className={`moment-images ${moment.images.length === 1 ? 'single' : 'grid'}`}>
+          {moment.images.map((url, i) => (
+            <img key={i} src={url} alt="" loading="lazy" />
+          ))}
+        </div>
+      )}
+
+      {moment.latitude != null && moment.longitude != null && (
+        <a
+          className="moment-location"
+          href={mapLink(moment.latitude, moment.longitude)}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          📍 查看位置
+        </a>
+      )}
       {deleteError && <p className="error-text">{deleteError}</p>}
 
       {likes.length > 0 && (
         <p className="moment-likes-line">
-          ♥ {likes.map((l) => l.profiles?.nickname ?? '匿名').join('、')} 点赞了
+          ♥ {likes.map((l) => l.profiles?.nickname ?? '匿名').join('、')}
         </p>
       )}
 
