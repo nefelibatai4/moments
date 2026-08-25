@@ -1,8 +1,11 @@
 import { useState } from 'react'
 import { supabase } from '../supabaseClient'
 
-export default function CommentSection({ momentId, session, comments, open, onCommentAdded }) {
+export default function CommentSection({ momentId, session, comments, open, anonOpen, onCommentAdded }) {
   const [content, setContent] = useState('')
+  const [nickname, setNickname] = useState('')
+  const [anonContent, setAnonContent] = useState('')
+  const [anonNickname, setAnonNickname] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
 
@@ -26,6 +29,31 @@ export default function CommentSection({ momentId, session, comments, open, onCo
     } else if (data) {
       onCommentAdded(data)
       setContent('')
+    }
+    setSubmitting(false)
+  }
+
+  async function handleAnonSubmit(e) {
+    e.preventDefault()
+    if (!anonNickname.trim() || !anonContent.trim()) {
+      setError('请输入昵称和评论内容')
+      return
+    }
+    setSubmitting(true)
+    setError(null)
+
+    const { data, error: insertError } = await supabase
+      .from('comments')
+      .insert({ moment_id: momentId, nickname: anonNickname.trim(), content: anonContent.trim() })
+      .select()
+      .single()
+
+    if (insertError) {
+      setError(insertError.message)
+    } else if (data) {
+      onCommentAdded(data)
+      setAnonContent('')
+      setAnonNickname('')
     }
     setSubmitting(false)
   }
@@ -61,6 +89,26 @@ export default function CommentSection({ momentId, session, comments, open, onCo
             autoFocus
           />
           <button type="submit" disabled={submitting}>发送</button>
+        </form>
+      )}
+      {anonOpen && (
+        <form className="comment-form anon-form" onSubmit={handleAnonSubmit}>
+          <input
+            type="text"
+            placeholder="自定义昵称"
+            value={anonNickname}
+            onChange={(e) => setAnonNickname(e.target.value)}
+            maxLength={30}
+            autoFocus
+          />
+          <input
+            type="text"
+            placeholder="匿名说点什么…"
+            value={anonContent}
+            onChange={(e) => setAnonContent(e.target.value)}
+            maxLength={200}
+          />
+          <button type="submit" disabled={submitting}>匿名发送</button>
         </form>
       )}
       {error && <p className="error-text">{error}</p>}

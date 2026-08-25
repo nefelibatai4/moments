@@ -47,6 +47,15 @@ export default function ChatThread() {
       if (messagesRes.error) setError(messagesRes.error.message)
       else setMessages(messagesRes.data)
       setLoading(false)
+
+      // Mark incoming messages as read
+      supabase
+        .from('messages')
+        .update({ read_at: new Date().toISOString() })
+        .eq('sender_id', userId)
+        .eq('recipient_id', me)
+        .is('read_at', null)
+        .then(({ error }) => { if (error) console.error('mark read error:', error) })
     }
     load()
 
@@ -59,6 +68,14 @@ export default function ChatThread() {
           (m.sender_id === userId && m.recipient_id === me)
         ) {
           setMessages((prev) => [...prev, m])
+          // If it's from the other person, mark it as read immediately
+          if (m.sender_id === userId) {
+            supabase
+              .from('messages')
+              .update({ read_at: new Date().toISOString() })
+              .eq('id', m.id)
+              .then(({ error }) => { if (error) console.error('mark read error:', error) })
+          }
         }
       })
       .subscribe()
@@ -128,7 +145,14 @@ export default function ChatThread() {
             <div key={m.id}>
               {showLabel && <div className="chat-time-label">{label}</div>}
               <div className={`chat-bubble-row ${isMine ? 'mine' : 'theirs'}`}>
-                <div className={`chat-bubble ${isMine ? 'mine' : 'theirs'}`}>{m.content}</div>
+                <div className={`chat-bubble ${isMine ? 'mine' : 'theirs'}`}>
+                  {m.content}
+                  {isMine && (
+                    <span className={`chat-read-status ${m.read_at ? 'read' : ''}`}>
+                      {m.read_at ? '✓✓' : '✓'}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           )

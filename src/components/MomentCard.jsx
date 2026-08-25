@@ -20,6 +20,7 @@ export default function MomentCard({ moment, onDeleted }) {
   const [comments, setComments] = useState(moment.comments ?? [])
   const [likes, setLikes] = useState(moment.likes ?? [])
   const [commentBoxOpen, setCommentBoxOpen] = useState(false)
+  const [anonCommentOpen, setAnonCommentOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState(null)
   const session = useAuth()
@@ -74,7 +75,8 @@ export default function MomentCard({ moment, onDeleted }) {
             session={session}
             likes={likes}
             onLikesChanged={setLikes}
-            onRequestComment={() => setCommentBoxOpen(true)}
+            onRequestComment={() => { setCommentBoxOpen(true); setAnonCommentOpen(false) }}
+            onRequestAnonymousComment={() => { setAnonCommentOpen(true); setCommentBoxOpen(false) }}
             isOwner={isOwner}
             onDelete={handleDelete}
             deleting={deleting}
@@ -95,6 +97,7 @@ export default function MomentCard({ moment, onDeleted }) {
           session={session}
           comments={comments}
           open={commentBoxOpen}
+          anonOpen={anonCommentOpen}
           onCommentAdded={(c) => setComments((prev) => [...prev, c])}
         />
       )}

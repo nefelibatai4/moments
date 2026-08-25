@@ -24,7 +24,6 @@ function truncate(text, max = 30) {
 
 export default function ChatList() {
   const session = useAuth()
-  const [profiles, setProfiles] = useState([])
   const [conversations, setConversations] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -33,19 +32,26 @@ export default function ChatList() {
   useEffect(() => {
     async function load() {
       const me = session.user.id
-      const [profileRes, msgRes] = await Promise.all([
+      const [profileRes, msgRes, unreadRes] = await Promise.all([
         supabase.from('profiles').select('id, nickname, avatar_url').neq('id', me),
         supabase
           .from('messages')
-          .select('sender_id, recipient_id, content, created_at')
+          .select('sender_id, recipient_id, content, created_at, read_at')
           .or(`sender_id.eq.${me},recipient_id.eq.${me}`)
           .order('created_at', { ascending: false })
           .limit(500),
+        supabase
+          .from('messages')
+          .select('sender_id')
+          .eq('recipient_id', me)
+          .is('read_at', null),
       ])
       if (profileRes.error) setError(profileRes.error.message)
       else {
-        const profileMap = {}
-        for (const p of profileRes.data) profileMap[p.id] = p
+        const unreadCounts = {}
+        for (const m of (unreadRes.data || [])) {
+          unreadCounts[m.sender_id] = (unreadCounts[m.sender_id] || 0) + 1
+        }
 
         const latestByPartner = {}
         for (const m of (msgRes.data || [])) {
@@ -59,6 +65,7 @@ export default function ChatList() {
           ...p,
           lastMsg: latestByPartner[p.id]?.content ?? null,
           lastTime: latestByPartner[p.id]?.created_at ?? null,
+          unread: unreadCounts[p.id] || 0,
         }))
 
         merged.sort((a, b) => {
@@ -67,7 +74,6 @@ export default function ChatList() {
           return tB - tA
         })
 
-        setProfiles(profileMap)
         setConversations(merged)
       }
       setLoading(false)
@@ -105,7 +111,10 @@ export default function ChatList() {
                   {c.avatar_url ? <img src={c.avatar_url} alt="" /> : c.nickname.slice(0, 1)}
                 </span>
                 <span className="chat-list-info">
-                  <span className="chat-list-name">{c.nickname}</span>
+                  <span className="chat-list-name">
+                    {c.nickname}
+                    {c.unread > 0 && <span className="chat-unread-badge">{c.unread > 99 ? '99+' : c.unread}</span>}
+                  </span>
                   {c.lastMsg && <span className="chat-list-preview">{truncate(c.lastMsg)}</span>}
                 </span>
                 <span className="chat-list-time">{formatChatTime(c.lastTime)}</span>
