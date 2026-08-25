@@ -783,7 +783,7 @@ button:disabled {
 .chat-thread {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 84px);
+  min-height: calc(100vh - 160px);
   position: relative;
   margin-top: -8px;
 }

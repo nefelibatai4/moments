@@ -57,13 +57,13 @@ export default function MomentExpandMenu({ momentId, session, likes, onLikesChan
       {menuOpen && (
         <div className="expand-popup">
           <button type="button" className={liked ? 'liked' : ''} onClick={handleToggleLike} disabled={pending}>
-            {liked ? '✓ 赞' : '♥ 赞'}
+            {liked ? '✓ 赞' : '赞'}
           </button>
-          <button type="button" onClick={handleComment}>💬 评论</button>
-          <button type="button" className="anon" onClick={handleAnonymousComment}>🎭 匿名评论</button>
+          <button type="button" onClick={handleComment}>评论</button>
+          <button type="button" className="anon" onClick={handleAnonymousComment}>匿名评论</button>
           {isOwner && (
             <button type="button" className="danger" onClick={handleDelete} disabled={deleting}>
-              {deleting ? '删除中…' : '🗑 删除'}
+              {deleting ? '删除中…' : '删除'}
             </button>
           )}
         </div>
