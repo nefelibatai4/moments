@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 
 export default function Login() {
@@ -7,14 +7,20 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  const navigate = useNavigate()
+  const location = useLocation()
 
   async function handleSubmit(e) {
     e.preventDefault()
     setSubmitting(true)
     setError(null)
     const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) setError('登录失败，请检查邮箱和密码')
-    setSubmitting(false)
+    if (error) {
+      setError('登录失败，请检查邮箱和密码')
+      setSubmitting(false)
+      return
+    }
+    navigate(location.state?.from?.pathname ?? '/', { replace: true })
   }
 
   return (

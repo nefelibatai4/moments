@@ -1,8 +1,7 @@
 import { useState } from 'react'
-import LikeButton from './LikeButton'
+import MomentExpandMenu from './MomentExpandMenu'
 import CommentSection from './CommentSection'
 import { mapLink } from '../lib/mapLink'
-import { getVisitorId } from '../lib/visitorId'
 import { useAuth } from '../lib/AuthContext'
 import { supabase } from '../supabaseClient'
 
@@ -19,11 +18,11 @@ function storagePathFromUrl(url) {
 
 export default function MomentCard({ moment, onDeleted }) {
   const [comments, setComments] = useState(moment.comments ?? [])
+  const [likes, setLikes] = useState(moment.likes ?? [])
+  const [commentBoxOpen, setCommentBoxOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState(null)
   const session = useAuth()
-  const visitorId = getVisitorId()
-  const alreadyLiked = (moment.likes ?? []).some((l) => l.visitor_id === visitorId)
   const isOwner = session && session.user.id === moment.user_id
 
   async function handleDelete() {
@@ -68,14 +67,16 @@ export default function MomentCard({ moment, onDeleted }) {
             📍 查看位置
           </a>
         )}
-      </div>
-
-      <div className="moment-actions">
-        <LikeButton
-          momentId={moment.id}
-          initialCount={moment.likes?.length ?? 0}
-          initiallyLiked={alreadyLiked}
-        />
+        <span className="moment-meta-spacer" />
+        {session && (
+          <MomentExpandMenu
+            momentId={moment.id}
+            session={session}
+            likes={likes}
+            onLikesChanged={setLikes}
+            onRequestComment={() => setCommentBoxOpen(true)}
+          />
+        )}
         {isOwner && (
           <button className="delete-button" onClick={handleDelete} disabled={deleting}>
             {deleting ? '删除中…' : '删除'}
@@ -84,11 +85,22 @@ export default function MomentCard({ moment, onDeleted }) {
       </div>
       {deleteError && <p className="error-text">{deleteError}</p>}
 
-      <CommentSection
-        momentId={moment.id}
-        comments={comments}
-        onCommentAdded={(c) => setComments((prev) => [...prev, c])}
-      />
+      {likes.length > 0 && (
+        <p className="moment-likes-line">
+          ♥ {likes.map((l) => l.profiles?.nickname ?? '匿名').join('、')} 点赞了
+        </p>
+      )}
+
+      {session && (
+        <CommentSection
+          momentId={moment.id}
+          session={session}
+          comments={comments}
+          open={commentBoxOpen}
+          onCommentAdded={(c) => setComments((prev) => [...prev, c])}
+        />
+      )}
     </article>
   )
 }
+

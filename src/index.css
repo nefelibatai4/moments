@@ -292,3 +292,287 @@ button {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+.success-text {
+  color: #2a6496;
+  font-size: 0.9rem;
+}
+
+/* 展开菜单（点赞/评论） */
+.moment-meta-spacer {
+  flex: 1;
+}
+
+.expand-menu {
+  position: relative;
+}
+
+.expand-trigger {
+  border: 1px solid #ddd;
+  background: #fff;
+  border-radius: 12px;
+  padding: 2px 10px;
+  font-size: 0.85rem;
+  color: #999;
+  line-height: 1;
+}
+
+.expand-popup {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+  min-width: 80px;
+}
+
+.expand-popup button {
+  border: none;
+  background: none;
+  padding: 8px 16px;
+  text-align: left;
+  font-size: 0.9rem;
+  color: #333;
+}
+
+.expand-popup button:hover {
+  background: #f5f5f0;
+}
+
+.expand-popup button.liked {
+  color: #c0392b;
+}
+
+.moment-likes-line {
+  color: #c0392b;
+  font-size: 0.85rem;
+  margin-bottom: 10px;
+}
+
+/* 评论区（微博式头像列表） */
+.comment-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.comment-avatar {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #e0e0d8;
+  color: #666;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  overflow: hidden;
+}
+
+.comment-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.comment-body {
+  flex: 1;
+}
+
+/* 我 / 个人资料页 */
+.profile-page {
+  max-width: 420px;
+}
+
+.profile-page h2 {
+  font-size: 1.3rem;
+  font-weight: normal;
+  color: #222;
+  margin-bottom: 20px;
+}
+
+.profile-avatar-section {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.profile-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: #e0e0d8;
+  color: #666;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  overflow: hidden;
+}
+
+.profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatar-upload-label {
+  border: 1px solid #ddd;
+  background: #f5f5f0;
+  border-radius: 3px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  color: #555;
+  cursor: pointer;
+}
+
+.profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #eee;
+}
+
+.profile-form label {
+  font-size: 0.85rem;
+  color: #999;
+}
+
+.profile-form input {
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  padding: 8px 12px;
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+
+.profile-form button {
+  align-self: flex-start;
+  border: 1px solid #2a6496;
+  background: #2a6496;
+  color: #fff;
+  border-radius: 3px;
+  padding: 6px 14px;
+  font-size: 0.9rem;
+}
+
+.sign-out-button {
+  border: 1px solid #ddd;
+  background: #fff;
+  color: #999;
+  border-radius: 3px;
+  padding: 6px 14px;
+  font-size: 0.9rem;
+}
+
+/* 私聊 */
+.chat-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chat-list-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 4px;
+  color: #333;
+  border-bottom: 1px solid #eee;
+}
+
+.chat-list-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #e0e0d8;
+  color: #666;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.chat-list-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.chat-thread-header {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.chat-thread-header h3 {
+  font-size: 1.2rem;
+  font-weight: normal;
+  color: #222;
+}
+
+.chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.chat-message {
+  max-width: 70%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.chat-message.mine {
+  align-self: flex-end;
+  background: #2a6496;
+  color: #fff;
+}
+
+.chat-message.theirs {
+  align-self: flex-start;
+  background: #f0f0ea;
+  color: #333;
+}
+
+.chat-input-form {
+  display: flex;
+  gap: 8px;
+}
+
+.chat-input-form input {
+  flex: 1;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  padding: 8px 12px;
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+
+.chat-input-form button {
+  border: 1px solid #2a6496;
+  background: #2a6496;
+  color: #fff;
+  border-radius: 3px;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+}
+

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../lib/AuthContext'
-import Login from './Login'
+import { safeStorageKey } from '../lib/sanitizeFilename'
 
 export default function Publish() {
   const session = useAuth()
@@ -15,9 +15,6 @@ export default function Publish() {
   const [error, setError] = useState(null)
   const [inviteCode, setInviteCode] = useState(null)
   const [generatingInvite, setGeneratingInvite] = useState(false)
-
-  if (session === undefined) return <p className="status-text">加载中…</p>
-  if (session === null) return <Login />
 
   function handleGetLocation() {
     if (!navigator.geolocation) {
@@ -49,7 +46,7 @@ export default function Publish() {
     try {
       const imageUrls = []
       for (const file of files) {
-        const path = `${session.user.id}/${Date.now()}-${file.name}`
+        const path = safeStorageKey(session.user.id, file.name)
         const { error: uploadError } = await supabase.storage
           .from('moment-images')
           .upload(path, file)

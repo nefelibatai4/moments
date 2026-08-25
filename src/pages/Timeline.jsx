@@ -11,7 +11,7 @@ export default function Timeline() {
     async function load() {
       const { data, error } = await supabase
         .from('moments')
-        .select('*, likes(visitor_id), comments(*)')
+        .select('*, likes(user_id, profiles(nickname)), comments(*, profiles(nickname, avatar_url))')
         .order('created_at', { ascending: false })
 
       if (error) {

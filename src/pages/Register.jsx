@@ -99,7 +99,7 @@ export default function Register() {
         {submitting ? '注册中…' : '注册'}
       </button>
       <p className="auth-switch-link">
-        已有账号？<Link to="/publish">去登录</Link>
+        已有账号？<Link to="/login">去登录</Link>
       </p>
     </form>
   )
