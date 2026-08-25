@@ -195,8 +195,8 @@ export default function Profile() {
       <div className="theme-section">
         <div className="theme-toggle-row">
           <span>{darkMode ? '🌙 深色模式' : '☀️ 浅色模式'}</span>
-          <label className="theme-switch" onClick={handleThemeToggle}>
-            <input type="checkbox" checked={!darkMode} readOnly />
+          <label className="theme-switch">
+            <input type="checkbox" checked={!darkMode} onChange={handleThemeToggle} />
             <span className="theme-slider" />
           </label>
         </div>
