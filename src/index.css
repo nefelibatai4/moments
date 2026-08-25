@@ -1,3 +1,5 @@
+/* Design system: Raycast (see DESIGN.md) */
+
 * {
   margin: 0;
   padding: 0;
@@ -5,27 +7,40 @@
 }
 
 body {
-  font-family: Georgia, "Times New Roman", "Noto Serif SC", serif;
+  font-family: "Inter", "Inter Fallback", -apple-system, "SF Pro Text", system-ui, sans-serif;
+  font-feature-settings: "calt", "kern", "liga", "ss03";
   font-size: 16px;
-  line-height: 1.8;
-  color: #333;
-  background-color: #fafaf5;
+  font-weight: 500;
+  line-height: 1.6;
+  letter-spacing: 0.2px;
+  color: #f9f9f9;
+  background-color: #07080a;
   -webkit-font-smoothing: antialiased;
 }
 
 a {
-  color: #2a6496;
+  color: #55b3ff;
   text-decoration: none;
 }
 
 a:hover {
-  color: #1a3a5c;
+  color: #f9f9f9;
   text-decoration: underline;
 }
 
 button {
   font-family: inherit;
   cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+button:hover {
+  opacity: 0.6;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.4;
 }
 
 .app-container {
@@ -38,33 +53,51 @@ button {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  border-bottom: 2px solid #ddd;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   padding-bottom: 16px;
   margin-bottom: 32px;
 }
 
 .app-header h1 {
-  font-size: 1.8rem;
-  font-weight: normal;
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: 0;
 }
 
 .app-header h1 a {
-  color: #222;
+  color: #f9f9f9;
+}
+
+.app-header nav {
+  display: flex;
+  gap: 20px;
 }
 
 .app-header nav a {
-  color: #666;
+  color: #9c9c9d;
   font-size: 0.95rem;
+  font-weight: 500;
+  transition: color 0.15s ease;
+}
+
+.app-header nav a:hover {
+  color: #f9f9f9;
+  text-decoration: none;
 }
 
 .status-text {
-  color: #999;
+  color: #6a6b6c;
   text-align: center;
   padding: 40px 0;
 }
 
 .error-text {
-  color: #c0392b;
+  color: #ff6363;
+  font-size: 0.9rem;
+}
+
+.success-text {
+  color: #5fc992;
   font-size: 0.9rem;
 }
 
@@ -72,18 +105,22 @@ button {
 .timeline {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 20px;
 }
 
 .moment-card {
-  border: 1px solid #e0e0d8;
-  border-radius: 4px;
-  padding: 18px 20px;
-  background: #fff;
+  background: #101111;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 20px 24px;
+  box-shadow:
+    rgb(27, 28, 30) 0px 0px 0px 1px,
+    rgb(7, 8, 10) 0px 0px 0px 1px inset;
 }
 
 .moment-content {
   white-space: pre-wrap;
+  color: #f9f9f9;
   margin-bottom: 12px;
 }
 
@@ -95,7 +132,7 @@ button {
 
 .moment-images.single img {
   max-width: 100%;
-  border-radius: 3px;
+  border-radius: 8px;
 }
 
 .moment-images.grid {
@@ -106,196 +143,37 @@ button {
   width: 100%;
   aspect-ratio: 1;
   object-fit: cover;
-  border-radius: 3px;
+  border-radius: 8px;
 }
 
 .moment-meta {
   display: flex;
   gap: 14px;
   align-items: baseline;
-  color: #999;
+  color: #6a6b6c;
   font-size: 0.82rem;
-  font-family: "Courier New", Courier, monospace;
+  font-family: "GeistMono", ui-monospace, SFMono-Regular, Menlo, monospace;
   margin-bottom: 10px;
 }
 
 .moment-location {
-  color: #999;
-}
-
-.moment-actions {
-  margin-bottom: 12px;
-  display: flex;
-  gap: 10px;
-}
-
-.like-button {
-  border: 1px solid #ddd;
-  background: #fff;
-  border-radius: 20px;
-  padding: 4px 14px;
-  font-size: 0.9rem;
-  color: #666;
-}
-
-.like-button.liked {
-  color: #c0392b;
-  border-color: #c0392b;
+  color: #6a6b6c;
 }
 
 .delete-button {
-  border: 1px solid #ddd;
-  background: #fff;
-  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  border-radius: 6px;
   padding: 4px 14px;
-  font-size: 0.9rem;
-  color: #999;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #6a6b6c;
 }
 
 .delete-button:hover {
-  color: #c0392b;
-  border-color: #c0392b;
-}
-
-/* 评论区 */
-.comment-section {
-  border-top: 1px solid #eee;
-  padding-top: 10px;
-}
-
-.comment-list {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 10px;
-  font-size: 0.9rem;
-}
-
-.comment-nickname {
-  font-weight: bold;
-  color: #555;
-}
-
-.comment-form {
-  display: flex;
-  gap: 8px;
-}
-
-.comment-form input[type="text"] {
-  flex: 1;
-  border: 1px solid #ddd;
-  border-radius: 3px;
-  padding: 6px 10px;
-  font-size: 0.85rem;
-  font-family: inherit;
-}
-
-.comment-form input[type="text"]:nth-child(1) {
-  flex: 0 0 90px;
-}
-
-.comment-form button {
-  border: 1px solid #ddd;
-  background: #f5f5f0;
-  border-radius: 3px;
-  padding: 6px 14px;
-  font-size: 0.85rem;
-}
-
-/* 登录 / 发布表单 */
-.login-form,
-.publish-form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  max-width: 420px;
-}
-
-.login-form h2,
-.publish-form h2 {
-  font-size: 1.3rem;
-  font-weight: normal;
-  color: #222;
-}
-
-.login-form input,
-.publish-form input[type="text"],
-.publish-form textarea {
-  border: 1px solid #ddd;
-  border-radius: 3px;
-  padding: 8px 12px;
-  font-size: 0.95rem;
-  font-family: inherit;
-}
-
-.publish-form textarea {
-  resize: vertical;
-}
-
-.location-row button,
-.login-form button,
-.publish-form > button[type="submit"] {
-  border: 1px solid #2a6496;
-  background: #2a6496;
-  color: #fff;
-  border-radius: 3px;
-  padding: 8px 16px;
-  font-size: 0.95rem;
-}
-
-.location-row button {
-  background: #fff;
-  color: #2a6496;
-}
-
-.auth-switch-link {
-  font-size: 0.9rem;
-  color: #999;
-}
-
-.invite-section {
-  border-top: 1px solid #eee;
-  padding-top: 12px;
-  margin-top: 8px;
-}
-
-.invite-section button {
-  border: 1px solid #ddd;
-  background: #f5f5f0;
-  border-radius: 3px;
-  padding: 6px 14px;
-  font-size: 0.85rem;
-  color: #555;
-}
-
-.invite-code-display {
-  margin-top: 8px;
-  font-size: 0.95rem;
-}
-
-.invite-code-display strong {
-  font-family: "Courier New", Courier, monospace;
-  letter-spacing: 1px;
-}
-
-@media (max-width: 600px) {
-  body {
-    font-size: 15px;
-  }
-
-  .app-container {
-    padding: 24px 16px 40px;
-  }
-
-  .moment-images.grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-.success-text {
-  color: #2a6496;
-  font-size: 0.9rem;
+  color: #ff6363;
+  border-color: rgba(255, 99, 99, 0.4);
+  opacity: 1;
 }
 
 /* 展开菜单（点赞/评论） */
@@ -308,12 +186,12 @@ button {
 }
 
 .expand-trigger {
-  border: 1px solid #ddd;
-  background: #fff;
-  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
   padding: 2px 10px;
   font-size: 0.85rem;
-  color: #999;
+  color: #9c9c9d;
   line-height: 1;
 }
 
@@ -321,15 +199,18 @@ button {
   position: absolute;
   right: 0;
   top: 100%;
-  margin-top: 4px;
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-top: 6px;
+  background: #191a1b;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  box-shadow:
+    rgba(0, 0, 0, 0.5) 0px 0px 0px 1px,
+    rgba(255, 255, 255, 0.1) 0px 0px 14px;
   display: flex;
   flex-direction: column;
   z-index: 10;
-  min-width: 80px;
+  min-width: 90px;
+  overflow: hidden;
 }
 
 .expand-popup button {
@@ -338,24 +219,40 @@ button {
   padding: 8px 16px;
   text-align: left;
   font-size: 0.9rem;
-  color: #333;
+  color: #f9f9f9;
+  border-radius: 0;
 }
 
 .expand-popup button:hover {
-  background: #f5f5f0;
+  background: rgba(255, 255, 255, 0.06);
+  opacity: 1;
 }
 
 .expand-popup button.liked {
-  color: #c0392b;
+  color: #ff6363;
 }
 
 .moment-likes-line {
-  color: #c0392b;
+  color: #ff6363;
   font-size: 0.85rem;
   margin-bottom: 10px;
 }
 
-/* 评论区（微博式头像列表） */
+/* 评论区 */
+.comment-section {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 12px;
+}
+
+.comment-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 0.9rem;
+}
+
 .comment-item {
   display: flex;
   align-items: flex-start;
@@ -367,12 +264,14 @@ button {
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  background: #e0e0d8;
-  color: #666;
+  background: #1b1c1e;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: #9c9c9d;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
+  font-weight: 600;
   overflow: hidden;
 }
 
@@ -384,6 +283,155 @@ button {
 
 .comment-body {
   flex: 1;
+  color: #cecece;
+}
+
+.comment-nickname {
+  font-weight: 600;
+  color: #f9f9f9;
+}
+
+.comment-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.comment-form input[type="text"] {
+  flex: 1;
+  background: #07080a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  color: #f9f9f9;
+}
+
+.comment-form input[type="text"]:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: hsla(202, 100%, 67%, 0.15) 0px 0px 0px 3px;
+}
+
+.comment-form button {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #f9f9f9;
+}
+
+/* 表单通用（登录/发布/我/私聊输入） */
+.login-form,
+.publish-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 420px;
+}
+
+.login-form h2,
+.publish-form h2 {
+  font-size: 1.3rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: #f9f9f9;
+}
+
+.login-form input,
+.publish-form input[type="text"],
+.publish-form textarea {
+  background: #07080a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  color: #f9f9f9;
+}
+
+.login-form input::placeholder,
+.publish-form input::placeholder,
+.publish-form textarea::placeholder,
+.comment-form input::placeholder,
+.chat-input-form input::placeholder {
+  color: #6a6b6c;
+}
+
+.login-form input:focus,
+.publish-form input:focus,
+.publish-form textarea:focus,
+.profile-form input:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: hsla(202, 100%, 67%, 0.15) 0px 0px 0px 3px;
+}
+
+.publish-form textarea {
+  resize: vertical;
+}
+
+.location-row button,
+.login-form button,
+.publish-form > button[type="submit"] {
+  border: none;
+  background: hsla(0, 0%, 100%, 0.815);
+  color: #18191a;
+  border-radius: 86px;
+  padding: 10px 20px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  box-shadow: rgba(255, 255, 255, 0.1) 0px 1px 0px 0px inset;
+}
+
+.location-row button:hover,
+.login-form button:hover,
+.publish-form > button[type="submit"]:hover {
+  opacity: 0.85;
+}
+
+.location-row button {
+  background: transparent;
+  color: #f9f9f9;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: none;
+}
+
+.auth-switch-link {
+  font-size: 0.9rem;
+  color: #6a6b6c;
+}
+
+.invite-section {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 12px;
+  margin-top: 8px;
+}
+
+.invite-section button {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #f9f9f9;
+}
+
+.invite-code-display {
+  margin-top: 8px;
+  font-size: 0.95rem;
+  color: #cecece;
+}
+
+.invite-code-display strong {
+  font-family: "GeistMono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 1px;
+  color: #f9f9f9;
 }
 
 /* 我 / 个人资料页 */
@@ -393,8 +441,9 @@ button {
 
 .profile-page h2 {
   font-size: 1.3rem;
-  font-weight: normal;
-  color: #222;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: #f9f9f9;
   margin-bottom: 20px;
 }
 
@@ -409,12 +458,14 @@ button {
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  background: #e0e0d8;
-  color: #666;
+  background: #1b1c1e;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: #9c9c9d;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1.5rem;
+  font-weight: 600;
   overflow: hidden;
 }
 
@@ -425,13 +476,19 @@ button {
 }
 
 .avatar-upload-label {
-  border: 1px solid #ddd;
-  background: #f5f5f0;
-  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
   padding: 6px 14px;
   font-size: 0.85rem;
-  color: #555;
+  font-weight: 500;
+  color: #f9f9f9;
   cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.avatar-upload-label:hover {
+  opacity: 0.6;
 }
 
 .profile-form {
@@ -440,39 +497,48 @@ button {
   gap: 10px;
   margin-bottom: 20px;
   padding-bottom: 16px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .profile-form label {
   font-size: 0.85rem;
-  color: #999;
+  color: #6a6b6c;
 }
 
 .profile-form input {
-  border: 1px solid #ddd;
-  border-radius: 3px;
-  padding: 8px 12px;
+  background: #07080a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 10px 14px;
   font-size: 0.95rem;
   font-family: inherit;
+  color: #f9f9f9;
 }
 
 .profile-form button {
   align-self: flex-start;
-  border: 1px solid #2a6496;
-  background: #2a6496;
-  color: #fff;
-  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: #f9f9f9;
+  border-radius: 6px;
   padding: 6px 14px;
   font-size: 0.9rem;
+  font-weight: 500;
 }
 
 .sign-out-button {
-  border: 1px solid #ddd;
-  background: #fff;
-  color: #999;
-  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+  color: #9c9c9d;
+  border-radius: 6px;
   padding: 6px 14px;
   font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.sign-out-button:hover {
+  color: #ff6363;
+  opacity: 1;
 }
 
 /* 私聊 */
@@ -487,17 +553,26 @@ button {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 4px;
-  color: #333;
-  border-bottom: 1px solid #eee;
+  padding: 12px 8px;
+  color: #f9f9f9;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  transition: background 0.15s ease;
+}
+
+.chat-list-item:hover {
+  background: rgba(255, 255, 255, 0.03);
+  text-decoration: none;
 }
 
 .chat-list-avatar {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: #e0e0d8;
-  color: #666;
+  background: #1b1c1e;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: #9c9c9d;
+  font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -518,10 +593,16 @@ button {
   margin-bottom: 20px;
 }
 
+.chat-thread-header a {
+  color: #9c9c9d;
+  font-size: 0.9rem;
+}
+
 .chat-thread-header h3 {
   font-size: 1.2rem;
-  font-weight: normal;
-  color: #222;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: #f9f9f9;
 }
 
 .chat-messages {
@@ -535,22 +616,25 @@ button {
 
 .chat-message {
   max-width: 70%;
-  padding: 8px 12px;
-  border-radius: 8px;
+  padding: 8px 14px;
+  border-radius: 16px;
   font-size: 0.95rem;
   line-height: 1.5;
 }
 
 .chat-message.mine {
   align-self: flex-end;
-  background: #2a6496;
-  color: #fff;
+  background: #55b3ff;
+  color: #07080a;
+  border-radius: 16px 16px 4px 16px;
 }
 
 .chat-message.theirs {
   align-self: flex-start;
-  background: #f0f0ea;
-  color: #333;
+  background: #1b1c1e;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: #f9f9f9;
+  border-radius: 16px 16px 16px 4px;
 }
 
 .chat-input-form {
@@ -560,19 +644,42 @@ button {
 
 .chat-input-form input {
   flex: 1;
-  border: 1px solid #ddd;
-  border-radius: 3px;
-  padding: 8px 12px;
+  background: #07080a;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 10px 14px;
   font-size: 0.95rem;
   font-family: inherit;
+  color: #f9f9f9;
+}
+
+.chat-input-form input:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: hsla(202, 100%, 67%, 0.15) 0px 0px 0px 3px;
 }
 
 .chat-input-form button {
-  border: 1px solid #2a6496;
-  background: #2a6496;
-  color: #fff;
-  border-radius: 3px;
-  padding: 8px 16px;
+  border: none;
+  background: hsla(0, 0%, 100%, 0.815);
+  color: #18191a;
+  border-radius: 86px;
+  padding: 10px 20px;
   font-size: 0.9rem;
+  font-weight: 600;
+  box-shadow: rgba(255, 255, 255, 0.1) 0px 1px 0px 0px inset;
 }
 
+@media (max-width: 600px) {
+  body {
+    font-size: 15px;
+  }
+
+  .app-container {
+    padding: 24px 16px 40px;
+  }
+
+  .moment-images.grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
