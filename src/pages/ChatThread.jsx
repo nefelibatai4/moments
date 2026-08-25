@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../lib/AuthContext'
@@ -28,10 +28,6 @@ export default function ChatThread() {
   const msgListRef = useRef(null)
   const bottomRef = useRef(null)
   const me = session.user.id
-
-  const scrollToBottom = useCallback(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -85,8 +81,10 @@ export default function ChatThread() {
   }, [])
 
   useEffect(() => {
-    scrollToBottom()
-  }, [messages, scrollToBottom])
+    const el = msgListRef.current
+    if (!el || messages.length === 0) return
+    el.scrollTop = el.scrollHeight
+  }, [messages])
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -139,7 +137,10 @@ export default function ChatThread() {
       </div>
 
       {showScrollBtn && (
-        <button className="chat-scroll-btn" onClick={scrollToBottom} aria-label="回到底部">
+        <button className="chat-scroll-btn" onClick={() => {
+          const el = msgListRef.current
+          if (el) el.scrollTop = el.scrollHeight
+        }} aria-label="回到底部">
           ↓
         </button>
       )}
