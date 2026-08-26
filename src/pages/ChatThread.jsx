@@ -90,6 +90,12 @@ export default function ChatThread() {
           }
         }
       })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload) => {
+        const m = payload.new
+        if (m.sender_id === me && m.recipient_id === userId) {
+          setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, read_at: m.read_at } : x)))
+        }
+      })
       .subscribe()
 
     return () => {
