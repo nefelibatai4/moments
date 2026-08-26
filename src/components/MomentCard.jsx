@@ -26,6 +26,7 @@ export default function MomentCard({ moment, onDeleted }) {
   const session = useAuth()
   const isOwner = session && session.user.id === moment.user_id
   const profile = moment.profiles
+  const isAnon = !!moment.anon_nickname
   const displayName = moment.anon_nickname || (profile?.nickname ?? '匿名')
 
   async function handleDelete() {
@@ -50,7 +51,7 @@ export default function MomentCard({ moment, onDeleted }) {
     <article className="moment-card">
       <div className="moment-header">
         <span className="moment-avatar">
-          {profile?.avatar_url ? (
+          {!isAnon && profile?.avatar_url ? (
             <img src={profile.avatar_url} alt="" />
           ) : (
             displayName.slice(0, 1)

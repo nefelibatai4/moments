@@ -44,6 +44,20 @@ export default function ChatThread() {
   useEffect(() => {
     let cancelled = false
 
+    function isPageActive() {
+      return document.visibilityState === 'visible' && document.hasFocus()
+    }
+
+    function markUnreadAsRead() {
+      supabase
+        .from('messages')
+        .update({ read_at: new Date().toISOString() })
+        .eq('sender_id', userId)
+        .eq('recipient_id', me)
+        .is('read_at', null)
+        .then(({ error }) => { if (error) console.error('mark read error:', error) })
+    }
+
     async function load() {
       const [profileRes, messagesRes] = await Promise.all([
         supabase.from('profiles').select('id, nickname, avatar_url').eq('id', userId).single(),
@@ -60,16 +74,16 @@ export default function ChatThread() {
       else setMessages(messagesRes.data)
       setLoading(false)
 
-      // Mark incoming messages as read
-      supabase
-        .from('messages')
-        .update({ read_at: new Date().toISOString() })
-        .eq('sender_id', userId)
-        .eq('recipient_id', me)
-        .is('read_at', null)
-        .then(({ error }) => { if (error) console.error('mark read error:', error) })
+      // Mark incoming messages as read only if the page is actually in front of the user
+      if (isPageActive()) markUnreadAsRead()
     }
     load()
+
+    const onBecomeActive = () => {
+      if (isPageActive()) markUnreadAsRead()
+    }
+    document.addEventListener('visibilitychange', onBecomeActive)
+    window.addEventListener('focus', onBecomeActive)
 
     const channel = supabase
       .channel(`messages-${[me, userId].sort().join('-')}`)
@@ -80,8 +94,8 @@ export default function ChatThread() {
           (m.sender_id === userId && m.recipient_id === me)
         ) {
           setMessages((prev) => [...prev, m])
-          // If it's from the other person, mark it as read immediately
-          if (m.sender_id === userId) {
+          // If it's from the other person and the page is in front, mark read immediately
+          if (m.sender_id === userId && isPageActive()) {
             supabase
               .from('messages')
               .update({ read_at: new Date().toISOString() })
@@ -100,6 +114,8 @@ export default function ChatThread() {
 
     return () => {
       cancelled = true
+      document.removeEventListener('visibilitychange', onBecomeActive)
+      window.removeEventListener('focus', onBecomeActive)
       supabase.removeChannel(channel)
     }
   }, [me, userId])
