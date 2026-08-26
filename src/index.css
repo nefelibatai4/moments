@@ -994,6 +994,47 @@ button:disabled {
   position: relative;
 }
 
+.chat-bubble-image {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.chat-bubble-image img {
+  max-width: 220px;
+  max-height: 220px;
+  border-radius: 8px;
+  display: block;
+}
+
+.chat-attach-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--border-standard);
+  background: var(--bg-elevated);
+  font-size: 1.1rem;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: opacity 0.15s ease;
+}
+
+.chat-attach-btn:hover {
+  opacity: 0.6;
+}
+
+.chat-attach-name {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  align-self: center;
+}
+
 .chat-read-status {
   font-size: 0.65rem;
   margin-left: 6px;

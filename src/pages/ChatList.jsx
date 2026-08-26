@@ -36,7 +36,7 @@ export default function ChatList() {
         supabase.from('profiles').select('id, nickname, avatar_url').neq('id', me),
         supabase
           .from('messages')
-          .select('sender_id, recipient_id, content, created_at, read_at')
+          .select('sender_id, recipient_id, content, created_at, read_at, image_url')
           .or(`sender_id.eq.${me},recipient_id.eq.${me}`)
           .order('created_at', { ascending: false })
           .limit(500),
@@ -57,13 +57,14 @@ export default function ChatList() {
         for (const m of (msgRes.data || [])) {
           const partnerId = m.sender_id === me ? m.recipient_id : m.sender_id
           if (!latestByPartner[partnerId]) {
-            latestByPartner[partnerId] = { content: m.content, created_at: m.created_at }
+            latestByPartner[partnerId] = { content: m.content, created_at: m.created_at, image_url: m.image_url }
           }
         }
 
         const merged = profileRes.data.map((p) => ({
           ...p,
           lastMsg: latestByPartner[p.id]?.content ?? null,
+          lastImage: latestByPartner[p.id]?.image_url ?? null,
           lastTime: latestByPartner[p.id]?.created_at ?? null,
           unread: unreadCounts[p.id] || 0,
         }))
@@ -115,7 +116,11 @@ export default function ChatList() {
                     {c.nickname}
                     {c.unread > 0 && <span className="chat-unread-badge">{c.unread > 99 ? '99+' : c.unread}</span>}
                   </span>
-                  {c.lastMsg && <span className="chat-list-preview">{truncate(c.lastMsg)}</span>}
+                  {(c.lastMsg || c.lastImage) && (
+                    <span className="chat-list-preview">
+                      {c.lastImage ? '[图片]' : truncate(c.lastMsg)}
+                    </span>
+                  )}
                 </span>
                 <span className="chat-list-time">{formatChatTime(c.lastTime)}</span>
               </Link>

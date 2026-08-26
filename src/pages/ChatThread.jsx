@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../lib/AuthContext'
+import { safeStorageKey } from '../lib/sanitizeFilename'
 
 function msgTimeLabel(iso) {
   const d = new Date(iso)
@@ -25,6 +26,7 @@ export default function ChatThread() {
   const [sending, setSending] = useState(false)
   const [error, setError] = useState(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
+  const [imageFile, setImageFile] = useState(null)
   const msgListRef = useRef(null)
   const bottomRef = useRef(null)
   const me = session.user.id
@@ -105,15 +107,33 @@ export default function ChatThread() {
 
   async function handleSubmit(e) {
     e.preventDefault()
-    if (!content.trim() || sending) return
+    if ((!content.trim() && !imageFile) || sending) return
     setSending(true)
     setError(null)
-    const { error } = await supabase
-      .from('messages')
-      .insert({ sender_id: me, recipient_id: userId, content: content.trim() })
-    if (error) setError(error.message)
-    else setContent('')
-    setSending(false)
+    try {
+      let imageUrl = null
+      if (imageFile) {
+        const path = safeStorageKey(me, imageFile.name)
+        const { error: uploadError } = await supabase.storage
+          .from('moment-images')
+          .upload(path, imageFile)
+        if (uploadError) throw uploadError
+        const { data: publicUrlData } = supabase.storage
+          .from('moment-images')
+          .getPublicUrl(path)
+        imageUrl = publicUrlData.publicUrl
+      }
+      const { error } = await supabase
+        .from('messages')
+        .insert({ sender_id: me, recipient_id: userId, content: content.trim() || null, image_url: imageUrl })
+      if (error) throw error
+      setContent('')
+      setImageFile(null)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSending(false)
+    }
   }
 
   if (loading) return <p className="status-text">加载中…</p>
@@ -146,6 +166,11 @@ export default function ChatThread() {
               {showLabel && <div className="chat-time-label">{label}</div>}
               <div className={`chat-bubble-row ${isMine ? 'mine' : 'theirs'}`}>
                 <div className={`chat-bubble ${isMine ? 'mine' : 'theirs'}`}>
+                  {m.image_url && (
+                    <a href={m.image_url} target="_blank" rel="noopener noreferrer" className="chat-bubble-image">
+                      <img src={m.image_url} alt="" />
+                    </a>
+                  )}
                   {m.content}
                   {isMine && (
                     <span className={`chat-read-status ${m.read_at ? 'read' : ''}`}>
@@ -172,6 +197,16 @@ export default function ChatThread() {
       {error && <p className="error-text">{error}</p>}
 
       <form className="chat-input-row" onSubmit={handleSubmit}>
+        <label className="chat-attach-btn" title="发送图片">
+          📷
+          <input
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => setImageFile(e.target.files[0] ?? null)}
+          />
+        </label>
+        {imageFile && <span className="chat-attach-name">{imageFile.name}</span>}
         <input
           type="text"
           placeholder="发消息…"
