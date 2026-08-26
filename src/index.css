@@ -1025,14 +1025,37 @@ button:disabled {
   opacity: 0.6;
 }
 
-.chat-attach-name {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  max-width: 80px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.chat-attach-preview {
+  position: relative;
+  flex: 0 0 auto;
   align-self: center;
+}
+
+.chat-attach-preview img {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--border-standard);
+  display: block;
+}
+
+.chat-attach-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent-red);
+  color: #fff;
+  font-size: 0.7rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
 }
 
 .chat-read-status {

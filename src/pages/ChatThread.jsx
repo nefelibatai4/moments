@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../lib/AuthContext'
@@ -30,6 +30,16 @@ export default function ChatThread() {
   const msgListRef = useRef(null)
   const bottomRef = useRef(null)
   const me = session.user.id
+
+  const imagePreviewUrl = useMemo(
+    () => (imageFile ? URL.createObjectURL(imageFile) : null),
+    [imageFile]
+  )
+  useEffect(() => {
+    return () => {
+      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
+    }
+  }, [imagePreviewUrl])
 
   useEffect(() => {
     let cancelled = false
@@ -138,10 +148,23 @@ export default function ChatThread() {
 
   if (loading) return <p className="status-text">加载中…</p>
 
+  function handlePaste(e) {
+    const items = e.clipboardData?.items
+    if (!items) return
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault()
+        const file = item.getAsFile()
+        if (file) setImageFile(file)
+        return
+      }
+    }
+  }
+
   let lastTimeLabel = null
 
   return (
-    <div className="chat-thread">
+    <div className="chat-thread" onPaste={handlePaste}>
       <div className="chat-thread-header">
         <Link to="/chat" className="chat-back-btn">←</Link>
         <span className="chat-header-avatar">
@@ -206,7 +229,19 @@ export default function ChatThread() {
             onChange={(e) => setImageFile(e.target.files[0] ?? null)}
           />
         </label>
-        {imageFile && <span className="chat-attach-name">{imageFile.name}</span>}
+        {imageFile && (
+          <span className="chat-attach-preview">
+            <img src={imagePreviewUrl} alt="" />
+            <button
+              type="button"
+              className="chat-attach-remove"
+              onClick={() => setImageFile(null)}
+              aria-label="移除图片"
+            >
+              ×
+            </button>
+          </span>
+        )}
         <input
           type="text"
           placeholder="发消息…"
