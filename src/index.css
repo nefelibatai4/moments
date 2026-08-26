@@ -315,6 +315,7 @@ button:disabled {
   font-size: 0.9rem;
   color: var(--text-primary);
   border-radius: 0;
+  white-space: nowrap;
 }
 
 .expand-popup button:hover {
