@@ -57,10 +57,22 @@ export default function MomentCard({ moment, onDeleted }) {
           )}
         </span>
         <span className="moment-author">
-          <span className="moment-author-name">{displayName}</span>
-          <span className="moment-author-time">{formatTime(moment.created_at)}</span>
+          <span className="moment-author-name">
+            {displayName}
+            <span className="moment-author-time">· {formatTime(moment.created_at)}</span>
+          </span>
         </span>
         <span className="moment-meta-spacer" />
+        {moment.latitude != null && moment.longitude != null && (
+          <a
+            className="moment-location"
+            href={mapLink(moment.latitude, moment.longitude)}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            📍 位置
+          </a>
+        )}
         {session && (
           <MomentExpandMenu
             momentId={moment.id}
@@ -85,34 +97,26 @@ export default function MomentCard({ moment, onDeleted }) {
           ))}
         </div>
       )}
-
-      {moment.latitude != null && moment.longitude != null && (
-        <a
-          className="moment-location"
-          href={mapLink(moment.latitude, moment.longitude)}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          📍 查看位置
-        </a>
-      )}
       {deleteError && <p className="error-text">{deleteError}</p>}
 
-      {likes.length > 0 && (
-        <p className="moment-likes-line">
-          ♥ {likes.map((l) => l.profiles?.nickname ?? '匿名').join('、')}
-        </p>
-      )}
-
-      {session && (
-        <CommentSection
-          momentId={moment.id}
-          session={session}
-          comments={comments}
-          open={commentBoxOpen}
-          anonOpen={anonCommentOpen}
-          onCommentAdded={(c) => setComments((prev) => [...prev, c])}
-        />
+      {(likes.length > 0 || comments.length > 0 || commentBoxOpen || anonCommentOpen) && (
+        <div className="moment-panel">
+          {likes.length > 0 && (
+            <p className="moment-likes-line">
+              ♥ {likes.map((l) => l.profiles?.nickname ?? '匿名').join('、')}
+            </p>
+          )}
+          {session && (
+            <CommentSection
+              momentId={moment.id}
+              session={session}
+              comments={comments}
+              open={commentBoxOpen}
+              anonOpen={anonCommentOpen}
+              onCommentAdded={(c) => setComments((prev) => [...prev, c])}
+            />
+          )}
+        </div>
       )}
     </article>
   )

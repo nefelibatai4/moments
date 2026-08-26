@@ -159,27 +159,27 @@ button:disabled {
   font-size: 0.9rem;
 }
 
-/* 时间线 - X 风格 */
+/* 时间线 */
 .timeline {
   display: flex;
   flex-direction: column;
+  gap: 16px;
 }
 
 .moment-card {
   background: var(--bg-card);
-  border: none;
-  border-bottom: 1px solid var(--border-subtle);
-  border-radius: 0;
-  padding: 16px 0;
-  box-shadow: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 16px 20px;
+  box-shadow: var(--card-shadow-outer), var(--card-shadow-inner);
 }
 
-/* X 风格头部：头像 + 昵称 + 时间 + 展开菜单 */
+/* 头部：头像 + 昵称·时间 + 位置 + 展开菜单 */
 .moment-header {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 4px;
+  margin-bottom: 10px;
 }
 
 .moment-avatar {
@@ -187,6 +187,7 @@ button:disabled {
   height: 40px;
   border-radius: 50%;
   background: var(--bg-badge);
+  border: 1px solid var(--border-subtle);
   color: var(--text-tertiary);
   display: flex;
   align-items: center;
@@ -211,15 +212,21 @@ button:disabled {
 }
 
 .moment-author-name {
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .moment-author-time {
   font-size: 0.78rem;
+  font-weight: 400;
   color: var(--text-muted);
-  font-family: "GeistMono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  margin-left: 6px;
+}
+
+.moment-location {
+  color: var(--text-muted);
+  font-size: 0.8rem;
 }
 
 .moment-content {
@@ -332,6 +339,24 @@ button:disabled {
   color: var(--accent-red);
   font-size: 0.85rem;
   margin-bottom: 10px;
+}
+
+/* 点赞+评论嵌套面板 */
+.moment-panel {
+  margin-top: 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+
+.moment-panel .comment-section {
+  border-top: none;
+  padding-top: 0;
+}
+
+.moment-panel .moment-likes-line {
+  margin-bottom: 8px;
 }
 
 /* 评论区 */
