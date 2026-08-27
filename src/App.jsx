@@ -1,4 +1,5 @@
 import { Routes, Route, Link } from 'react-router-dom'
+import { useEffect } from 'react'
 import Timeline from './pages/Timeline'
 import Publish from './pages/Publish'
 import Login from './pages/Login'
@@ -8,9 +9,18 @@ import ChatList from './pages/ChatList'
 import ChatThread from './pages/ChatThread'
 import RequireAuth from './components/RequireAuth'
 import { useAuth } from './lib/AuthContext'
+import { supabase } from './supabaseClient'
+import { subscribeToPush } from './lib/usePushNotification'
 
 export default function App() {
   const session = useAuth()
+
+  // 登录后自动注册 Web Push 订阅
+  useEffect(() => {
+    if (session) {
+      subscribeToPush(supabase, session)
+    }
+  }, [session])
 
   return (
     <div className="app-container">
