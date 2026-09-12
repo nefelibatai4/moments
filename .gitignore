@@ -29,3 +29,10 @@ db-backups/
 # 含密钥的本地文件，不入公开仓库
 supabase/
 scripts/
+
+# Capacitor iOS 构建产物（不入仓库）
+ios/App/build/
+ios/App/Pods/
+ios/App/App/public/
+ios/App/App/App.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/

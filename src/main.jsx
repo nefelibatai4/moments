@@ -8,9 +8,11 @@ import { initTheme } from './lib/theme.js'
 
 initTheme()
 
+const basename = import.meta.env.BASE_URL.replace(/\/$/, '') || '/'
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <BrowserRouter basename="/moments">
+    <BrowserRouter basename={basename}>
       <AuthProvider>
         <App />
       </AuthProvider>

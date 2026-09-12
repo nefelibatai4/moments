@@ -1,0 +1,8 @@
+{
+  "appId": "com.nefelibata.moments",
+  "appName": "Moments",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}

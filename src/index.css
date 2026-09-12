@@ -102,7 +102,7 @@ button:disabled {
 .app-container {
   max-width: 680px;
   margin: 0 auto;
-  padding: 40px 20px 60px;
+  padding: calc(40px + env(safe-area-inset-top, 0px)) 20px calc(60px + env(safe-area-inset-bottom, 0px));
 }
 
 .app-header {
@@ -1150,7 +1150,7 @@ button:disabled {
   }
 
   .app-container {
-    padding: 24px 16px 40px;
+    padding: calc(24px + env(safe-area-inset-top, 0px)) 16px calc(40px + env(safe-area-inset-bottom, 0px));
   }
 
   .moment-images.grid {
