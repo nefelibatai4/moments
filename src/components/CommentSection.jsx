@@ -155,8 +155,15 @@ export default function CommentSection({
     if (!window.confirm('删除这条评论？')) return
     setDeletingId(comment.id)
     setError(null)
-    const { error: deleteError } = await supabase.from('comments').delete().eq('id', comment.id)
+    // 带 .select() 确认真的删掉了：被 RLS 拦下的 delete 不报错、只影响 0 行。
+    // 不确认的话界面会显示已删除，刷新后评论却"复活"。
+    const { data: deleted, error: deleteError } = await supabase
+      .from('comments')
+      .delete()
+      .eq('id', comment.id)
+      .select('id')
     if (deleteError) setError(deleteError.message)
+    else if (!deleted || deleted.length === 0) setError('删除失败：这条评论不存在，或你没有删除权限')
     else onCommentDeleted?.(comment.id)
     setDeletingId(null)
   }

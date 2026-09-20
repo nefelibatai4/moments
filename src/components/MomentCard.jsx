@@ -86,8 +86,17 @@ export default function MomentCard({
       if (paths.length > 0) {
         await supabase.storage.from('moment-images').remove(paths)
       }
-      const { error } = await supabase.from('moments').delete().eq('id', moment.id)
+      // 同样要确认真的删掉了：被 RLS 拦下的 delete 不报错、只影响 0 行，
+      // 不确认的话界面显示已删除、刷新后动态会"复活"。
+      const { data: deleted, error } = await supabase
+        .from('moments')
+        .delete()
+        .eq('id', moment.id)
+        .select('id')
       if (error) throw error
+      if (!deleted || deleted.length === 0) {
+        throw new Error('删除失败：这条动态不存在，或你没有删除权限')
+      }
       onDeleted?.(moment.id)
     } catch (err) {
       setDeleteError(err.message)

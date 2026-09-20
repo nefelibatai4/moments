@@ -11,12 +11,17 @@ export default function MomentExpandMenu({ momentId, session, likes, onLikesChan
     if (pending) return
     setPending(true)
     if (liked) {
-      const { error } = await supabase
+      // 带 .select() 确认真的删掉了：被 RLS 拦下的 delete 不报错、只影响 0 行。
+      // 不确认就会显示"已取消赞"，刷新后赞又回来了。
+      const { data, error } = await supabase
         .from('likes')
         .delete()
         .eq('moment_id', momentId)
         .eq('user_id', session.user.id)
-      if (!error) onLikesChanged(likes.filter((l) => l.user_id !== session.user.id))
+        .select('user_id')
+      if (!error && data && data.length > 0) {
+        onLikesChanged(likes.filter((l) => l.user_id !== session.user.id))
+      }
     } else {
       const { data, error } = await supabase
         .from('likes')
