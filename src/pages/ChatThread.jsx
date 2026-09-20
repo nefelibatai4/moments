@@ -362,7 +362,10 @@ export default function ChatThread() {
       {showScrollBtn && (
         <button className="chat-scroll-btn" onClick={() => {
           const el = msgListRef.current
-          if (el) el.scrollTop = el.scrollHeight
+          if (!el) return
+          // 平滑滚动更好看，但开了「减少动态效果」的用户要立刻跳过去
+          const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+          el.scrollTo({ top: el.scrollHeight, behavior: reduce ? 'auto' : 'smooth' })
         }} aria-label="回到底部">
           ↓
         </button>

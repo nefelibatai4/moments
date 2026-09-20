@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import MomentCard from '../components/MomentCard'
+import MomentSkeleton from '../components/MomentSkeleton'
 
 const MOMENT_SELECT =
   '*, profiles!moments_user_id_fkey(nickname, avatar_url), likes(user_id, profiles(nickname)), comments(*, profiles(nickname, avatar_url))'
@@ -165,7 +166,7 @@ export default function Timeline() {
     setMoments((prev) => prev.map((m) => (m.id === momentId ? { ...m, ...fields } : m)))
   }, [])
 
-  if (loading) return <p className="status-text">加载中…</p>
+  if (loading) return <MomentSkeleton count={3} />
   if (error) return <p className="status-text">加载失败：{error}</p>
   if (moments.length === 0) return <p className="status-text">还没有动态。</p>
 

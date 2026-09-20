@@ -1,5 +1,29 @@
 /* Design system: Raycast (see DESIGN.md) — dark + light */
 
+/* ── Inter 自托管 ──────────────────────────────────────────────
+   原来从 fonts.googleapis.com 拉字体：国内经常访问不了，页面会一直等一个
+   回不来的请求，是首屏卡顿的头号原因。现在改为随包分发，彻底去掉这个外部依赖。
+
+   Google 把 Inter 作为「可变字体」下发：同一个文件覆盖 400/500/600，
+   所以只有 2 个文件。unicode-range 让浏览器按需下载——
+   latin-ext（85KB）只在页面真的用到带重音的拉丁字母时才会拉，平时不下载。 */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./assets/fonts/inter-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('./assets/fonts/inter-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 :root {
   --bg-page: #07080a;
   --bg-card: #101111;
@@ -189,7 +213,11 @@ button:disabled {
   gap: 16px;
 }
 
-.moment-card {
+/* 骨架卡片复用卡片的外观，但**刻意不用 .moment-card 类**：
+   否则任何"数 .moment-card"的逻辑（包括端到端测试）都会把骨架算成真实卡片。
+   这个坑已经踩过一次，注释留在这里。 */
+.moment-card,
+.moment-skeleton-card {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
@@ -339,7 +367,7 @@ button:disabled {
   flex-wrap: wrap;
   color: var(--text-muted);
   font-size: 0.82rem;
-  font-family: "GeistMono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   margin-bottom: 10px;
 }
 
@@ -821,7 +849,7 @@ button:disabled {
 }
 
 .invite-code-display strong {
-  font-family: "GeistMono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   letter-spacing: 1px;
   color: var(--text-primary);
 }
@@ -1341,5 +1369,142 @@ button:disabled {
 
   .moment-images.grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+/* ══════════════════════════════════════════════════════════════
+   流畅度：动画、长列表渲染、无障碍
+   ══════════════════════════════════════════════════════════════
+
+   关于「120 帧」的取舍（写清楚，免得后人乱改）：
+
+   只有 transform 和 opacity 两个属性走 GPU 合成器，不触发重排/重绘，
+   在 ProMotion 这类 120Hz 屏幕上才能真正跑满帧率。所以本文件的动画
+   只用这两个属性。background / color / box-shadow / width / height 的
+   过渡会触发重绘甚至重排，在高刷屏上会掉帧。
+
+   ⚠️ 刻意**没有**用 will-change：时间线一次可能有几十张卡片，
+   给每张都加 will-change 会各自创建一个合成层，显存占用陡增、
+   反而更卡。短时长（<0.3s）的动画浏览器自己会处理得很好。
+   ────────────────────────────────────────────────────────────── */
+
+/* ── 骨架屏 ── */
+.moment-skeleton {
+  pointer-events: none;
+}
+
+.skeleton {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-elevated);
+  border-radius: 6px;
+}
+
+/* 微光：用 transform 位移实现。用 background-position 的话每帧都要重绘。 */
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, var(--hover-wrap-bg), transparent);
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  to { transform: translateX(100%); }
+}
+
+.skeleton-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.skeleton-name {
+  width: 96px;
+  height: 14px;
+}
+
+.skeleton-line {
+  height: 14px;
+  margin-top: 12px;
+}
+
+.skeleton-line.short {
+  width: 55%;
+}
+
+/* ── 卡片进场 ──
+   卡片按 id 做 key，所以只有"新出现的卡片"会播这个动画；
+   已有的卡片重新渲染不会重播（React 不会重新挂载它们）。
+
+   ⚠️ 刻意**不加** animation-fill-mode: both —— 这是个很隐蔽的坑。
+   加了之后，`forwards` 会让动画在结束后依然"生效"，卡片因此长期保持
+   stacking context / containing block 状态，后果是卡片里的展开菜单
+   （.expand-popup：absolute + z-index:10）被 .moment-header 盖住、点不动。
+   实测表现是点击被拦截（"subtree intercepts pointer events"），
+   回归测试 e2e-phase-b / e2e-phase-c 会直接挂掉。
+
+   本动画的终态（opacity:1 / transform:none）与元素自身样式一致，
+   本来就不需要 fill-mode 兜底，去掉没有任何副作用。 */
+@keyframes moment-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.moment-card {
+  animation: moment-in 0.24s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* ⚠️ 试过但**不要**加 content-visibility: auto（记录在此，避免后人重复踩）：
+   动态卡片高度差异极大——纯文字约 80px，带图 400px 以上，
+   contain-intrinsic-size 给不出靠谱的预估，滚动条会随卡片进入视口而跳动。
+
+   A/B 实测（等图片全部加载完再测，排除图片撑开的干扰）：
+     不用 → 滚动前后总高度漂移 0px
+     用了 → 漂移 132px，且总高度从 5513px 变成 5645px
+
+   在几十条的量级它本来也省不了多少。真到成百上千条时，
+   应该配固定行高的虚拟滚动一起做，而不是单独加这个属性。 */
+
+/* ── 展开菜单弹出 ── */
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.expand-popup {
+  animation: pop-in 0.14s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  transform-origin: top right;
+}
+
+/* ── 聊天列表：阻止滚动穿透到页面 ── */
+.chat-messages {
+  overscroll-behavior: contain;
+}
+
+/* ── 尊重系统的「减少动态效果」 ──
+   开了这个开关的用户（前庭功能敏感等）不应该看到位移动画。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

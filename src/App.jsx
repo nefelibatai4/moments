@@ -1,18 +1,22 @@
 import { Routes, Route, Link } from 'react-router-dom'
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import Timeline from './pages/Timeline'
-import Publish from './pages/Publish'
-import Login from './pages/Login'
-import Register from './pages/Register'
-import Activate from './pages/Activate'
-import Profile from './pages/Profile'
-import ChatList from './pages/ChatList'
-import ChatThread from './pages/ChatThread'
 import RequireAuth from './components/RequireAuth'
 import { useAccess } from './lib/AuthContext'
 import { supabase } from './supabaseClient'
 import { subscribeToPush } from './lib/usePushNotification'
 import { useUnreadCount } from './lib/useUnreadCount'
+
+// 按路由做代码分割：首屏只需要 React + 路由 + Supabase + 时间线，
+// 其余页面在真正导航过去时才下载。这样首屏 JS 明显变小。
+// Timeline 保持同步引入——它是落地页，做成懒加载会多一次瀑布式请求。
+const Publish = lazy(() => import('./pages/Publish'))
+const Login = lazy(() => import('./pages/Login'))
+const Register = lazy(() => import('./pages/Register'))
+const Activate = lazy(() => import('./pages/Activate'))
+const Profile = lazy(() => import('./pages/Profile'))
+const ChatList = lazy(() => import('./pages/ChatList'))
+const ChatThread = lazy(() => import('./pages/ChatThread'))
 
 export default function App() {
   const { session, approved } = useAccess()
@@ -43,19 +47,21 @@ export default function App() {
         )}
       </header>
       <main>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route
-            path="/activate"
-            element={<RequireAuth requireApproved={false}><Activate /></RequireAuth>}
-          />
-          <Route path="/" element={<RequireAuth><Timeline /></RequireAuth>} />
-          <Route path="/publish" element={<RequireAuth><Publish /></RequireAuth>} />
-          <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
-          <Route path="/chat" element={<RequireAuth><ChatList /></RequireAuth>} />
-          <Route path="/chat/:userId" element={<RequireAuth><ChatThread /></RequireAuth>} />
-        </Routes>
+        <Suspense fallback={<p className="status-text">加载中…</p>}>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route
+              path="/activate"
+              element={<RequireAuth requireApproved={false}><Activate /></RequireAuth>}
+            />
+            <Route path="/" element={<RequireAuth><Timeline /></RequireAuth>} />
+            <Route path="/publish" element={<RequireAuth><Publish /></RequireAuth>} />
+            <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
+            <Route path="/chat" element={<RequireAuth><ChatList /></RequireAuth>} />
+            <Route path="/chat/:userId" element={<RequireAuth><ChatThread /></RequireAuth>} />
+          </Routes>
+        </Suspense>
       </main>
     </div>
   )

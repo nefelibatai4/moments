@@ -55,11 +55,18 @@ export default function MomentCard({
     setDeleteError(null)
     try {
       const next = draft.trim()
-      const { error } = await supabase
+      // 必须带 .select() 才知道"到底改了几行"：
+      // 被 RLS 拦下的 update **不会返回错误**，只是影响 0 行。不加这层判断，
+      // 界面会显示保存成功、实际库里一个字都没变。
+      const { data, error } = await supabase
         .from('moments')
         .update({ content: next || null })
         .eq('id', moment.id)
+        .select('id')
       if (error) throw error
+      if (!data || data.length === 0) {
+        throw new Error('保存失败：这条动态不存在，或你没有修改权限')
+      }
       onMomentUpdated?.(moment.id, { content: next || null })
       setEditing(false)
     } catch (err) {

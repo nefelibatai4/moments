@@ -9,6 +9,32 @@ const AuthContext = createContext({
   refreshApproval: () => {},
 })
 
+// ── 激活状态的本地缓存 ────────────────────────────────────────────
+// 为什么缓存：冷启动时"先查 approved 才渲染时间线"是一次**串行**网络往返，
+// 是首屏最主要的等待来源。缓存后再次打开可以先渲染、再后台校验。
+//
+// ⚠️ 安全说明：这个缓存**只影响界面，不影响权限**。
+// 真正的门禁在数据库——所有读取策略都要求 is_approved()。
+// 即使用户手工把缓存改成 true，也只会看到一个空时间线，拿不到任何数据。
+const APPROVED_CACHE_KEY = 'moments_approved'
+
+function readCachedApproval(userId) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(APPROVED_CACHE_KEY) || 'null')
+    return parsed?.userId === userId ? !!parsed.approved : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function writeCachedApproval(userId, approved) {
+  try {
+    localStorage.setItem(APPROVED_CACHE_KEY, JSON.stringify({ userId, approved }))
+  } catch {
+    /* 隐私模式下 localStorage 可能不可写，忽略 */
+  }
+}
+
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(undefined)
   const [approved, setApproved] = useState(undefined)
@@ -32,8 +58,11 @@ export function AuthProvider({ children }) {
     if (error) {
       console.error('[auth] 读取激活状态失败:', error.message)
       setApproved(false)
+      writeCachedApproval(userId, false)
     } else {
-      setApproved(!!data.approved)
+      const ok = !!data.approved
+      setApproved(ok)
+      writeCachedApproval(userId, ok)
     }
   }, [])
 
@@ -54,7 +83,11 @@ export function AuthProvider({ children }) {
       setApproved(null)
       return
     }
-    setApproved(undefined)
+
+    // 先用缓存立即渲染（命中时 RequireAuth 不再显示"加载中…"），
+    // 再后台校验并写回缓存 —— 典型的 stale-while-revalidate。
+    // 没缓存时 cached 是 undefined，行为与改造前完全一致。
+    setApproved(readCachedApproval(uid))
     loadApproval(uid)
   }, [session, loadApproval])
 
