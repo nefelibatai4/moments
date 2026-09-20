@@ -1,4 +1,39 @@
-# Logs
+# ══════════════════════════════════════════════════════════════
+# 依赖与构建产物（可由 npm 重新生成，删了不影响仓库）
+# ══════════════════════════════════════════════════════════════
+node_modules
+dist
+dist-ssr
+*.local
+
+# ══════════════════════════════════════════════════════════════
+# ⚠️ 环境变量与密钥 —— 绝不入仓库（仓库是 Public）
+# ══════════════════════════════════════════════════════════════
+.env
+.env.local
+
+# ══════════════════════════════════════════════════════════════
+# ⚠️ 仅本地文件 —— 线上没有，是本机唯一副本，务必单独备份
+#    supabase/ 含 Edge Function 源码与 VAPID 私钥
+#    Moments全量交接文档.md 含全部密钥明文
+# ══════════════════════════════════════════════════════════════
+supabase/
+scripts/
+db-backups/
+Moments全量交接文档.md
+
+# ══════════════════════════════════════════════════════════════
+# Capacitor iOS 构建产物
+# ══════════════════════════════════════════════════════════════
+ios/App/build/
+ios/App/Pods/
+ios/App/App/public/
+ios/App/App/App.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# ══════════════════════════════════════════════════════════════
+# 日志
+# ══════════════════════════════════════════════════════════════
 logs
 *.log
 npm-debug.log*
@@ -7,14 +42,9 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
-.env
-.env.local
-
-# Editor directories and files
+# ══════════════════════════════════════════════════════════════
+# 编辑器与系统文件
+# ══════════════════════════════════════════════════════════════
 .vscode/*
 !.vscode/extensions.json
 .idea
@@ -24,16 +54,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-db-backups/
 
-# 含密钥的本地文件，不入公开仓库
-supabase/
-scripts/
-
-# Capacitor iOS 构建产物（不入仓库）
-ios/App/build/
-ios/App/Pods/
-ios/App/App/public/
-ios/App/App/App.xcodeproj/xcuserdata/
-*.xcworkspace/xcuserdata/
-Moments全量交接文档.md
+# 与本项目无关的多根工作区配置（指向 ../SQL开发项目 和 ../admin-query-skill）
+# 文件本身有用，保留在磁盘上，只是不该出现在仓库里
+SQL开发项目.code-workspace
