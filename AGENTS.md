@@ -11,7 +11,7 @@
 |---|---|
 | 线上 | https://nefelibatai4.github.io/moments/ |
 | 技术栈 | Vite + React 19（纯 SPA）／Supabase（Postgres + Auth + Storage + Realtime）／GitHub Pages 托管／PWA + Capacitor iOS |
-| 数据库 | Supabase `public` schema，7 张表 |
+| 数据库 | Supabase `public` schema，8 张表 |
 
 ## ⚠️ 硬约束
 
@@ -20,8 +20,10 @@
 2. **下列路径被 `.gitignore` 排除是刻意的，不是遗漏**——它们只在本机，线上没有副本：
    `.env`、`supabase/`、`scripts/`、`db-backups/`、`Moments全量交接文档.md`。
    不要"帮忙"把它们加进版本控制。
-3. **测试数据必须清理**：`scripts/` 下的验证脚本会创建临时账号并占用邀请码，
-   结束必须回滚；**邀请码只复位、绝不删除**。
+3. **测试数据必须清理**：`scripts/` 下的验证脚本会创建临时账号并占用邀请码。
+   一律用 `bash scripts/run-all-tests.sh` 跑（跑前跑后各清一次 + 审计，有残留以非 0 退出）；
+   **邀请码只复位、绝不删除**。跑完要**看清理那几行**，不能只看最后一句"结果: N 通过"——
+   曾经因为只看了最后一行，让 14 个测试账号静默泄漏（详见私有库 `docs/PITFALLS.md` #33）。
 4. **数据库变更流程固定**：先备份 → 写 SQL 到 `db-backups/` → 记 `db-backups/CHANGELOG.md`
    → 执行 → 验证 → 写明回退方法。
 5. **涉及「RLS 策略收紧」的迁移，必须等新版前端上线后再执行**；加性变更可以先行。
