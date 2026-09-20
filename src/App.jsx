@@ -12,9 +12,11 @@ import RequireAuth from './components/RequireAuth'
 import { useAccess } from './lib/AuthContext'
 import { supabase } from './supabaseClient'
 import { subscribeToPush } from './lib/usePushNotification'
+import { useUnreadCount } from './lib/useUnreadCount'
 
 export default function App() {
   const { session, approved } = useAccess()
+  const unread = useUnreadCount(session && approved ? session.user.id : null)
 
   // 只有已激活账号才注册 Web Push 订阅
   useEffect(() => {
@@ -30,7 +32,12 @@ export default function App() {
         {session && approved && (
           <nav>
             <Link to="/publish">发布</Link>
-            <Link to="/chat">私聊</Link>
+            <Link to="/chat" className="nav-chat-link">
+              私聊
+              {unread > 0 && (
+                <span className="nav-unread-badge">{unread > 99 ? '99+' : unread}</span>
+              )}
+            </Link>
             <Link to="/profile">我</Link>
           </nav>
         )}

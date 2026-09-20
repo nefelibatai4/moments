@@ -16,9 +16,11 @@ function storagePathFromUrl(url) {
   return idx === -1 ? null : url.slice(idx + marker.length)
 }
 
-export default function MomentCard({ moment, onDeleted }) {
-  const [comments, setComments] = useState(moment.comments ?? [])
-  const [likes, setLikes] = useState(moment.likes ?? [])
+/**
+ * 评论和点赞的数据源在 Timeline（单一数据源），这样实时订阅拿到新数据后
+ * 能直接反映到卡片上；本组件只保留纯 UI 的开关状态。
+ */
+export default function MomentCard({ moment, onDeleted, onCommentAdded, onLikesChanged }) {
   const [commentBoxOpen, setCommentBoxOpen] = useState(false)
   const [anonCommentOpen, setAnonCommentOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -28,6 +30,8 @@ export default function MomentCard({ moment, onDeleted }) {
   const profile = moment.profiles
   const isAnon = !!moment.anon_nickname
   const displayName = moment.anon_nickname || (profile?.nickname ?? '匿名')
+  const comments = moment.comments ?? []
+  const likes = moment.likes ?? []
 
   async function handleDelete() {
     if (!window.confirm('确定要删除这条动态吗？')) return
@@ -79,7 +83,7 @@ export default function MomentCard({ moment, onDeleted }) {
             momentId={moment.id}
             session={session}
             likes={likes}
-            onLikesChanged={setLikes}
+            onLikesChanged={(next) => onLikesChanged?.(moment.id, next)}
             onRequestComment={() => { setCommentBoxOpen(true); setAnonCommentOpen(false) }}
             onRequestAnonymousComment={() => { setAnonCommentOpen(true); setCommentBoxOpen(false) }}
             isOwner={isOwner}
@@ -114,7 +118,7 @@ export default function MomentCard({ moment, onDeleted }) {
               comments={comments}
               open={commentBoxOpen}
               anonOpen={anonCommentOpen}
-              onCommentAdded={(c) => setComments((prev) => [...prev, c])}
+              onCommentAdded={(c) => onCommentAdded?.(moment.id, c)}
             />
           )}
         </div>
