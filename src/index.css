@@ -1216,16 +1216,18 @@ button:disabled {
 .chat-recall-btn {
   background: transparent;
   border: none;
-  color: var(--text-muted);
+  /* 撤回是破坏性操作，用 danger 红（与评论删除按钮一致） */
+  color: var(--accent-red);
   font-size: 0.72rem;
-  padding: 1px 4px;
+  font-weight: 500;
+  padding: 1px 5px;
   cursor: pointer;
   border-radius: 4px;
-  transition: color 0.15s ease;
+  transition: background 0.15s ease;
 }
 
 .chat-recall-btn:hover {
-  color: var(--accent-red);
+  background: hsla(0, 100%, 69%, 0.12);
 }
 
 /* 聊天历史分页 */
