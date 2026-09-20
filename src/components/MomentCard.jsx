@@ -20,11 +20,21 @@ function storagePathFromUrl(url) {
  * 评论和点赞的数据源在 Timeline（单一数据源），这样实时订阅拿到新数据后
  * 能直接反映到卡片上；本组件只保留纯 UI 的开关状态。
  */
-export default function MomentCard({ moment, onDeleted, onCommentAdded, onLikesChanged }) {
+export default function MomentCard({
+  moment,
+  onDeleted,
+  onCommentAdded,
+  onCommentDeleted,
+  onLikesChanged,
+  onMomentUpdated,
+}) {
   const [commentBoxOpen, setCommentBoxOpen] = useState(false)
   const [anonCommentOpen, setAnonCommentOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState(null)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(moment.content ?? '')
+  const [saving, setSaving] = useState(false)
   const session = useAuth()
   const isOwner = session && session.user.id === moment.user_id
   const profile = moment.profiles
@@ -32,6 +42,32 @@ export default function MomentCard({ moment, onDeleted, onCommentAdded, onLikesC
   const displayName = moment.anon_nickname || (profile?.nickname ?? '匿名')
   const comments = moment.comments ?? []
   const likes = moment.likes ?? []
+
+  function startEdit() {
+    setDraft(moment.content ?? '')
+    setDeleteError(null)
+    setEditing(true)
+  }
+
+  async function handleSaveEdit(e) {
+    e.preventDefault()
+    setSaving(true)
+    setDeleteError(null)
+    try {
+      const next = draft.trim()
+      const { error } = await supabase
+        .from('moments')
+        .update({ content: next || null })
+        .eq('id', moment.id)
+      if (error) throw error
+      onMomentUpdated?.(moment.id, { content: next || null })
+      setEditing(false)
+    } catch (err) {
+      setDeleteError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   async function handleDelete() {
     if (!window.confirm('确定要删除这条动态吗？')) return
@@ -87,13 +123,32 @@ export default function MomentCard({ moment, onDeleted, onCommentAdded, onLikesC
             onRequestComment={() => { setCommentBoxOpen(true); setAnonCommentOpen(false) }}
             onRequestAnonymousComment={() => { setAnonCommentOpen(true); setCommentBoxOpen(false) }}
             isOwner={isOwner}
+            onEdit={startEdit}
             onDelete={handleDelete}
             deleting={deleting}
           />
         )}
       </div>
 
-      {moment.content && <p className="moment-content">{moment.content}</p>}
+      {editing ? (
+        <form className="moment-edit-form" onSubmit={handleSaveEdit}>
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={3}
+            maxLength={1000}
+            autoFocus
+          />
+          <div className="moment-edit-actions">
+            <button type="submit" disabled={saving}>{saving ? '保存中…' : '保存'}</button>
+            <button type="button" className="ghost" onClick={() => setEditing(false)} disabled={saving}>
+              取消
+            </button>
+          </div>
+        </form>
+      ) : (
+        moment.content && <p className="moment-content">{moment.content}</p>
+      )}
 
       {moment.images?.length > 0 && (
         <div className={`moment-images ${moment.images.length === 1 ? 'single' : 'grid'}`}>
@@ -114,11 +169,13 @@ export default function MomentCard({ moment, onDeleted, onCommentAdded, onLikesC
           {session && (
             <CommentSection
               momentId={moment.id}
+              momentOwnerId={moment.user_id}
               session={session}
               comments={comments}
               open={commentBoxOpen}
               anonOpen={anonCommentOpen}
               onCommentAdded={(c) => onCommentAdded?.(moment.id, c)}
+              onCommentDeleted={(id) => onCommentDeleted?.(moment.id, id)}
             />
           )}
         </div>

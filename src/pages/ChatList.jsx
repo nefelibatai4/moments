@@ -36,7 +36,7 @@ export default function ChatList() {
         supabase.from('profiles').select('id, nickname, avatar_url').neq('id', me),
         supabase
           .from('messages')
-          .select('sender_id, recipient_id, content, created_at, read_at, image_url')
+          .select('sender_id, recipient_id, content, created_at, read_at, image_url, recalled_at')
           .or(`sender_id.eq.${me},recipient_id.eq.${me}`)
           .order('created_at', { ascending: false })
           .limit(500),
@@ -44,7 +44,8 @@ export default function ChatList() {
           .from('messages')
           .select('sender_id')
           .eq('recipient_id', me)
-          .is('read_at', null),
+          .is('read_at', null)
+          .is('recalled_at', null),
       ])
       if (profileRes.error) setError(profileRes.error.message)
       else {
@@ -57,7 +58,12 @@ export default function ChatList() {
         for (const m of (msgRes.data || [])) {
           const partnerId = m.sender_id === me ? m.recipient_id : m.sender_id
           if (!latestByPartner[partnerId]) {
-            latestByPartner[partnerId] = { content: m.content, created_at: m.created_at, image_url: m.image_url }
+            latestByPartner[partnerId] = {
+              content: m.content,
+              created_at: m.created_at,
+              image_url: m.image_url,
+              recalled_at: m.recalled_at,
+            }
           }
         }
 
@@ -65,6 +71,7 @@ export default function ChatList() {
           ...p,
           lastMsg: latestByPartner[p.id]?.content ?? null,
           lastImage: latestByPartner[p.id]?.image_url ?? null,
+          lastRecalled: !!latestByPartner[p.id]?.recalled_at,
           lastTime: latestByPartner[p.id]?.created_at ?? null,
           unread: unreadCounts[p.id] || 0,
         }))
@@ -116,9 +123,9 @@ export default function ChatList() {
                     {c.nickname}
                     {c.unread > 0 && <span className="chat-unread-badge">{c.unread > 99 ? '99+' : c.unread}</span>}
                   </span>
-                  {(c.lastMsg || c.lastImage) && (
+                  {(c.lastMsg || c.lastImage || c.lastRecalled) && (
                     <span className="chat-list-preview">
-                      {c.lastImage ? '[图片]' : truncate(c.lastMsg)}
+                      {c.lastRecalled ? '[已撤回]' : c.lastImage ? '[图片]' : truncate(c.lastMsg)}
                     </span>
                   )}
                 </span>

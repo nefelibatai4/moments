@@ -26,6 +26,7 @@ export function useUnreadCount(userId) {
         .select('id', { count: 'exact', head: true })
         .eq('recipient_id', userId)
         .is('read_at', null)
+        .is('recalled_at', null) // 已撤回的不算未读
 
       if (!cancelled && !error) setRawCount(n ?? 0)
     }

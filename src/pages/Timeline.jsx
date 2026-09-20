@@ -96,6 +96,18 @@ export default function Timeline() {
     setMoments((prev) => prev.map((m) => (m.id === momentId ? { ...m, likes } : m)))
   }, [])
 
+  const handleCommentDeleted = useCallback((momentId, commentId) => {
+    setMoments((prev) =>
+      prev.map((m) =>
+        m.id === momentId ? { ...m, comments: (m.comments ?? []).filter((c) => c.id !== commentId) } : m
+      )
+    )
+  }, [])
+
+  const handleMomentUpdated = useCallback((momentId, fields) => {
+    setMoments((prev) => prev.map((m) => (m.id === momentId ? { ...m, ...fields } : m)))
+  }, [])
+
   if (loading) return <p className="status-text">加载中…</p>
   if (error) return <p className="status-text">加载失败：{error}</p>
   if (moments.length === 0) return <p className="status-text">还没有动态。</p>
@@ -108,7 +120,9 @@ export default function Timeline() {
           moment={m}
           onDeleted={handleDeleted}
           onCommentAdded={handleCommentAdded}
+          onCommentDeleted={handleCommentDeleted}
           onLikesChanged={handleLikesChanged}
+          onMomentUpdated={handleMomentUpdated}
         />
       ))}
     </div>

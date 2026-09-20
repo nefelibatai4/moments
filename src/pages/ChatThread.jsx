@@ -4,6 +4,15 @@ import { supabase } from '../supabaseClient'
 import { useAuth } from '../lib/AuthContext'
 import { safeStorageKey } from '../lib/sanitizeFilename'
 
+// 撤回窗口：2 分钟内（与微信一致）
+const RECALL_WINDOW_MS = 2 * 60 * 1000
+
+function storagePathFromUrl(url) {
+  const marker = '/moment-images/'
+  const idx = url.indexOf(marker)
+  return idx === -1 ? null : url.slice(idx + marker.length)
+}
+
 function msgTimeLabel(iso) {
   const d = new Date(iso)
   const now = new Date()
@@ -27,6 +36,9 @@ export default function ChatThread() {
   const [error, setError] = useState(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [imageFile, setImageFile] = useState(null)
+  // 撤回按钮只在 2 分钟窗口内出现。用低频计时器驱动，让按钮在窗口过期后自行消失。
+  // （不在 render 里直接调 Date.now()，那会让渲染变成非纯函数）
+  const [now, setNow] = useState(() => Date.now())
   const msgListRef = useRef(null)
   const bottomRef = useRef(null)
   const me = session.user.id
@@ -106,9 +118,20 @@ export default function ChatThread() {
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload) => {
         const m = payload.new
-        if (m.sender_id === me && m.recipient_id === userId) {
-          setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, read_at: m.read_at } : x)))
-        }
+        const belongsToThread =
+          (m.sender_id === me && m.recipient_id === userId) ||
+          (m.sender_id === userId && m.recipient_id === me)
+        if (!belongsToThread) return
+
+        // UPDATE 有两个来源：对方标记已读、发送方撤回（content/image_url 会被清空）。
+        // 整行合并即可同时覆盖两种情况，且不再限定只有自己发的消息才处理。
+        setMessages((prev) =>
+          prev.map((x) =>
+            x.id === m.id
+              ? { ...x, read_at: m.read_at, recalled_at: m.recalled_at, content: m.content, image_url: m.image_url }
+              : x
+          )
+        )
       })
       .subscribe()
 
@@ -129,6 +152,11 @@ export default function ChatThread() {
     }
     el.addEventListener('scroll', onScroll, { passive: true })
     return () => el.removeEventListener('scroll', onScroll)
+  }, [])
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30000)
+    return () => clearInterval(timer)
   }, [])
 
   useEffect(() => {
@@ -168,6 +196,32 @@ export default function ChatThread() {
     }
   }
 
+  async function handleRecall(message) {
+    if (!window.confirm('撤回这条消息？对方将看不到内容。')) return
+    setError(null)
+    try {
+      // 顺带把图片从存储里删掉——撤回的语义是"真的删掉"，不只是前端隐藏
+      if (message.image_url) {
+        const path = storagePathFromUrl(message.image_url)
+        if (path) await supabase.storage.from('moment-images').remove([path])
+      }
+      const { error } = await supabase
+        .from('messages')
+        .update({ recalled_at: new Date().toISOString(), content: null, image_url: null })
+        .eq('id', message.id)
+      if (error) throw error
+      setMessages((prev) =>
+        prev.map((x) =>
+          x.id === message.id
+            ? { ...x, recalled_at: new Date().toISOString(), content: null, image_url: null }
+            : x
+        )
+      )
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
   if (loading) return <p className="status-text">加载中…</p>
 
   function handlePaste(e) {
@@ -183,7 +237,12 @@ export default function ChatThread() {
     }
   }
 
-  let lastTimeLabel = null
+  // 时间分组标签提前算好（纯计算，不在 JSX 里跨迭代改局部变量）
+  const rows = messages.map((m, i) => {
+    const label = msgTimeLabel(m.created_at)
+    const prevLabel = i > 0 ? msgTimeLabel(messages[i - 1].created_at) : null
+    return { message: m, label, showLabel: label !== prevLabel }
+  })
 
   return (
     <div className="chat-thread" onPaste={handlePaste}>
@@ -200,30 +259,43 @@ export default function ChatThread() {
       </div>
 
       <div className="chat-messages" ref={msgListRef}>
-        {messages.map((m) => {
-          const label = msgTimeLabel(m.created_at)
-          const showLabel = label !== lastTimeLabel
-          lastTimeLabel = label
+        {rows.map(({ message: m, label, showLabel }) => {
           const isMine = m.sender_id === me
+          const isRecalled = !!m.recalled_at
+          const canRecall =
+            isMine && !isRecalled && now - new Date(m.created_at).getTime() < RECALL_WINDOW_MS
 
           return (
             <div key={m.id}>
               {showLabel && <div className="chat-time-label">{label}</div>}
-              <div className={`chat-bubble-row ${isMine ? 'mine' : 'theirs'}`}>
-                <div className={`chat-bubble ${isMine ? 'mine' : 'theirs'}`}>
-                  {m.image_url && (
-                    <a href={m.image_url} target="_blank" rel="noopener noreferrer" className="chat-bubble-image">
-                      <img src={m.image_url} alt="" />
-                    </a>
-                  )}
-                  {m.content}
-                  {isMine && (
-                    <span className={`chat-read-status ${m.read_at ? 'read' : ''}`}>
-                      {m.read_at ? '✓✓' : '✓'}
-                    </span>
-                  )}
+              {isRecalled ? (
+                <div className="chat-recalled-line">
+                  {isMine ? '你撤回了一条消息' : '对方撤回了一条消息'}
                 </div>
-              </div>
+              ) : (
+                <div className={`chat-bubble-row ${isMine ? 'mine' : 'theirs'}`}>
+                  <div className={`chat-bubble ${isMine ? 'mine' : 'theirs'}`}>
+                    {m.image_url && (
+                      <a href={m.image_url} target="_blank" rel="noopener noreferrer" className="chat-bubble-image">
+                        <img src={m.image_url} alt="" />
+                      </a>
+                    )}
+                    {m.content}
+                    {isMine && (
+                      <span className={`chat-read-status ${m.read_at ? 'read' : ''}`}>
+                        {m.read_at ? '✓✓' : '✓'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+              {canRecall && (
+                <div className="chat-recall-row">
+                  <button type="button" className="chat-recall-btn" onClick={() => handleRecall(m)}>
+                    撤回
+                  </button>
+                </div>
+              )}
             </div>
           )
         })}
