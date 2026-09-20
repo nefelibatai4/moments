@@ -30,17 +30,39 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
 
-  const url = event.notification.data?.url || self.registration.scope
+  const scope = self.registration.scope
+  const targetUrl = event.notification.data?.url || scope
+
   event.waitUntil(
-    self.clients.matchAll({ type: 'window' }).then((clients) => {
-      for (const client of clients) {
-        if (client.url.includes('/moments/') && 'focus' in client) {
-          return client.focus()
+    (async () => {
+      // 复用已打开的本站窗口。注意必须先 navigate 到通知里的目标地址：
+      // 旧实现在这里只 focus，导致点"新私聊消息"只切到标签页、停在原页面，
+      // 通知携带的 /moments/chat/<id> 被丢掉了。
+      const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+
+      for (const client of clientList) {
+        let sameOrigin = false
+        try {
+          sameOrigin = new URL(client.url).origin === new URL(scope).origin
+        } catch {
+          sameOrigin = false
         }
+        if (!sameOrigin) continue
+
+        if ('navigate' in client) {
+          try {
+            const navigated = await client.navigate(targetUrl)
+            return (navigated || client).focus()
+          } catch (e) {
+            console.error('[SW] navigate failed:', e)
+          }
+        }
+        if ('focus' in client) return client.focus()
       }
+
       if (self.clients.openWindow) {
-        return self.clients.openWindow(url)
+        return self.clients.openWindow(targetUrl)
       }
-    })
+    })()
   )
 })

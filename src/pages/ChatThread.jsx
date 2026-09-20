@@ -277,7 +277,7 @@ export default function ChatThread() {
             }
           }}
         />
-        <button type="submit" disabled={sending || !content.trim()}>
+        <button type="submit" disabled={sending || (!content.trim() && !imageFile)}>
           {sending ? '…' : '发送'}
         </button>
       </form>

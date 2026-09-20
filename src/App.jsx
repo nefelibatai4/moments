@@ -4,29 +4,30 @@ import Timeline from './pages/Timeline'
 import Publish from './pages/Publish'
 import Login from './pages/Login'
 import Register from './pages/Register'
+import Activate from './pages/Activate'
 import Profile from './pages/Profile'
 import ChatList from './pages/ChatList'
 import ChatThread from './pages/ChatThread'
 import RequireAuth from './components/RequireAuth'
-import { useAuth } from './lib/AuthContext'
+import { useAccess } from './lib/AuthContext'
 import { supabase } from './supabaseClient'
 import { subscribeToPush } from './lib/usePushNotification'
 
 export default function App() {
-  const session = useAuth()
+  const { session, approved } = useAccess()
 
-  // 登录后自动注册 Web Push 订阅
+  // 只有已激活账号才注册 Web Push 订阅
   useEffect(() => {
-    if (session) {
+    if (session && approved) {
       subscribeToPush(supabase, session)
     }
-  }, [session])
+  }, [session, approved])
 
   return (
     <div className="app-container">
       <header className="app-header">
         <h1><Link to="/">动态</Link></h1>
-        {session && (
+        {session && approved && (
           <nav>
             <Link to="/publish">发布</Link>
             <Link to="/chat">私聊</Link>
@@ -38,6 +39,10 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route
+            path="/activate"
+            element={<RequireAuth requireApproved={false}><Activate /></RequireAuth>}
+          />
           <Route path="/" element={<RequireAuth><Timeline /></RequireAuth>} />
           <Route path="/publish" element={<RequireAuth><Publish /></RequireAuth>} />
           <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />

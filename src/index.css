@@ -575,6 +575,32 @@ button:disabled {
   color: var(--text-muted);
 }
 
+/* 未激活账号页（/activate） */
+.activate-form {
+  gap: 14px;
+}
+
+.activate-hint {
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  letter-spacing: 0.2px;
+}
+
+/* .login-form button 会把所有按钮刷成主按钮样式，这里覆盖成次级按钮 */
+.login-form .ghost-button,
+.login-form .ghost-button:hover {
+  background: var(--btn-ghost-bg);
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-strong);
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.login-form .ghost-button:hover {
+  opacity: 0.7;
+}
+
 /* 我 / 个人资料页 */
 .profile-page {
   max-width: 420px;
