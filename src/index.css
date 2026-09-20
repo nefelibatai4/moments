@@ -536,6 +536,61 @@ button:disabled {
   background: hsla(0, 100%, 69%, 0.12);
 }
 
+/* ── 评论点赞 / 回复 ── */
+
+/* 每条评论下面那一行小操作（点赞、回复） */
+.comment-actions {
+  display: inline-flex;
+  gap: 10px;
+  margin-left: 8px;
+  vertical-align: baseline;
+}
+
+.comment-like-btn,
+.comment-reply-btn {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.comment-like-btn:hover,
+.comment-reply-btn:hover {
+  color: var(--text-secondary);
+}
+
+.comment-like-btn.liked {
+  color: var(--accent-red);
+}
+
+/* 回复缩进一级，视觉上从属于上面那条评论 */
+.comment-item-reply {
+  margin-left: 22px;
+}
+
+.comment-list-nested {
+  margin: 0;
+}
+
+.comment-reply-form {
+  margin-left: 22px;
+}
+
+/* .comment-form button 会把按钮刷成主按钮样式，这里把"取消"改成次级按钮 */
+.comment-reply-form button.ghost {
+  background: transparent;
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-strong);
+  font-weight: 500;
+}
+
+.comment-reply-form button.ghost:hover {
+  opacity: 0.7;
+}
+
 .comment-form {
   display: flex;
   gap: 8px;

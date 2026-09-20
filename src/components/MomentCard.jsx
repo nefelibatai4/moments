@@ -25,6 +25,7 @@ export default function MomentCard({
   onDeleted,
   onCommentAdded,
   onCommentDeleted,
+  onCommentLikeChanged,
   onLikesChanged,
   onMomentUpdated,
 }) {
@@ -183,6 +184,7 @@ export default function MomentCard({
               anonOpen={anonCommentOpen}
               onCommentAdded={(c) => onCommentAdded?.(moment.id, c)}
               onCommentDeleted={(id) => onCommentDeleted?.(moment.id, id)}
+              onCommentLikeChanged={(id, likes) => onCommentLikeChanged?.(moment.id, id, likes)}
             />
           )}
         </div>

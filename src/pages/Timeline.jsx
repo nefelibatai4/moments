@@ -4,7 +4,7 @@ import MomentCard from '../components/MomentCard'
 import MomentSkeleton from '../components/MomentSkeleton'
 
 const MOMENT_SELECT =
-  '*, profiles!moments_user_id_fkey(nickname, avatar_url), likes(user_id, profiles(nickname)), comments(*, profiles(nickname, avatar_url))'
+  '*, profiles!moments_user_id_fkey(nickname, avatar_url), likes(user_id, profiles(nickname)), comments(*, profiles(nickname, avatar_url), comment_likes(user_id))'
 
 const PAGE_SIZE = 15
 
@@ -56,6 +56,18 @@ export default function Timeline() {
       setMoments((prev) => prev.map((m) => (m.id === id ? fresh : m)))
     }
 
+    // 评论点赞的实时事件只带 comment_id，不带 moment_id，
+    // 所以先查出它属于哪条动态，再刷新那一条。
+    async function patchMomentByComment(commentId) {
+      const { data, error: lookupError } = await supabase
+        .from('comments')
+        .select('moment_id')
+        .eq('id', commentId)
+        .single()
+      if (cancelled || lookupError || !data) return
+      await patchMoment(data.moment_id)
+    }
+
     // 频道名带随机后缀：StrictMode 下会挂载两次，避免同名频道互相干扰
     const channel = supabase
       .channel(`timeline-${Math.random().toString(36).slice(2)}`)
@@ -84,6 +96,12 @@ export default function Timeline() {
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'likes' }, (payload) => {
         if (payload.old?.moment_id) patchMoment(payload.old.moment_id)
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'comment_likes' }, (payload) => {
+        if (payload.new?.comment_id) patchMomentByComment(payload.new.comment_id)
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'comment_likes' }, (payload) => {
+        if (payload.old?.comment_id) patchMomentByComment(payload.old.comment_id)
       })
       .subscribe()
 
@@ -157,7 +175,27 @@ export default function Timeline() {
   const handleCommentDeleted = useCallback((momentId, commentId) => {
     setMoments((prev) =>
       prev.map((m) =>
-        m.id === momentId ? { ...m, comments: (m.comments ?? []).filter((c) => c.id !== commentId) } : m
+        // 删掉评论本身，同时把它下面的回复一起移除
+        // （数据库是级联删除，本地状态也要跟上，否则会留下孤儿回复）
+        m.id === momentId
+          ? { ...m, comments: (m.comments ?? []).filter((c) => c.id !== commentId && c.parent_id !== commentId) }
+          : m
+      )
+    )
+  }, [])
+
+  // 评论点赞：把某条评论的点赞数组换掉
+  const handleCommentLikeChanged = useCallback((momentId, commentId, likes) => {
+    setMoments((prev) =>
+      prev.map((m) =>
+        m.id === momentId
+          ? {
+              ...m,
+              comments: (m.comments ?? []).map((c) =>
+                c.id === commentId ? { ...c, comment_likes: likes } : c
+              ),
+            }
+          : m
       )
     )
   }, [])
@@ -179,6 +217,7 @@ export default function Timeline() {
           onDeleted={handleDeleted}
           onCommentAdded={handleCommentAdded}
           onCommentDeleted={handleCommentDeleted}
+          onCommentLikeChanged={handleCommentLikeChanged}
           onLikesChanged={handleLikesChanged}
           onMomentUpdated={handleMomentUpdated}
         />
