@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../lib/AuthContext'
 import { safeStorageKey } from '../lib/sanitizeFilename'
+import { compressImage } from '../lib/compressImage'
 
 export default function Publish() {
   const session = useAuth()
@@ -15,6 +16,7 @@ export default function Publish() {
   const [anonMode, setAnonMode] = useState(false)
   const [anonNickname, setAnonNickname] = useState('')
   const [error, setError] = useState(null)
+  const [uploadHint, setUploadHint] = useState(null)
 
   function handleGetLocation() {
     if (!navigator.geolocation) {
@@ -45,11 +47,16 @@ export default function Publish() {
 
     try {
       const imageUrls = []
+      let index = 0
       for (const file of files) {
-        const path = safeStorageKey(session.user.id, file.name)
+        index += 1
+        setUploadHint(files.length > 1 ? `处理图片 ${index}/${files.length}…` : '处理图片…')
+        // 先压缩再上传：手机原图常有几 MB，直接传很快会吃满 Storage 配额
+        const prepared = await compressImage(file)
+        const path = safeStorageKey(session.user.id, prepared.name)
         const { error: uploadError } = await supabase.storage
           .from('moment-images')
-          .upload(path, file)
+          .upload(path, prepared, { contentType: prepared.type })
         if (uploadError) throw uploadError
 
         const { data: publicUrlData } = supabase.storage
@@ -57,6 +64,7 @@ export default function Publish() {
           .getPublicUrl(path)
         imageUrls.push(publicUrlData.publicUrl)
       }
+      setUploadHint(null)
 
       const { error: insertError } = await supabase.from('moments').insert({
         content: content.trim() || null,
@@ -72,6 +80,7 @@ export default function Publish() {
     } catch (err) {
       setError(err.message)
     } finally {
+      setUploadHint(null)
       setSubmitting(false)
     }
   }
@@ -113,6 +122,7 @@ export default function Publish() {
         )}
       </div>
       {error && <p className="error-text">{error}</p>}
+      {uploadHint && <p className="status-text">{uploadHint}</p>}
       <button type="submit" disabled={submitting}>
         {submitting ? '发布中…' : '发布'}
       </button>

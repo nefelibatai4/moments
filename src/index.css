@@ -1228,6 +1228,39 @@ button:disabled {
   color: var(--accent-red);
 }
 
+/* 聊天历史分页 */
+.chat-load-older-row {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0 8px;
+}
+
+.chat-load-older-btn {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--text-tertiary);
+  border-radius: 86px;
+  padding: 4px 14px;
+  font-size: 0.76rem;
+  cursor: pointer;
+  transition: color 0.15s ease, opacity 0.15s ease;
+}
+
+.chat-load-older-btn:hover {
+  color: var(--text-primary);
+  opacity: 0.85;
+}
+
+/* 时间线分页 */
+.timeline-sentinel {
+  height: 1px;
+}
+
+.timeline-end {
+  text-align: center;
+  padding: 8px 0 4px;
+}
+
 .chat-scroll-btn {
   position: absolute;
   bottom: 64px;

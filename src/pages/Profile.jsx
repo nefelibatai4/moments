@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../lib/AuthContext'
 import { getTheme, setTheme } from '../lib/theme'
+import { compressImage } from '../lib/compressImage'
 
 export default function Profile() {
   const session = useAuth()
@@ -43,10 +44,12 @@ export default function Profile() {
     setUploadingAvatar(true)
     setError(null)
     try {
+      // 头像显示尺寸很小，压到 512 足够，也省 Storage
+      const prepared = await compressImage(file, { maxDim: 512, quality: 0.85 })
       const path = `${session.user.id}/avatar`
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(path, file, { upsert: true, contentType: file.type })
+        .upload(path, prepared, { upsert: true, contentType: prepared.type })
       if (uploadError) throw uploadError
 
       const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(path)

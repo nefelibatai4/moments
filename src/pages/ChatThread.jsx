@@ -3,9 +3,12 @@ import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../lib/AuthContext'
 import { safeStorageKey } from '../lib/sanitizeFilename'
+import { compressImage } from '../lib/compressImage'
 
 // 撤回窗口：2 分钟内（与微信一致）
 const RECALL_WINDOW_MS = 2 * 60 * 1000
+// 聊天历史每次加载的条数
+const PAGE_SIZE = 50
 
 function storagePathFromUrl(url) {
   const marker = '/moment-images/'
@@ -32,6 +35,8 @@ export default function ChatThread() {
   const [messages, setMessages] = useState([])
   const [content, setContent] = useState('')
   const [loading, setLoading] = useState(true)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingOlder, setLoadingOlder] = useState(false)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
@@ -71,19 +76,27 @@ export default function ChatThread() {
     }
 
     async function load() {
+      // 只取最近一页，进来就能用；更早的历史按需加载。
+      // 用 desc + limit 拿最新 N 条，再反转成时间正序展示。
       const [profileRes, messagesRes] = await Promise.all([
         supabase.from('profiles').select('id, nickname, avatar_url').eq('id', userId).single(),
         supabase
           .from('messages')
           .select('*')
           .or(`and(sender_id.eq.${me},recipient_id.eq.${userId}),and(sender_id.eq.${userId},recipient_id.eq.${me})`)
-          .order('created_at'),
+          .order('created_at', { ascending: false })
+          .limit(PAGE_SIZE),
       ])
       if (cancelled) return
       if (profileRes.error) setError(profileRes.error.message)
       else setOtherProfile(profileRes.data)
-      if (messagesRes.error) setError(messagesRes.error.message)
-      else setMessages(messagesRes.data)
+      if (messagesRes.error) {
+        setError(messagesRes.error.message)
+      } else {
+        const page = messagesRes.data ?? []
+        setMessages(page.slice().reverse())
+        setHasMore(page.length === PAGE_SIZE)
+      }
       setLoading(false)
 
       // Mark incoming messages as read only if the page is actually in front of the user
@@ -159,11 +172,47 @@ export default function ChatThread() {
     return () => clearInterval(timer)
   }, [])
 
+  // 只在新消息到达（末条变化）时贴底；向上加载历史时不要抢滚动位置
+  const lastMessageId = messages[messages.length - 1]?.id
   useEffect(() => {
     const el = msgListRef.current
-    if (!el || messages.length === 0) return
+    if (!el || !lastMessageId) return
     el.scrollTop = el.scrollHeight
-  }, [messages])
+  }, [lastMessageId])
+
+  async function loadOlder() {
+    if (loadingOlder || !hasMore) return
+    const oldest = messages[0]?.created_at
+    if (!oldest) return
+
+    setLoadingOlder(true)
+    const el = msgListRef.current
+    // 记下插入前的高度与滚动位置，插入后把视口锚回原处，避免内容"跳走"
+    const prevHeight = el?.scrollHeight ?? 0
+    const prevTop = el?.scrollTop ?? 0
+
+    const { data, error: olderError } = await supabase
+      .from('messages')
+      .select('*')
+      .or(`and(sender_id.eq.${me},recipient_id.eq.${userId}),and(sender_id.eq.${userId},recipient_id.eq.${me})`)
+      .order('created_at', { ascending: false })
+      .lt('created_at', oldest)
+      .limit(PAGE_SIZE)
+
+    if (olderError) {
+      setError(olderError.message)
+    } else {
+      const older = (data ?? []).slice().reverse()
+      setMessages((prev) => [...older, ...prev])
+      setHasMore((data?.length ?? 0) === PAGE_SIZE)
+    }
+    setLoadingOlder(false)
+
+    requestAnimationFrame(() => {
+      const node = msgListRef.current
+      if (node) node.scrollTop = prevTop + (node.scrollHeight - prevHeight)
+    })
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -173,10 +222,11 @@ export default function ChatThread() {
     try {
       let imageUrl = null
       if (imageFile) {
-        const path = safeStorageKey(me, imageFile.name)
+        const prepared = await compressImage(imageFile)
+        const path = safeStorageKey(me, prepared.name)
         const { error: uploadError } = await supabase.storage
           .from('moment-images')
-          .upload(path, imageFile)
+          .upload(path, prepared, { contentType: prepared.type })
         if (uploadError) throw uploadError
         const { data: publicUrlData } = supabase.storage
           .from('moment-images')
@@ -259,6 +309,13 @@ export default function ChatThread() {
       </div>
 
       <div className="chat-messages" ref={msgListRef}>
+        {hasMore && (
+          <div className="chat-load-older-row">
+            <button type="button" className="chat-load-older-btn" onClick={loadOlder} disabled={loadingOlder}>
+              {loadingOlder ? '加载中…' : '加载更早的消息'}
+            </button>
+          </div>
+        )}
         {rows.map(({ message: m, label, showLabel }) => {
           const isMine = m.sender_id === me
           const isRecalled = !!m.recalled_at

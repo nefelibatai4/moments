@@ -1,14 +1,21 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import MomentCard from '../components/MomentCard'
 
 const MOMENT_SELECT =
   '*, profiles!moments_user_id_fkey(nickname, avatar_url), likes(user_id, profiles(nickname)), comments(*, profiles(nickname, avatar_url))'
 
+const PAGE_SIZE = 15
+
 export default function Timeline() {
   const [moments, setMoments] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
   const [error, setError] = useState(null)
+  // 用回调 ref 而不是 useRef：首屏渲染的是"加载中…"，哨兵元素还没进 DOM，
+  // 用 useRef + [] 依赖的 effect 会在挂载时拿到 null，观察器就永远不生效了。
+  const [sentinelEl, setSentinelEl] = useState(null)
 
   // 取单条动态的完整嵌套数据（实时事件只带原始行，没有 join 出来的昵称/头像）
   const fetchMoment = useCallback(async (id) => {
@@ -28,10 +35,15 @@ export default function Timeline() {
         .from('moments')
         .select(MOMENT_SELECT)
         .order('created_at', { ascending: false })
+        .limit(PAGE_SIZE)
 
       if (cancelled) return
-      if (loadError) setError(loadError.message)
-      else setMoments(data)
+      if (loadError) {
+        setError(loadError.message)
+      } else {
+        setMoments(data ?? [])
+        setHasMore((data?.length ?? 0) === PAGE_SIZE)
+      }
       setLoading(false)
     }
     load()
@@ -80,6 +92,51 @@ export default function Timeline() {
     }
   }, [fetchMoment])
 
+  // 用 created_at 游标翻页，而不是 offset：
+  // 翻页过程中别人发了新动态时，offset 会漏读或重复，游标不会。
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore) return
+    const oldest = moments[moments.length - 1]?.created_at
+    if (!oldest) return
+
+    setLoadingMore(true)
+    const { data, error: moreError } = await supabase
+      .from('moments')
+      .select(MOMENT_SELECT)
+      .order('created_at', { ascending: false })
+      .lt('created_at', oldest)
+      .limit(PAGE_SIZE)
+
+    if (moreError) {
+      setError(moreError.message)
+    } else {
+      setMoments((prev) => {
+        const seen = new Set(prev.map((m) => m.id))
+        return [...prev, ...(data ?? []).filter((m) => !seen.has(m.id))]
+      })
+      setHasMore((data?.length ?? 0) === PAGE_SIZE)
+    }
+    setLoadingMore(false)
+  }, [moments, loadingMore, hasMore])
+
+  // 观察器只挂一次，通过 ref 取到最新的 loadMore，避免频繁重建观察器
+  const loadMoreRef = useRef(loadMore)
+  useEffect(() => {
+    loadMoreRef.current = loadMore
+  }, [loadMore])
+
+  useEffect(() => {
+    if (!sentinelEl || typeof IntersectionObserver !== 'function') return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) loadMoreRef.current()
+      },
+      { rootMargin: '300px' }
+    )
+    observer.observe(sentinelEl)
+    return () => observer.disconnect()
+  }, [sentinelEl])
+
   function handleDeleted(id) {
     setMoments((prev) => prev.filter((m) => m.id !== id))
   }
@@ -125,6 +182,9 @@ export default function Timeline() {
           onMomentUpdated={handleMomentUpdated}
         />
       ))}
+      <div ref={setSentinelEl} className="timeline-sentinel" />
+      {loadingMore && <p className="status-text">加载更多…</p>}
+      {!hasMore && <p className="status-text timeline-end">没有更多了</p>}
     </div>
   )
 }
