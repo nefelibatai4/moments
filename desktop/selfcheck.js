@@ -39,6 +39,7 @@ module.exports = function selfcheck(win) {
             bodyRadius: body.borderRadius,
             hasHeader: Boolean(header),
             headerAppRegion: header ? getComputedStyle(header).webkitAppRegion : null,
+            headerPosition: header ? getComputedStyle(header).position : null,
             headerUserSelect: header ? getComputedStyle(header).userSelect : null,
           }
         })()`)
@@ -56,6 +57,10 @@ module.exports = function selfcheck(win) {
 
       // 生效的最硬证据：这条规则只可能来自 shell.css
       ok = report('导航栏被设成拖拽把手（-webkit-app-region: drag）', probe.headerAppRegion === 'drag', String(probe.headerAppRegion)) && ok
+
+      // 吸顶很关键：不吸顶的话，长聊天里把手会滚出视野，就再也拖不动窗口了。
+      // sticky 会被祖先元素的 overflow 破坏，所以这条必须在真实页面上验。
+      ok = report('导航栏吸顶（长聊天里把手不会滚走）', probe.headerPosition === 'sticky', String(probe.headerPosition)) && ok
 
       ok = report('导航栏禁用了文字选择（拖拽时不选中文字）', probe.headerUserSelect === 'none', String(probe.headerUserSelect)) && ok
 
