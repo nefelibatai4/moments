@@ -1,0 +1,15 @@
+{
+  "name": "moments-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Moments 私聊的 macOS 桌宠外壳（Electron）——毛玻璃、可拖拽、始终置顶",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "start:dev": "MOMENTS_URL=http://localhost:5173/moments/chat electron .",
+    "verify": "MOMENTS_SELFCHECK=1 electron ."
+  },
+  "devDependencies": {
+    "electron": "^44.4.3"
+  }
+}
