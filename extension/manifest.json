@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "Moments 私密圈",
+  "version": "0.1.0",
+  "description": "未读私信角标 + 快捷面板，不用切换标签页就能看动态、回私信",
+  "permissions": ["storage", "alarms"],
+  "host_permissions": [
+    "https://pshscdqhhsktrpzkbmei.supabase.co/*",
+    "https://nefelibatai4.github.io/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://nefelibatai4.github.io/moments/*",
+        "http://localhost:5173/moments/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Moments 私密圈",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

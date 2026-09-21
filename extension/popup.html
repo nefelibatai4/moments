@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>Moments 私密圈</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <!-- 顶部状态条：一眼看出角标数字是新是旧、会话有没有同步上 -->
+    <div class="status-bar">
+      <span class="dot" id="dot"></span>
+      <span class="status-text" id="statusText">检查中…</span>
+      <button class="refresh" id="refreshBtn" title="立即刷新">↻</button>
+    </div>
+
+    <!--
+      面板主体直接嵌线上网页，所以发布动态、回私信、点赞这些功能全都有，
+      扩展这边不需要重写一套 UI。
+
+      allow="clipboard-read; clipboard-write" 是必需的：
+      聊天支持「粘贴图片」，而跨源 iframe 默认拿不到剪贴板读取权限。
+    -->
+    <iframe
+      id="frame"
+      src="https://nefelibatai4.github.io/moments/chat"
+      allow="clipboard-read; clipboard-write"
+    ></iframe>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

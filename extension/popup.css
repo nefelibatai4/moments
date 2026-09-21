@@ -1,0 +1,96 @@
+/* popup 的样式。配色直接沿用 app 的深色主题变量，视觉上是同一个产品。
+   这里刻意不跟随系统深浅色：网页本身默认就是深色，状态条跟着深色才一致。 */
+:root {
+  --bg-page: #07080a;
+  --text-primary: #f9f9f9;
+  --text-secondary: #cecece;
+  --text-tertiary: #9c9c9d;
+  --text-muted: #6a6b6c;
+  --accent-red: #ff6363;
+  --accent-green: #5fc992;
+  --border-standard: rgba(255, 255, 255, 0.08);
+  --btn-secondary-hover: rgba(255, 255, 255, 0.06);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  width: 400px;
+  /* Chrome 的 popup 最高 600px，留一点余量 */
+  height: 580px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-page);
+  color: var(--text-primary);
+  font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+  font-size: 13px;
+  overflow: hidden;
+}
+
+.status-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-standard);
+}
+
+.dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.dot.ok {
+  background: var(--accent-green);
+}
+
+.dot.warn {
+  background: var(--accent-red);
+}
+
+.status-text {
+  flex: 1 1 auto;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.refresh {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border-standard);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.refresh:hover {
+  background: var(--btn-secondary-hover);
+}
+
+.refresh:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* 面板主体：整个线上网页 */
+iframe {
+  flex: 1 1 auto;
+  width: 100%;
+  border: 0;
+  background: transparent;
+}
