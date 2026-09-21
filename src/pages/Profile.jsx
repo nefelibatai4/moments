@@ -5,6 +5,15 @@ import { useAuth } from '../lib/AuthContext'
 import { getTheme, setTheme } from '../lib/theme'
 import { compressImage } from '../lib/compressImage'
 
+// 扩展只能在桌面版 Chrome 里安装：iOS 壳里没有「解压 + 装扩展」这个概念。
+// 原生端不显示下载按钮，但也不让它静默消失（那样会被当成 bug），改显示一句该去哪做。
+//
+// 为什么用构建期开关而不是 Capacitor.isNativePlatform()：
+// 那只是句平台判断，为此把 @capacitor/core 整个运行时（CapacitorHttp、
+// CapacitorCookies、插件注册表…）打进【我】这个路由 chunk 不划算。
+// VITE_APP_NATIVE 只在 build:app 里设置，是常量，无用分支会被直接摇掉。
+const isNative = import.meta.env.VITE_APP_NATIVE === '1'
+
 export default function Profile() {
   const session = useAuth()
   const navigate = useNavigate()
@@ -193,6 +202,30 @@ export default function Profile() {
           {generatingInvite ? '生成中…' : '生成邀请码'}
         </button>
         {inviteCode && <p className="invite-code-display">邀请码：<strong>{inviteCode}</strong></p>}
+      </div>
+
+      <div className="share-section">
+        <h3>给朋友用</h3>
+        {isNative ? (
+          <p className="share-hint">
+            Chrome 扩展只能在电脑上安装。请在电脑上打开本网页，登录后在「我」里下载。
+          </p>
+        ) : (
+          <>
+            <p className="share-hint">
+              下载扩展压缩包发给朋友。解压后打开 <code>chrome://extensions/</code>，开启右上角
+              「开发者模式」，点「加载已解压的扩展程序」，选择解压出来的{' '}
+              <code>moments-extension</code> 文件夹即可。注册还需要一个邀请码。
+            </p>
+            <a
+              className="share-download"
+              href={`${import.meta.env.BASE_URL}moments-extension.zip`}
+              download="moments-extension.zip"
+            >
+              下载扩展（.zip）
+            </a>
+          </>
+        )}
       </div>
 
       <div className="theme-section">

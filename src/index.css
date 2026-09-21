@@ -909,6 +909,55 @@ button:disabled {
   color: var(--text-primary);
 }
 
+/* 给朋友用：扩展下载 */
+.share-section {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 16px;
+  margin-bottom: 20px;
+}
+
+.share-section h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.share-hint {
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.share-hint code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--border-subtle);
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+/* 用 <a> 做按钮：download 属性需要它是链接 */
+.share-download {
+  display: inline-block;
+  border: none;
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  border-radius: 86px;
+  padding: 8px 20px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-decoration: none;
+}
+
+.share-download:hover {
+  opacity: 0.85;
+}
+
 /* 主题切换 */
 .theme-section {
   border-top: 1px solid var(--border-subtle);

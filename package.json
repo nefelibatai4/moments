@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "node build-extension-zip.mjs",
     "build": "vite build",
-    "build:app": "cross-env VITE_APP_BASE=/ vite build",
+    "build:app": "cross-env VITE_APP_BASE=/ VITE_APP_NATIVE=1 vite build",
     "cap:sync": "npm run build:app && cap sync ios",
     "cap:open": "cap open ios",
     "lint": "oxlint",
