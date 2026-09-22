@@ -62,4 +62,28 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.status) render(changes.status.newValue)
 })
 
-load()
+// ⚠️ 光靠 background 的每分钟轮询不够（2026-09-22 使用者反馈）：
+// 点开面板把消息读完 → 数据库里的未读**已经清零**了（面板里的网页会标记已读），
+// 但状态条和工具栏角标要等下一次 alarm 才变，于是"读完了还显示有未读"。
+// 所以面板打开期间自己加密到 5 秒一次：打开时立刻刷一次，之后每 5 秒刷一次。
+// 面板一关，这个 timer 随页面销毁，不会在后台空转、也不影响耗电。
+const LIVE_POLL_MS = 5000
+let liveTimer = null
+
+async function refreshNow() {
+  try {
+    await chrome.runtime.sendMessage({ type: 'refresh' })
+  } catch {
+    /* 后台暂时没醒（MV3 的 service worker 会被回收），下一轮会补上 */
+  }
+  await load()
+}
+
+;(async () => {
+  await refreshNow() // 别让使用者一进来就看到上一次的旧数字
+  liveTimer = setInterval(refreshNow, LIVE_POLL_MS)
+})()
+
+window.addEventListener('unload', () => {
+  if (liveTimer) clearInterval(liveTimer)
+})

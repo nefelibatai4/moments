@@ -25,6 +25,9 @@
 }
 
 :root {
+  /* 页面顶部留白。归属权在 .app-header（它要吸顶），不再由 .app-container 出，
+     否则吸顶时 header 上方会漏出一条缝、滚上去的内容从缝里透出来。 */
+  --app-pad-top: calc(40px + env(safe-area-inset-top, 0px));
   --bg-page: #07080a;
   --bg-card: #101111;
   --bg-elevated: #191a1b;
@@ -126,16 +129,27 @@ button:disabled {
 .app-container {
   max-width: 680px;
   margin: 0 auto;
-  padding: calc(40px + env(safe-area-inset-top, 0px)) 20px calc(60px + env(safe-area-inset-bottom, 0px));
+  padding: 0 20px calc(60px + env(safe-area-inset-bottom, 0px));
 }
 
 .app-header {
+  /* 吸顶：往下刷动态时【动态/发布/私聊/我】始终可见，
+     不用为了点「私聊」再滚回顶部（等于表格里的冻结首行）。
+     顶部留白由它自己出（--app-pad-top），这样吸顶后上方不留缝。 */
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  padding-top: var(--app-pad-top);
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   border-bottom: 1px solid var(--border-standard);
   padding-bottom: 16px;
   margin-bottom: 32px;
+  /* 吸顶后必须有底色，否则下面滚上来的内容会从文字之间透出来；
+     backdrop-filter 在这里模糊的是页面内内容，正是它的合理用法。 */
+  background-color: color-mix(in srgb, var(--bg-page) 86%, transparent);
+  backdrop-filter: blur(12px);
 }
 
 .app-header h1 {
@@ -1832,8 +1846,12 @@ button:disabled {
     font-size: 15px;
   }
 
+  :root {
+    --app-pad-top: calc(24px + env(safe-area-inset-top, 0px));
+  }
+
   .app-container {
-    padding: calc(24px + env(safe-area-inset-top, 0px)) 16px calc(40px + env(safe-area-inset-bottom, 0px));
+    padding: 0 16px calc(40px + env(safe-area-inset-bottom, 0px));
   }
 
   .moment-images.grid {
