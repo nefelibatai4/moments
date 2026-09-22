@@ -479,6 +479,7 @@ button:disabled {
 }
 
 .comment-item {
+  position: relative; /* ⋯ 菜单的定位锚点 */
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -516,54 +517,150 @@ button:disabled {
   color: var(--text-primary);
 }
 
-/* 评论删除（评论作者或动态作者可见） */
-.comment-delete {
-  flex: none;
-  align-self: center;
-  background: transparent;
+/* ── 评论 ⋯ 操作菜单（点赞 / 回复 / 编辑 / 删除） ──
+   与私信的 .chat-msg-menu 同一套交互模式：hover 显形、触屏常显、
+   菜单面板样式共用同一组视觉变量。 */
+
+/* 菜单容器：锚在评论行的右上角 */
+.comment-menu-wrap {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 6;
+}
+
+/* ⋯ 按钮：默认隐藏，hover 评论行或键盘聚焦时出现 */
+.comment-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
   border: none;
-  color: var(--text-muted);
-  font-size: 1.05rem;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.28);
+  color: #fff;
+  font-size: 0.8rem;
   line-height: 1;
-  padding: 2px 6px;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.comment-item:hover .comment-more,
+.comment-more:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 触屏没有 hover：常显（PITFALLS #42——只在 hover 出现的入口在触屏上等于不存在） */
+@media (hover: none) {
+  .comment-more {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* 菜单面板：与 .chat-msg-menu 同一视觉 */
+.comment-menu {
+  position: absolute;
+  top: 22px;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 84px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-standard);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+.comment-menu button {
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  font-size: 0.85rem;
+  padding: 7px 10px;
   border-radius: 6px;
   cursor: pointer;
-  transition: color 0.15s ease, background 0.15s ease;
+  white-space: nowrap;
 }
 
-.comment-delete:hover {
+.comment-menu button:hover {
+  background: var(--btn-secondary-hover);
+}
+
+.comment-menu button.danger {
   color: var(--accent-red);
-  background: hsla(0, 100%, 69%, 0.12);
 }
 
-/* ── 评论点赞 / 回复 ── */
-
-/* 每条评论下面那一行小操作（点赞、回复） */
-.comment-actions {
-  display: inline-flex;
-  gap: 10px;
+/* 点赞数：纯文字（操作在 ⋯ 菜单里），自己赞过则标红 */
+.comment-likes-count {
   margin-left: 8px;
-  vertical-align: baseline;
-}
-
-.comment-like-btn,
-.comment-reply-btn {
-  background: transparent;
-  border: none;
-  padding: 0;
   font-size: 0.76rem;
   color: var(--text-muted);
-  cursor: pointer;
-  transition: color 0.15s ease;
 }
 
-.comment-like-btn:hover,
-.comment-reply-btn:hover {
-  color: var(--text-secondary);
-}
-
-.comment-like-btn.liked {
+.comment-likes-count.liked {
   color: var(--accent-red);
+}
+
+/* 「已编辑」标记 */
+.comment-edited-tag {
+  margin-left: 5px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* 内联编辑：textarea + 保存/取消 */
+.comment-edit {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.comment-edit-input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border-standard);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-family: inherit;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.comment-edit-input:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+
+.comment-edit-actions {
+  display: inline-flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.comment-edit-actions button {
+  background: transparent;
+  border: 1px solid var(--border-standard);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.comment-edit-actions button.primary {
+  background: var(--accent-blue);
+  border-color: var(--accent-blue);
+  color: #fff;
 }
 
 /* 回复缩进一级，视觉上从属于上面那条评论 */

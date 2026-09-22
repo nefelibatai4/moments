@@ -1,10 +1,14 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 
 // 评论的显示名：nickname 有值说明是匿名评论，优先用它
 function commentName(c) {
   return c.nickname ?? c.profiles?.nickname ?? '匿名'
 }
+
+// 编辑窗口：2 分钟内（与私信编辑/撤回一致）。
+// 服务端 protect_comment_fields() 里有同一份强制，这里只控制入口出不出来。
+const EDIT_WINDOW_MS = 2 * 60 * 1000
 
 /**
  * 把扁平评论整理成「顶层评论 + 它下面的回复」。
@@ -45,6 +49,7 @@ export default function CommentSection({
   anonOpen,
   onCommentAdded,
   onCommentDeleted,
+  onCommentUpdated,
   onCommentLikeChanged,
 }) {
   const [content, setContent] = useState('')
@@ -56,13 +61,46 @@ export default function CommentSection({
   const [deletingId, setDeletingId] = useState(null)
   const [likingId, setLikingId] = useState(null)
   const [error, setError] = useState(null)
+  // ⋯ 操作菜单展开在哪条评论上；null = 全收起
+  const [menuFor, setMenuFor] = useState(null)
+  // 正在内联编辑的评论：{ id, text }
+  const [editing, setEditing] = useState(null)
+  // 编辑入口只在 2 分钟窗口内出现。用低频计时器驱动，让入口在窗口过期后自行消失
+  // （不在 render 里直接调 Date.now()，那会让渲染变成非纯函数）
+  const [now, setNow] = useState(() => Date.now())
 
   const me = session?.user?.id
 
-  // 评论作者本人，或这条动态的作者，都可以删
+  // 低频刷新 now：只影响"编辑"入口的显隐，30 秒精度足够
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30000)
+    return () => clearInterval(timer)
+  }, [])
+
+  // 点别处 / 按 Esc 收起操作菜单。
+  // ⋯ 按钮与菜单项自己 stopPropagation，否则「再点一次 ⋯ 收起」会被这里立刻又关掉。
+  useEffect(() => {
+    if (!menuFor) return
+    const close = () => setMenuFor(null)
+    const onKey = (e) => { if (e.key === 'Escape') setMenuFor(null) }
+    document.addEventListener('click', close)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('click', close)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [menuFor])
+
+  // 删除：评论作者本人，或这条动态的作者
   function canDelete(comment) {
     if (!session) return false
     return comment.user_id === me || momentOwnerId === me
+  }
+
+  // 编辑：仅评论作者本人，且在 2 分钟窗口内（服务端另有强制）
+  function canEdit(comment) {
+    if (!session || comment.user_id !== me) return false
+    return now - new Date(comment.created_at).getTime() < EDIT_WINDOW_MS
   }
 
   function likedByMe(comment) {
@@ -101,7 +139,7 @@ export default function CommentSection({
     setSubmitting(true)
     setError(null)
 
-    // 匿名只体现在显示名上：仍记录真实 user_id，这样作者本人能删自己的匿名评论
+    // 匿名只体现在显示名上：仍记录真实 user_id，这样作者本人能删/能编辑自己的匿名评论
     const { data, error: insertError } = await supabase
       .from('comments')
       .insert({
@@ -168,6 +206,32 @@ export default function CommentSection({
     setDeletingId(null)
   }
 
+  async function handleSaveEdit() {
+    if (!editing) return
+    const next = editing.text.trim()
+    if (!next) {
+      setError('评论内容不能为空')
+      return
+    }
+    setError(null)
+    // .select() 不能省：被 RLS / 触发器拦下的写不报错、只影响 0 行（PITFALLS #32）。
+    // edited_at 由服务端触发器写，这里不传（传了也会被覆盖）。
+    const { data, error: updateError } = await supabase
+      .from('comments')
+      .update({ content: next })
+      .eq('id', editing.id)
+      .select('id')
+    if (updateError) {
+      // 超过 2 分钟窗口 / 改了不该改的字段会在这里报错
+      setError(updateError.message)
+    } else if (!data || data.length === 0) {
+      setError('编辑没有生效（可能已超过 2 分钟窗口，或你不是评论作者）')
+    } else {
+      onCommentUpdated?.(editing.id, { content: next, edited_at: new Date().toISOString() })
+      setEditing(null)
+    }
+  }
+
   async function handleToggleLike(comment) {
     if (likingId) return
     setLikingId(comment.id)
@@ -227,50 +291,109 @@ export default function CommentSection({
     const avatarUrl = comment.nickname ? null : comment.profiles?.avatar_url
     const likes = comment.comment_likes ?? []
     const liked = likedByMe(comment)
+    const isEditing = editing?.id === comment.id
+    const canEditThis = canEdit(comment) && !isEditing
+    const hasMenu = !!session
 
     return (
       <li key={comment.id} className={parentComment ? 'comment-item comment-item-reply' : 'comment-item'}>
         <span className="comment-avatar">
           {avatarUrl ? <img src={avatarUrl} alt="" /> : nickname.slice(0, 1)}
         </span>
-        <span className="comment-body">
+        <div className="comment-body">
           <span className="comment-nickname">{nickname}</span>
           {parentComment && (
             <>
               {' '}回复 <span className="comment-nickname">{commentName(parentComment)}</span>
             </>
           )}
-          ：{comment.content}
-          <span className="comment-actions">
+          ：{isEditing ? (
+            <span className="comment-edit">
+              <textarea
+                className="comment-edit-input"
+                rows={2}
+                maxLength={200}
+                autoFocus
+                value={editing.text}
+                onChange={(e) => setEditing((s) => ({ ...s, text: e.target.value }))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    handleSaveEdit()
+                  }
+                  if (e.key === 'Escape') setEditing(null)
+                }}
+              />
+              <span className="comment-edit-actions">
+                <button type="button" onClick={() => setEditing(null)}>取消</button>
+                <button type="button" className="primary" onClick={handleSaveEdit}>保存</button>
+              </span>
+            </span>
+          ) : (
+            <>
+              {comment.content}
+              {comment.edited_at && <span className="comment-edited-tag">已编辑</span>}
+            </>
+          )}
+          {/* 点赞数保留为纯文字（一眼能看到热度）；点赞/取消点赞的操作在 ⋯ 菜单里 */}
+          {likes.length > 0 && (
+            <span className={liked ? 'comment-likes-count liked' : 'comment-likes-count'}>
+              ♥ {likes.length}
+            </span>
+          )}
+        </div>
+        {hasMenu && (
+          <div className="comment-menu-wrap">
             <button
               type="button"
-              className={liked ? 'comment-like-btn liked' : 'comment-like-btn'}
-              onClick={() => handleToggleLike(comment)}
-              disabled={likingId === comment.id}
-              title={liked ? '取消点赞' : '点赞'}
+              className="comment-more"
+              aria-label="评论操作"
+              title="评论操作"
+              onClick={(e) => {
+                // 不 stopPropagation 的话，document 上那个"点别处收起"
+                // 会立刻把它关掉，表现为按钮点了没反应
+                e.stopPropagation()
+                setMenuFor(menuFor === comment.id ? null : comment.id)
+              }}
             >
-              ♥{likes.length > 0 ? ` ${likes.length}` : ''}
+              ⋯
             </button>
-            <button
-              type="button"
-              className="comment-reply-btn"
-              onClick={() => { setReplyTo(comment); setReplyContent('') }}
-            >
-              回复
-            </button>
-          </span>
-        </span>
-        {canDelete(comment) && (
-          <button
-            type="button"
-            className="comment-delete"
-            onClick={() => handleDelete(comment)}
-            disabled={deletingId === comment.id}
-            aria-label="删除评论"
-            title="删除评论"
-          >
-            ×
-          </button>
+            {menuFor === comment.id && (
+              <div className="comment-menu" onClick={(e) => e.stopPropagation()}>
+                <button
+                  type="button"
+                  onClick={() => { setMenuFor(null); handleToggleLike(comment) }}
+                  disabled={likingId === comment.id}
+                >
+                  {liked ? '取消点赞' : '点赞'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setReplyTo(comment); setReplyContent(''); setMenuFor(null) }}
+                >
+                  回复
+                </button>
+                {canEditThis && (
+                  <button
+                    type="button"
+                    onClick={() => { setEditing({ id: comment.id, text: comment.content ?? '' }); setMenuFor(null) }}
+                  >
+                    编辑
+                  </button>
+                )}
+                {canDelete(comment) && (
+                  <button
+                    type="button"
+                    className="danger"
+                    onClick={() => { setMenuFor(null); handleDelete(comment) }}
+                    disabled={deletingId === comment.id}
+                  >
+                    删除
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         )}
       </li>
     )

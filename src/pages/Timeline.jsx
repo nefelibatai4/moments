@@ -91,6 +91,10 @@ export default function Timeline() {
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'comments' }, (payload) => {
         if (payload.old?.moment_id) patchMoment(payload.old.moment_id)
       })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'comments' }, (payload) => {
+        // 评论编辑（content / edited_at 变化）。comments 是 REPLICA IDENTITY FULL，新行完整
+        if (payload.new?.moment_id) patchMoment(payload.new.moment_id)
+      })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'likes' }, (payload) => {
         if (payload.new?.moment_id) patchMoment(payload.new.moment_id)
       })
@@ -184,6 +188,22 @@ export default function Timeline() {
     )
   }, [])
 
+  // 评论编辑：只更新对应行的内容与 edited_at，其余（点赞等嵌套数据）保留
+  const handleCommentUpdated = useCallback((momentId, commentId, fields) => {
+    setMoments((prev) =>
+      prev.map((m) =>
+        m.id === momentId
+          ? {
+              ...m,
+              comments: (m.comments ?? []).map((c) =>
+                c.id === commentId ? { ...c, ...fields } : c
+              ),
+            }
+          : m
+      )
+    )
+  }, [])
+
   // 评论点赞：把某条评论的点赞数组换掉
   const handleCommentLikeChanged = useCallback((momentId, commentId, likes) => {
     setMoments((prev) =>
@@ -217,6 +237,7 @@ export default function Timeline() {
           onDeleted={handleDeleted}
           onCommentAdded={handleCommentAdded}
           onCommentDeleted={handleCommentDeleted}
+          onCommentUpdated={handleCommentUpdated}
           onCommentLikeChanged={handleCommentLikeChanged}
           onLikesChanged={handleLikesChanged}
           onMomentUpdated={handleMomentUpdated}
