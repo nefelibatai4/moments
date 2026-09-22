@@ -1150,6 +1150,37 @@ button:disabled {
   margin-top: -8px;
 }
 
+/* 聊天页要**撑满**可用高度，而不是用上面那个写死的 170px 去猜。
+   实测（400×541，即插件弹窗里 iframe 的尺寸）输入框下面空了 67px，来自两处：
+     ① .app-container 的 40px 底部内边距 —— 那是给 iOS home indicator 留的，聊天页用不上；
+     ② .chat-thread 的 calc(100vh - 170px)：移动端断点下容器上下内边距是 24/40、
+        头部约 87px，那个 170 早就对不上了，于是又多出 27px。
+   改成 flex 撑满后这 67px 全部还给消息区（约 12% 的高度）。 */
+.app-container:has(.chat-thread) {
+  display: flex;
+  flex-direction: column;
+  /* ⚠️ 必须是确定高度（height，不是 min-height）：flex-grow 分配的是"剩余空间"，
+     而 min-height 让容器高度仍由内容决定 → 没有剩余空间可分，聊天区反而更矮。 */
+  height: 100vh;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ⚠️ 路由外面还套着一层 <main>（见 App.jsx），它才是 .app-container 的 flex 子项。
+   不把它也设成"可伸缩的列"，下面的 .chat-thread 根本撑不开 —— 实测只改 .chat-thread 时
+   它只有 133px，比改之前还矮。 */
+.app-container:has(.chat-thread) main {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.app-container:has(.chat-thread) .chat-thread {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+}
+
 .chat-thread-header {
   display: flex;
   align-items: center;
