@@ -923,6 +923,10 @@ button:disabled {
   font-size: 1.5rem;
   font-weight: 600;
   overflow: hidden;
+  /* 是 <button>（点头像看大图），要抹掉浏览器默认样式 */
+  padding: 0;
+  font-family: inherit;
+  cursor: zoom-in;
 }
 
 .profile-avatar img {
@@ -961,7 +965,8 @@ button:disabled {
   color: var(--text-muted);
 }
 
-.profile-form input {
+.profile-form input,
+.profile-form textarea {
   background: var(--bg-input);
   border: 1px solid var(--border-standard);
   border-radius: 8px;
@@ -969,6 +974,22 @@ button:disabled {
   font-size: 0.95rem;
   font-family: inherit;
   color: var(--text-primary);
+}
+
+/* 个性签名：两行起，可拉到 4 行；与输入框同一套视觉 */
+.profile-form .signature-input {
+  resize: vertical;
+  min-height: 56px;
+  line-height: 1.5;
+}
+
+.profile-form textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.profile-form textarea:focus {
+  outline: none;
+  border-color: var(--accent-blue);
 }
 
 .sign-out-button {
@@ -1292,20 +1313,24 @@ button:disabled {
   height: auto;
 }
 
+/* 聊天页顶部用户信息条。
+   2026-09-22 使用者反馈「占用还是太大了」，实测原来是 38px 头像 + 12px 间距 +
+   8/12px 上下内边距 ≈ 59px。这里收到 30px 头像 + 8px 间距 + 5/7px 内边距 ≈ 43px，
+   把省下的高度还给消息区。 */
 .chat-thread-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 4px 12px;
+  gap: 8px;
+  padding: 5px 4px 7px;
   border-bottom: 1px solid var(--border-subtle);
   flex: 0 0 auto;
 }
 
 .chat-back-btn {
   color: var(--accent-blue);
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   font-weight: 600;
-  padding: 4px 6px;
+  padding: 2px 6px;
   border-radius: 6px;
   text-decoration: none;
 }
@@ -1316,19 +1341,23 @@ button:disabled {
 }
 
 .chat-header-avatar {
-  width: 38px;
-  height: 38px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   background: var(--bg-badge);
   border: 1px solid var(--border-subtle);
   color: var(--text-tertiary);
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   flex: 0 0 auto;
+  /* 是 <button>（点开看头像大图），抹掉默认样式 */
+  padding: 0;
+  font-family: inherit;
+  cursor: zoom-in;
 }
 
 .chat-header-avatar img {
@@ -1337,16 +1366,36 @@ button:disabled {
   object-fit: cover;
 }
 
+/* 昵称现在是通往个人名片的链接（原来只是个 <span>） */
 .chat-header-name {
-  font-size: 1.05rem;
+  font-size: 0.95rem;
   font-weight: 600;
   color: var(--text-primary);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px 3px 2px;
+  border-radius: 6px;
+  min-width: 0;
+}
+
+.chat-header-name:hover {
+  background: var(--hover-wrap-bg);
+  text-decoration: none;
+}
+
+.chat-header-card-hint {
+  color: var(--text-muted);
+  font-weight: 400;
 }
 
 .chat-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 12px 4px;
+  /* 底部不留内边距：输入框那条带子自己带上下等距的留白，
+     两处都留会变成"上面 20px、下面 10px"，看着就不居中了 */
+  padding: 10px 4px 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1717,7 +1766,9 @@ button:disabled {
 
 .chat-scroll-btn {
   position: absolute;
-  bottom: 64px;
+  /* 输入框那条带子变高后（上下各 11px 留白），按钮要跟着上移，
+     否则会压在输入框上 */
+  bottom: 70px;
   right: 12px;
   width: 36px;
   height: 36px;
@@ -1739,12 +1790,18 @@ button:disabled {
   background: var(--bg-card);
 }
 
+/* 输入框那条带子（使用者 2026-09-22 反馈："输入框下面直接贴着底层窗口，
+   上面离聊天界面有一点距离，做成居中是更合适的"）。
+   做法：上下内边距**相等**（11px），并让 .chat-messages 的底部内边距归零
+   —— 这样输入框上下两边的空白一样宽，在底部这条带子里就是视觉居中。
+   （只加下内边距、不同时收掉上面的，会变成"上面更宽"，反而更不居中。）
+   iOS 的 home indicator 安全区由 .app-container 的 padding-bottom 负责，两者相加。 */
 .chat-input-row {
   display: flex;
   /* 输入框长高时按钮贴住底边，不要跟着被拉成一个大方块 */
   align-items: flex-end;
   gap: 8px;
-  padding: 8px 4px 0;
+  padding: 11px 4px;
   border-top: 1px solid var(--border-subtle);
   flex: 0 0 auto;
 }
@@ -1839,6 +1896,102 @@ button:disabled {
 
 .chat-input-row button:not(:disabled):hover {
   opacity: 0.85;
+}
+
+/* ── 个人名片页（/user/:userId，见 pages/UserProfile.jsx）──
+   使用者 2026-09-22 的诉求：私聊里点开能看到「简单个人介绍」，
+   页面要有**头像 / ID / 个性签名**（ID 选定为昵称）。 */
+.user-card-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 28px 16px 16px;
+}
+
+.user-card-avatar {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  background: var(--bg-badge);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
+  font-size: 2rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  /* 是 <button>，抹掉默认样式 */
+  padding: 0;
+  font-family: inherit;
+  cursor: zoom-in;
+}
+
+.user-card-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.user-card-name {
+  margin: 14px 0 0;
+  font-size: 1.25rem;
+  color: var(--text-primary);
+}
+
+.user-card-id {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.user-card-signature {
+  margin: 16px 0 0;
+  max-width: 30em;
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  /* 签名允许换行（在【我】里是 textarea），要按原样显示并防长串撑破布局 */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.user-card-empty {
+  color: var(--text-muted);
+}
+
+.user-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 28px;
+}
+
+.user-card-chat-btn {
+  background: var(--accent-blue);
+  color: #fff;
+  border-radius: 20px;
+  padding: 8px 20px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.user-card-chat-btn:hover {
+  opacity: 0.85;
+  text-decoration: none;
+}
+
+.user-card-back {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.user-card-back:hover {
+  color: var(--text-primary);
+  text-decoration: none;
 }
 
 @media (max-width: 600px) {

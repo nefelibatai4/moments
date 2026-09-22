@@ -17,6 +17,7 @@ const Activate = lazy(() => import('./pages/Activate'))
 const Profile = lazy(() => import('./pages/Profile'))
 const ChatList = lazy(() => import('./pages/ChatList'))
 const ChatThread = lazy(() => import('./pages/ChatThread'))
+const UserProfile = lazy(() => import('./pages/UserProfile'))
 
 export default function App() {
   const { session, approved } = useAccess()
@@ -60,6 +61,7 @@ export default function App() {
             <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
             <Route path="/chat" element={<RequireAuth><ChatList /></RequireAuth>} />
             <Route path="/chat/:userId" element={<RequireAuth><ChatThread /></RequireAuth>} />
+            <Route path="/user/:userId" element={<RequireAuth><UserProfile /></RequireAuth>} />
           </Routes>
         </Suspense>
       </main>

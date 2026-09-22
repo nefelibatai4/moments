@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient'
 import { useAuth } from '../lib/AuthContext'
 import { getTheme, setTheme } from '../lib/theme'
 import { compressImage } from '../lib/compressImage'
+import ImageLightbox from '../components/ImageLightbox'
 
 // 扩展只能在桌面版 Chrome 里安装：iOS 壳里没有「解压 + 装扩展」这个概念。
 // 原生端不显示下载按钮，但也不让它静默消失（那样会被当成 bug），改显示一句该去哪做。
@@ -22,6 +23,10 @@ export default function Profile() {
   const [loading, setLoading] = useState(true)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [savingNickname, setSavingNickname] = useState(false)
+  const [signature, setSignature] = useState('')
+  const [savingSignature, setSavingSignature] = useState(false)
+  // 点头像看大图（灯箱），与聊天页共用同一个组件
+  const [lightboxSrc, setLightboxSrc] = useState(null)
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [changingPassword, setChangingPassword] = useState(false)
@@ -35,12 +40,13 @@ export default function Profile() {
     async function load() {
       const { data, error } = await supabase
         .from('profiles')
-        .select('nickname, avatar_url')
+        .select('nickname, avatar_url, signature')
         .eq('id', session.user.id)
         .single()
       if (!error && data) {
         setNickname(data.nickname)
         setAvatarUrl(data.avatar_url)
+        setSignature(data.signature ?? '')
       }
       setLoading(false)
     }
@@ -90,6 +96,23 @@ export default function Profile() {
     if (error) setError(error.message)
     else setMessage('昵称已保存')
     setSavingNickname(false)
+  }
+
+  async function handleSaveSignature(e) {
+    e.preventDefault()
+    setSavingSignature(true)
+    setError(null)
+    setMessage(null)
+    // 空字符串存成 null：语义是"没写签名"，而不是"签名是空串"，
+    // 名片页要靠 null 决定显示占位文案
+    const value = signature.trim()
+    const { error } = await supabase
+      .from('profiles')
+      .update({ signature: value === '' ? null : value })
+      .eq('id', session.user.id)
+    if (error) setError(error.message)
+    else setMessage('个性签名已保存')
+    setSavingSignature(false)
   }
 
   async function handleChangePassword(e) {
@@ -150,9 +173,14 @@ export default function Profile() {
       <h2>我</h2>
 
       <div className="profile-avatar-section">
-        <span className="profile-avatar">
+        <button
+          type="button"
+          className="profile-avatar"
+          onClick={() => avatarUrl && setLightboxSrc(avatarUrl)}
+          aria-label={avatarUrl ? '查看头像大图' : '还没有头像'}
+        >
           {avatarUrl ? <img src={avatarUrl} alt="" /> : nickname.slice(0, 1)}
-        </span>
+        </button>
         <label className="avatar-upload-label">
           {uploadingAvatar ? '上传中…' : '更换头像'}
           <input type="file" accept="image/*" onChange={handleAvatarChange} disabled={uploadingAvatar} hidden />
@@ -170,6 +198,21 @@ export default function Profile() {
         />
         <button type="submit" disabled={savingNickname}>
           {savingNickname ? '保存中…' : '保存昵称'}
+        </button>
+      </form>
+
+      <form className="profile-form" onSubmit={handleSaveSignature}>
+        <label>个性签名</label>
+        <textarea
+          className="signature-input"
+          value={signature}
+          onChange={(e) => setSignature(e.target.value)}
+          maxLength={60}
+          rows={2}
+          placeholder="写一句介绍自己…（最多 60 字）"
+        />
+        <button type="submit" disabled={savingSignature}>
+          {savingSignature ? '保存中…' : '保存签名'}
         </button>
       </form>
 
@@ -239,6 +282,8 @@ export default function Profile() {
       </div>
 
       <button type="button" className="sign-out-button" onClick={handleSignOut}>退出登录</button>
+
+      <ImageLightbox src={lightboxSrc} alt="我的头像" onClose={() => setLightboxSrc(null)} />
     </div>
   )
 }

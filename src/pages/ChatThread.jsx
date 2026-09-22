@@ -453,14 +453,25 @@ export default function ChatThread() {
     <div className="chat-thread" onPaste={handlePaste}>
       <div className="chat-thread-header">
         <Link to="/chat" className="chat-back-btn">←</Link>
-        <span className="chat-header-avatar">
+        {/* 头像点开看大图（灯箱），昵称点开看个人名片。两件事分开，
+            因为"想看这个人是谁"和"想看这张图"是两种意图，混在一个点击上
+            会让其中一种永远点不到。 */}
+        <button
+          type="button"
+          className="chat-header-avatar"
+          onClick={() => otherProfile?.avatar_url && setLightboxSrc(otherProfile.avatar_url)}
+          aria-label={otherProfile?.avatar_url ? '查看头像大图' : '没有头像'}
+        >
           {otherProfile?.avatar_url ? (
             <img src={otherProfile.avatar_url} alt="" />
           ) : (
             (otherProfile?.nickname ?? '').slice(0, 1)
           )}
-        </span>
-        <span className="chat-header-name">{otherProfile?.nickname}</span>
+        </button>
+        <Link to={`/user/${userId}`} className="chat-header-name">
+          {otherProfile?.nickname}
+          <span className="chat-header-card-hint" aria-hidden="true">›</span>
+        </Link>
       </div>
 
       <div className="chat-messages" ref={msgListRef}>
