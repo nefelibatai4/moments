@@ -3,7 +3,23 @@
 
 // Push 事件：收到推送时弹桌面通知
 self.addEventListener('push', (event) => {
-  if (!event.data) return
+  // ⚠️ 解密失败或载荷为空时，event.data 会是 null。
+  //    这里以前是直接 `return` —— 结果是**永远没有弹窗、也没有任何报错**，
+  //    2026-09 那次"推送完全不工作"就是这样被藏了很久（详见 docs/PITFALLS.md #48）。
+  //    现在至少弹一条兜底通知：出问题要看得见，而不是静默消失。
+  if (!event.data) {
+    const scope = self.registration.scope
+    event.waitUntil(
+      self.registration.showNotification('Moments 私密圈', {
+        body: '有新内容（这条推送没有携带正文，可能是载荷异常）',
+        icon: new URL('favicon.svg', scope).href,
+        badge: new URL('favicon.svg', scope).href,
+        tag: 'moments-no-payload',
+        data: { url: scope }
+      })
+    )
+    return
+  }
 
   try {
     const payload = event.data.json()
