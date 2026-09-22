@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useAccess } from '../lib/AuthContext'
@@ -12,12 +12,23 @@ import { useAccess } from '../lib/AuthContext'
  * 这里让用户凭邀请码激活。
  */
 export default function Activate() {
-  const { session, refreshApproval } = useAccess()
+  const { session, approved, refreshApproval } = useAccess()
   const navigate = useNavigate()
   const location = useLocation()
   const [code, setCode] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(location.state?.reason ?? null)
+
+  // 兜底：**已经激活的账号不该待在这一页**。
+  //
+  // 之前这里没有任何出口 —— 只要因为一次查询失败被误判成"未激活"弹过来，
+  // 就算后台随后查清了你其实已激活，页面也不会动，用户除了手动刷新没别的办法。
+  // 现在一旦确认已激活就自动回到原来想去的页面。
+  useEffect(() => {
+    if (approved === true) {
+      navigate(location.state?.from?.pathname ?? '/', { replace: true })
+    }
+  }, [approved, navigate, location.state])
 
   async function handleSubmit(e) {
     e.preventDefault()
