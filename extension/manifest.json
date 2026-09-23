@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Moments 私密圈",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "未读私信角标 + 毛玻璃快捷面板，不用切换标签页就能看动态、回私信",
   "permissions": [
     "storage",

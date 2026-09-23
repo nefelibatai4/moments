@@ -203,6 +203,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     getPanelSettings().then((res) => sendResponse(res))
     return true
   }
+  if (msg && msg.type === 'state:get') {
+    // 面板里的网页会来要"全局状态"：会话 + 主题 + 面板背景。
+    // 为什么由扩展给：面板是嵌在**别人网页**里的 iframe，那一层的 localStorage
+    // 可能读不到、甚至一访问就抛（第三方存储策略），那样面板就会显示成"没登录"。
+    // 扩展手里本来就有一份（网页自己同步过来的），直接给它。
+    Promise.all([getSession(), getPanelSettings()]).then(([session, panel]) => {
+      sendResponse({
+        session: session
+          ? { access_token: session.access_token, refresh_token: session.refresh_token }
+          : null,
+        theme: panel.theme,
+        panelBg: panel.settings,
+      })
+    })
+    return true
+  }
   if (msg && msg.type === 'panel:setHeight') {
     // 高度是"用户自己拖出来的"偏好，跟着使用者走（不是按站点存）。
     // 传 null 表示"恢复默认"→ 把记录删掉，让 CSS 的 25vh 重新生效。
