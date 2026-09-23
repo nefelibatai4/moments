@@ -21,6 +21,8 @@ const POLL_MINUTES = 1
 const PANEL_PAGE = 'panel.html'
 const PANEL_WINDOW_KEY = 'panelWindowId'
 const PANEL_DEFAULT_SETTINGS = { mode: 'glass', tint: 'theme', blur: 12 }
+// 面板高度：默认由 CSS 决定（上方 1/4 屏），用户拖过之后记在这里（单位 px）
+const PANEL_HEIGHT_KEY = 'panelHeightPx'
 const BADGE_COLOR = '#ff6363' // 与 app 的 --accent-red 一致
 const BADGE_MAX = 99
 
@@ -201,6 +203,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     getPanelSettings().then((res) => sendResponse(res))
     return true
   }
+  if (msg && msg.type === 'panel:setHeight') {
+    // 高度是"用户自己拖出来的"偏好，跟着使用者走（不是按站点存）。
+    // 传 null 表示"恢复默认"→ 把记录删掉，让 CSS 的 25vh 重新生效。
+    const patch = Number.isFinite(msg.height) ? { [PANEL_HEIGHT_KEY]: Math.round(msg.height) } : null
+    const done = patch ? chrome.storage.local.set(patch) : chrome.storage.local.remove(PANEL_HEIGHT_KEY)
+    done.finally(() => sendResponse({ ok: true }))
+    return true
+  }
   if (msg && msg.type === 'panel:fallback') {
     openFallbackWindow(msg.reason || '浮层报错').finally(() => sendResponse({ ok: true }))
     return true
@@ -228,10 +238,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // src/lib/panelBackground.js），由 content.js 转交过来存在这里，
 // 浮层再从这里取。扩展自己不做设置界面 —— 使用者明确要求开关放【我】里。
 async function getPanelSettings() {
-  const { panelBg, panelTheme } = await chrome.storage.local.get(['panelBg', 'panelTheme'])
+  const { panelBg, panelTheme, [PANEL_HEIGHT_KEY]: height } = await chrome.storage.local.get([
+    'panelBg', 'panelTheme', PANEL_HEIGHT_KEY,
+  ])
   return {
     settings: { ...PANEL_DEFAULT_SETTINGS, ...(panelBg || {}) },
     theme: panelTheme || 'dark',
+    height: Number.isFinite(height) ? height : null,
   }
 }
 

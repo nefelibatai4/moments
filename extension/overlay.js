@@ -144,22 +144,31 @@
           border-left: 0;
         }
       }
-      .close {
-        position: absolute;
-        top: 8px;
-        right: 8px;
-        z-index: 2;
-        width: 26px;
-        height: 26px;
-        padding: 0;
-        border: 1px solid rgba(255, 255, 255, 0.16);
-        border-radius: 50%;
-        background: rgba(0, 0, 0, 0.34);
-        color: #fff;
-        font: 600 15px/1 -apple-system, system-ui, sans-serif;
-        cursor: pointer;
+      /* 底部这条是**拖拽调高度**用的（使用者 2026-09-23：「长度我能自己拖拽么，
+         而不是写死在代码里」）。它是一条独立的 10px 带子，**不压在 iframe 上面** ——
+         压在下面会把网页最底部那一行（例如聊天输入框）挡住点不到。 */
+      .grip {
+        flex: 0 0 auto;
+        height: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: ns-resize;
+        /* 拖拽时别把文字选上（拖快了很容易选到网页里的字） */
+        user-select: none;
+        touch-action: none;
       }
-      .close:hover { background: rgba(0, 0, 0, 0.5); }
+      .grip-pill {
+        width: 38px;
+        height: 3px;
+        border-radius: 2px;
+        background: rgba(255, 255, 255, 0.32);
+        transition: background 0.15s ease, width 0.15s ease;
+      }
+      .grip:hover .grip-pill {
+        background: rgba(255, 255, 255, 0.55);
+        width: 52px;
+      }
       iframe {
         flex: 1 1 auto;
         width: 100%;
@@ -196,7 +205,6 @@
     </style>
     <div class="sheet">
       <div class="panel" data-mode="glass">
-        <button class="close" title="关闭（Esc）" aria-label="关闭面板">×</button>
         <iframe
           title="Moments 面板"
           allow="clipboard-read; clipboard-write"
@@ -205,6 +213,9 @@
         <div class="fallback">
           <p class="fallback-text">这个网页不让外面嵌页面，面板打不开。</p>
           <button type="button" class="fallback-open">在独立窗口打开</button>
+        </div>
+        <div class="grip" title="拖动调整高度（双击恢复默认）" aria-label="拖动调整面板高度">
+          <span class="grip-pill"></span>
         </div>
       </div>
     </div>
@@ -215,6 +226,47 @@
   const iframe = shadow.querySelector('iframe')
   const fallback = shadow.querySelector('.fallback')
   const fallbackText = shadow.querySelector('.fallback-text')
+  const grip = shadow.querySelector('.grip')
+
+  // ---------------------------------------------------------------- 高度拖拽
+  // 默认高度是设计稿上的 25vh（"上方四分之一"），但**不写死**：
+  // 拖动底部那条就能改，改完记进 chrome.storage.local，下次打开还是这个高度。
+  const MIN_HEIGHT = 180
+  const maxHeight = () => Math.max(MIN_HEIGHT, window.innerHeight - 24)
+
+  function setHeight(px) {
+    panel.style.height = `${Math.round(px)}px`
+  }
+
+  let dragState = null
+
+  grip.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return
+    e.preventDefault() // 别让宿主网页开始选文字/拖动
+    dragState = { startY: e.clientY, startH: panel.getBoundingClientRect().height }
+    try { grip.setPointerCapture(e.pointerId) } catch { /* 个别实现不支持，靠 move 兜住 */ }
+  })
+
+  grip.addEventListener('pointermove', (e) => {
+    if (!dragState) return
+    const next = dragState.startH + (e.clientY - dragState.startY)
+    setHeight(Math.min(maxHeight(), Math.max(MIN_HEIGHT, next)))
+  })
+
+  function endDrag() {
+    if (!dragState) return
+    dragState = null
+    const height = Math.round(panel.getBoundingClientRect().height)
+    try { chrome.runtime.sendMessage({ type: 'panel:setHeight', height }) } catch { /* 扩展上下文失效，忽略 */ }
+  }
+
+  grip.addEventListener('pointerup', endDrag)
+  grip.addEventListener('pointercancel', endDrag)
+  // 双击恢复默认（拖到很怪的高度之后的一个明确出口）
+  grip.addEventListener('dblclick', () => {
+    panel.style.height = ''
+    try { chrome.runtime.sendMessage({ type: 'panel:setHeight', height: null }) } catch { /* 同上 */ }
+  })
 
   function applyStyle() {
     const style = panelBgStyle(settings, theme)
@@ -259,7 +311,6 @@
     if (e.button !== 0) return
     if (e.target === sheet) close('点击面板外')
   })
-  shadow.querySelector('.close').addEventListener('click', () => close('点关闭按钮'))
   shadow.querySelector('.fallback-open').addEventListener('click', () => {
     openFallbackWindow('用户点击')
     close('改用独立窗口')
@@ -318,6 +369,10 @@
     chrome.runtime.sendMessage({ type: 'panel:getSettings' }, (res) => {
       if (res && res.settings) settings = { ...DEFAULT_SETTINGS, ...res.settings }
       if (res && res.theme) theme = res.theme
+      // 上次拖过的高度优先（超过当前视口就夹回来，比如换了更小的屏幕）
+      if (res && Number.isFinite(res.height)) {
+        setHeight(Math.min(maxHeight(), Math.max(MIN_HEIGHT, res.height)))
+      }
       applyStyle()
       if (!iframe.src) iframe.src = SITE_URL
     })
