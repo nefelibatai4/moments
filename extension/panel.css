@@ -1,5 +1,7 @@
-/* popup 的样式。配色直接沿用 app 的深色主题变量，视觉上是同一个产品。
-   这里刻意不跟随系统深浅色：网页本身默认就是深色，状态条跟着深色才一致。 */
+/* 兜底小窗（panel.html）的样式。配色直接沿用 app 的深色主题变量，视觉上是同一个产品。
+   这里刻意不跟随系统深浅色：网页本身默认就是深色，状态条跟着深色才一致。
+   （真毛玻璃在浮层那边，见 overlay.js —— 浏览器给扩展窗口的底色是不透明的，
+     所以这个独立小窗做不出"透出背后网页"的效果，那正是改用浮层的原因。） */
 :root {
   --bg-page: #07080a;
   --text-primary: #f9f9f9;
@@ -20,8 +22,8 @@
 
 body {
   width: 400px;
-  /* Chrome 的 popup 最高 600px，留一点余量 */
-  height: 580px;
+  /* 独立小窗没有 action 弹窗那个 600px 硬顶了（原来的 580px 就是被它逼的） */
+  height: 720px;
   display: flex;
   flex-direction: column;
   background: var(--bg-page);

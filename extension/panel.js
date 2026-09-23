@@ -1,5 +1,9 @@
-// popup 的逻辑很薄：只负责把 background 的状态显示出来，外加一个手动刷新按钮。
+// 「兜底小窗」面板的逻辑很薄：把 background 的状态显示出来，外加一个手动刷新按钮。
 // 真正的数据都在 background 里（它是唯一持有会话的地方，避免两处各自刷新 token 打架）。
+//
+// 0.2.0 起，日常用的是**注入到网页里的毛玻璃浮层**（overlay.js）；这个小窗只在
+// 浮层用不了的时候出现：chrome:// 内置页、扩展商店、PDF 阅读器，
+// 以及用 CSP 挡掉 iframe 的网站（见 background.js 的 togglePanel）。
 
 const dot = document.getElementById('dot')
 const statusText = document.getElementById('statusText')

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <title>Moments 私密圈</title>
-    <link rel="stylesheet" href="popup.css" />
+    <link rel="stylesheet" href="panel.css" />
   </head>
   <body>
     <!-- 顶部状态条：一眼看出角标数字是新是旧、会话有没有同步上 -->
@@ -17,6 +17,9 @@
       面板主体直接嵌线上网页，所以发布动态、回私信、点赞这些功能全都有，
       扩展这边不需要重写一套 UI。
 
+      这是**兜底形态**（独立小窗）：日常用的浮层是注入到当前网页里的
+      （见 overlay.js），只有浮层不可用时才会开这个窗口。
+
       allow="clipboard-read; clipboard-write" 是必需的：
       聊天支持「粘贴图片」，而跨源 iframe 默认拿不到剪贴板读取权限。
     -->
@@ -26,6 +29,6 @@
       allow="clipboard-read; clipboard-write"
     ></iframe>
 
-    <script src="popup.js"></script>
+    <script src="panel.js"></script>
   </body>
 </html>
