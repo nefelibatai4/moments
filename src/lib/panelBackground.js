@@ -69,10 +69,11 @@ export function panelBgStyle(settings, theme) {
     return { background: dark ? '#07080a' : '#f7f8f8', backdropFilter: 'none' }
   }
 
-  // 0.62 是"透得出来、但文字依然清楚"的位置；saturate 让背后的网页颜色不显得灰掉
+  // 0.55 是"透得出来、但文字依然清楚"的位置；saturate 让背后的网页颜色不显得灰掉
+  // （数值参考 glassmorphism 的通用配方：薄亮边框 + 半透明底 + 一点饱和提升）
   return {
-    background: dark ? 'rgba(10, 11, 14, 0.62)' : 'rgba(247, 248, 248, 0.62)',
-    backdropFilter: `blur(${settings.blur}px) saturate(140%)`,
+    background: dark ? 'rgba(10, 11, 14, 0.55)' : 'rgba(247, 248, 248, 0.58)',
+    backdropFilter: `blur(${settings.blur}px) saturate(160%)`,
   }
 }
 

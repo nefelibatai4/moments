@@ -29,7 +29,10 @@
 ;(() => {
   const log = (...args) => console.log('[moments-panel]', ...args)
   const ROOT_ID = '__moments_panel_root__'
-  const SITE_URL = 'https://nefelibatai4.github.io/moments/chat'
+  // `?surface=glass` 是给网页的"我现在跑在毛玻璃面板里"信号（见 src/lib/surface.js）：
+  // 网页据此把**整页背景设为透明**并收紧排版。不传的话网页会照常画自己的不透明底色——
+  // 那样浮层的毛玻璃就被整页底色盖住了，看起来"毛玻璃完全没生效"（真实踩过的 bug）。
+  const SITE_URL = 'https://nefelibatai4.github.io/moments/chat?surface=glass'
   const CLOSE_ON_ESCAPE = true
   // 等 iframe 里的网页报"我加载好了"。超时说明被宿主网页的 CSP 挡了 → 兜底。
   const FRAME_READY_TIMEOUT_MS = 5000
@@ -57,8 +60,8 @@
       return { background: dark ? '#07080a' : '#f7f8f8', backdropFilter: 'none' }
     }
     return {
-      background: dark ? 'rgba(10, 11, 14, 0.62)' : 'rgba(247, 248, 248, 0.62)',
-      backdropFilter: `blur(${settings.blur}px) saturate(140%)`,
+      background: dark ? 'rgba(10, 11, 14, 0.55)' : 'rgba(247, 248, 248, 0.58)',
+      backdropFilter: `blur(${settings.blur}px) saturate(160%)`,
     }
   }
 
@@ -68,31 +71,58 @@
   // ---------------------------------------------------------------- DOM
   const root = document.createElement('div')
   root.id = ROOT_ID
-  // 宿主网页可能给 div 写死样式，这里钉死自己需要的几项
-  root.setAttribute('style', 'all: initial; position: fixed; inset: 0; z-index: 2147483647;')
+  // ⚠️ 这里必须用**内联 + !important**，不能只用 `all: initial`。
+  //    浮层的根节点在宿主网页的 DOM 里，所以宿主网页的 CSS **能选中它**
+  //    （Shadow DOM 只隔离它内部的后代，隔离不了它自己）。
+  //    实测踩过的坑：测试页里有一条 `div { background: yellow !important; padding: 40px !important }`，
+  //    内联的 `all: initial`（非 important）**压不过它** —— 结果是整个浮层根节点变成一块
+  //    不透明白黄底、还带 40px 内边距，面板的 backdrop-filter 采样到的是这块黄底，
+  //    毛玻璃看起来"完全没生效"。同一份 CSS 里内联 important 是层叠里优先级最高的，
+  //    所以下面每一项都显式加 important。
+  const pin = (prop, value) => root.style.setProperty(prop, value, 'important')
+  pin('all', 'initial')
+  pin('position', 'fixed')
+  pin('inset', '0')
+  pin('z-index', '2147483647')
+  pin('background', 'transparent')
+  pin('border', '0')
+  pin('margin', '0')
+  pin('padding', '0')
+  pin('display', 'block')
+  // 面板打开时要能点（宿主网页若写了 `div { pointer-events: none !important }` 会废掉交互）
+  pin('pointer-events', 'auto')
   const shadow = root.attachShadow({ mode: 'open' })
 
   shadow.innerHTML = `
     <style>
-      :host { all: initial; }
+      /* 根节点的重置靠上面的内联 !important（见那段注释）；
+         这里只兜住"字体等可继承属性不会从宿主网页漏进来"。 */
+      :host { font-family: -apple-system, "SF Pro Text", system-ui, sans-serif; }
       .sheet {
         position: fixed;
         inset: 0;
         display: flex;
+        /* 贴右上角：面板只占上方一小块，其余都留给网页本身（"融入主页"） */
         justify-content: flex-end;
-        /* 面板四周留一点缝，能透出背后的网页 —— "融入主页"而不是"盖住主页" */
+        align-items: flex-start;
         padding: 10px;
         box-sizing: border-box;
         font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
       }
-      /* 面板本身才是毛玻璃：backdrop-filter 作用在它身上，模糊它背后的网页 */
+      /* 面板本身才是毛玻璃：backdrop-filter 作用在它身上，模糊它背后的网页。
+         高度：使用者 2026-09-23 明确要求"只保留上面四分之一"，所以是 25vh
+         （下限 200px 是为了在很矮的窗口里仍然能用；上限不设，随屏幕走）。 */
       .panel {
         position: relative;
         width: min(420px, 100%);
-        height: 100%;
+        height: max(200px, 25vh);
         border-radius: 14px;
-        border: 1px solid rgba(255, 255, 255, 0.14);
-        box-shadow: 0 18px 60px rgba(0, 0, 0, 0.42);
+        /* 薄亮边框 + 内侧高光：glassmorphism 里"像玻璃"的关键不只是模糊，
+           还有这圈被光打亮的边缘（只做模糊会像贴了层塑料膜）。 */
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        box-shadow:
+          0 10px 32px rgba(0, 0, 0, 0.38),
+          inset 0 1px 0 rgba(255, 255, 255, 0.22);
         display: flex;
         flex-direction: column;
         overflow: hidden;
@@ -100,6 +130,19 @@
       }
       .panel[data-mode="solid"] {
         border-color: rgba(255, 255, 255, 0.08);
+      }
+      /* 窗口很窄时（手机宽度的浏览器窗口、或插件兜底小窗那种尺寸）：
+         面板铺满，不再留那圈 10px 的缝与圆角 —— 本来就没多少可透出来的地方了。 */
+      @media (max-width: 520px) {
+        .sheet { padding: 0; }
+        .panel {
+          width: 100%;
+          height: max(180px, 25vh);
+          border-radius: 0 0 14px 14px;
+          border-top: 0;
+          border-right: 0;
+          border-left: 0;
+        }
       }
       .close {
         position: absolute;

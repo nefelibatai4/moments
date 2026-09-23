@@ -20,12 +20,16 @@
       这是**兜底形态**（独立小窗）：日常用的浮层是注入到当前网页里的
       （见 overlay.js），只有浮层不可用时才会开这个窗口。
 
+      `?surface=panel` 让网页知道自己在窄面板里（收紧留白、导航更紧凑、
+      隐藏"下载扩展"那块）——但**不用 glass**：独立小窗的窗口底色是不透明的，
+      做不出"透出背后网页"的效果，整页背景透明反而会露出窗口的白底。
+
       allow="clipboard-read; clipboard-write" 是必需的：
       聊天支持「粘贴图片」，而跨源 iframe 默认拿不到剪贴板读取权限。
     -->
     <iframe
       id="frame"
-      src="https://nefelibatai4.github.io/moments/chat"
+      src="https://nefelibatai4.github.io/moments/chat?surface=panel"
       allow="clipboard-read; clipboard-write"
     ></iframe>
 

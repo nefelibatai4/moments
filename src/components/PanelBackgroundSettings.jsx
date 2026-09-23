@@ -108,8 +108,26 @@ export default function PanelBackgroundSettings() {
         <p className="panel-bg-note">纯色模式下模糊不起作用（没有透出来的东西可模糊）。</p>
       )}
 
-      <div className="panel-bg-preview" style={preview}>
-        <span>预览</span>
+      {/* 预览：仿"电子书 + 压在书上的一张玻璃卡片"。
+          背后**必须有内容**（文字 + 一团柔和的彩色光），毛玻璃才有东西可以模糊 ——
+          glassmorphism 的通用经验是"玻璃底下若是纯灰，就什么也折射不出来"。
+          这里的模糊是**真的** backdrop-filter（不是画一张示意图），
+          所以拖动上面的滑块，卡片背后的字会实时变糊/变清。 */}
+      <div className="panel-bg-preview">
+        <div className="panel-bg-preview-page" aria-hidden="true">
+          <span className="panel-bg-preview-orb" />
+          <p className="panel-bg-preview-text">
+            面板背后是你正在浏览的网页。毛玻璃把它糊成一片柔和的光影，
+            面板因此既不挡住你，也不会显得突兀。把模糊调到 0，这些字就重新清晰；
+            调到 30，只剩下一层色块。纯色模式下，卡片会把它们完全盖住。
+          </p>
+        </div>
+        <div className="panel-bg-preview-card" style={preview} data-mode={settings.mode}>
+          <span className="panel-bg-preview-title">面板</span>
+          <span className="panel-bg-preview-meta">
+            {settings.mode === 'glass' ? `毛玻璃 · 模糊 ${settings.blur}px` : '纯色（不透明）'}
+          </span>
+        </div>
       </div>
 
       <button

@@ -279,12 +279,17 @@ async function openFallbackWindow(reason) {
   if (win && win.id != null) await chrome.storage.local.set({ [PANEL_WINDOW_KEY]: win.id })
 }
 
+// 返回值刻意做成结构化的：`{ ok, via, reason }`。
+// 理由：浮层与兜底小窗在界面上差别很大，出问题时"点了图标但浮层没出来"最难查 ——
+// 现在调用方（以及 verify-extension-panel.cjs）能直接拿到"走的是哪条路、为什么"，
+// 而不是只看到一个空白结果。
 async function togglePanel(tab) {
-  if (!tab || tab.id == null) return
+  if (!tab || tab.id == null) return { ok: false, via: null, reason: '没有可用的标签页' }
 
   if (!isInjectable(tab.url)) {
-    await openFallbackWindow(`这个页面不允许注入（${String(tab.url).split(':')[0]}://…）`)
-    return
+    const reason = `这个页面不允许注入（${String(tab.url).split(':')[0]}://…）`
+    await openFallbackWindow(reason)
+    return { ok: true, via: 'window', reason }
   }
 
   try {
@@ -294,10 +299,13 @@ async function togglePanel(tab) {
       target: { tabId: tab.id },
       files: ['overlay.js'],
     })
+    return { ok: true, via: 'overlay' }
   } catch (e) {
     // 注入失败的原因不止一种（权限没授上、页面受限、文件被改坏…），
     // 但**任何一种都不该让使用者点了图标什么都没发生** → 一律退回独立小窗。
-    await openFallbackWindow('注入浮层失败：' + ((e && e.message) || e))
+    const reason = '注入浮层失败：' + ((e && e.message) || e)
+    await openFallbackWindow(reason)
+    return { ok: false, via: 'window', reason }
   }
 }
 

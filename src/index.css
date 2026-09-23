@@ -1185,18 +1185,94 @@ button:disabled {
   color: var(--text-muted);
 }
 
-/* 预览块：样式由 panelBgStyle() 内联给出（真的做 backdrop-filter，不是画一张图） */
+/* 预览：仿"电子书 + 压在书上的一张玻璃卡片"（见 PanelBackgroundSettings.jsx）。
+   背后的文字与那团彩色光斑是**故意**加的：毛玻璃底下若是纯灰就没有可折射的东西，
+   效果会看不出来。卡片的底色与 backdrop-filter 由 panelBgStyle() 内联给出，
+   和扩展浮层用的是同一份映射（所以这里看到的就是面板里的样子）。 */
 .panel-bg-preview {
-  height: 64px;
+  position: relative;
+  height: 148px;
   border-radius: 12px;
   border: 1px solid var(--border-standard);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.8rem;
+  overflow: hidden;
+  background: var(--bg-elevated);
+}
+
+.panel-bg-preview-page {
+  position: absolute;
+  inset: 0;
+  padding: 12px 14px;
+  overflow: hidden;
+}
+
+/* 一团柔和的光：给毛玻璃一点颜色可以折射（浅色主题下更淡） */
+.panel-bg-preview-orb {
+  position: absolute;
+  top: -34px;
+  right: -20px;
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #7c5cff 0%, rgba(124, 92, 255, 0) 70%),
+    radial-gradient(circle at 70% 60%, #22d3ee 0%, rgba(34, 211, 238, 0) 72%);
+  filter: blur(4px);
+  opacity: 0.85;
+}
+
+[data-theme="light"] .panel-bg-preview-orb {
+  opacity: 0.5;
+}
+
+/* 背后的"正文"：像电子书一样铺满，方便一眼看出模糊程度 */
+.panel-bg-preview-text {
+  position: relative;
+  font-size: 0.76rem;
+  line-height: 1.95;
   color: var(--text-secondary);
-  /* 预览块自己也要有边框和阴影，才像面板；毛玻璃面板在扩展里就是这个观感 */
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  /* 整体压暗一点、字更实，模糊之后才看得出"一片字被糊掉"的感觉 */
+  opacity: 0.9;
+}
+
+/* 压在正文上的玻璃卡片 */
+.panel-bg-preview-card {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 32px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  /* 参考 glassmorphism 通用配方：薄亮边框 + 内侧高光 + 柔和投影，
+     这三样才是"像玻璃"的关键（只有模糊会显得像一层塑料膜） */
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.panel-bg-preview-card[data-mode="solid"] {
+  border-color: var(--border-standard);
+}
+
+.panel-bg-preview-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #f4f4f5;
+}
+
+[data-theme="light"] .panel-bg-preview-title {
+  color: #1a1f33;
+}
+
+.panel-bg-preview-meta {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+[data-theme="light"] .panel-bg-preview-meta {
+  color: rgba(26, 31, 51, 0.7);
 }
 
 .panel-bg-reset {
@@ -2116,6 +2192,91 @@ button:disabled {
 .user-card-back:hover {
   color: var(--text-primary);
   text-decoration: none;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   按「外壳」区分呈现：电脑整页 / 插件毛玻璃浮层 / 插件兜底小窗
+   ──────────────────────────────────────────────────────────────
+   同一个网站在三个位置的合理呈现不一样（同"手机 vs 电脑"的道理）。
+   标记由扩展在 iframe 地址上带进来（?surface=glass / panel），
+   启动时写到 <html data-surface>，见 src/lib/surface.js。
+
+   ⚠️ 毛玻璃浮层这里有一条**必须**的规则：整页背景要透明。
+      否则网页自己的 body 底色会把浮层的 backdrop-filter 整个盖住 ——
+      表现就是"毛玻璃完全没生效、面板里还是一片纯色"（这是真实踩过的 bug，
+      verify-extension-panel.cjs 里有一条"差分截图"断言专门盯它：
+      把宿主网页底色从红改成蓝，面板区域的像素必须跟着变）。
+
+   ⚠️ 选择器都用 `html[data-surface=…]` 开头（不是 `.something[data-surface]`）：
+      属性选择器在同一元素上才能压过文件后面 `@media (max-width:600px)` 里的
+      `:root` 与 `.app-container`（那是窄屏分支，面板同样命中它）。
+   ══════════════════════════════════════════════════════════════ */
+
+/* 两种面板形态共同的紧凑化：面板只有 1/4 屏高，手机上那套宽松留白在这里是浪费 */
+html[data-surface="glass"],
+html[data-surface="panel"] {
+  /* 顶部留白：手机版是 24px（避开刘海），面板里 10px 足够 */
+  --app-pad-top: calc(10px + env(safe-area-inset-top, 0px));
+}
+
+html[data-surface="glass"] .app-container,
+html[data-surface="panel"] .app-container {
+  /* 底部留白：手机版 40px 是给 home 指示条的，面板里 12px 足够 */
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+}
+
+/* 顶部导航收紧：省下的高度全给内容（面板里 1.5rem 的标题 + 20px 间距太奢侈） */
+html[data-surface="glass"] .app-header,
+html[data-surface="panel"] .app-header {
+  padding-bottom: 7px;
+  margin-bottom: 12px;
+}
+
+html[data-surface="glass"] .app-header h1,
+html[data-surface="panel"] .app-header h1 {
+  font-size: 1.05rem;
+}
+
+html[data-surface="glass"] .app-header nav,
+html[data-surface="panel"] .app-header nav {
+  gap: 12px;
+}
+
+html[data-surface="glass"] .app-header nav a,
+html[data-surface="panel"] .app-header nav a {
+  font-size: 0.85rem;
+}
+
+/* 面板比手机窗口略宽（420 vs 390），图片一行放 3 张更合适（窄屏默认是 2 张） */
+html[data-surface="glass"] .moment-images.grid,
+html[data-surface="panel"] .moment-images.grid {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+/* 【我】里的「给朋友用 / 下载扩展」在面板里没意义：你已经在用扩展了 */
+html[data-surface="glass"] .share-section,
+html[data-surface="panel"] .share-section {
+  display: none;
+}
+
+/* 毛玻璃形态：整页底色透明，才能让浮层的模糊透出来 */
+html[data-surface="glass"] body {
+  background-color: transparent;
+}
+
+/* 顶部导航要有一点点底色才压得住滚动上来的内容。
+   面板本身已经在做模糊了，这里就不再叠一层 backdrop-filter（省一次合成）。 */
+html[data-surface="glass"] {
+  --panel-scrim: rgba(10, 11, 14, 0.42);
+}
+
+html[data-surface="glass"][data-theme="light"] {
+  --panel-scrim: rgba(247, 248, 248, 0.5);
+}
+
+html[data-surface="glass"] .app-header {
+  background-color: var(--panel-scrim);
+  backdrop-filter: none;
 }
 
 @media (max-width: 600px) {
