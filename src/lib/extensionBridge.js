@@ -1,6 +1,5 @@
 import { supabase } from '../supabaseClient'
 import { applyTheme } from './theme'
-import { announcePanelBg } from './panelBackground'
 
 /**
  * 扩展 → 网页的「全局状态」通道（只在插件的面板里起作用）。
@@ -46,16 +45,33 @@ function handle(message) {
   if (!message || message.source !== SOURCE || message.type !== 'state') return
 
   // 主题：以扩展手里的为准（那是"使用者在【我】里选的那个"）
-  if (message.theme) applyTheme(message.theme)
+  if (message.theme) {
+    applyTheme(message.theme)
+    // ⚠️ 同时写进本地存储。只改 DOM 属性的话会出现"页面是浅色、但【我】里的
+    //   开关显示深色"这种自相矛盾的状态 —— 因为那个开关读的是 localStorage。
+    // 写回去也不会打架：content.js 只在"有显式值"时才上报，值又和扩展一致，循环即止。
+    try {
+      localStorage.setItem('moments_theme', message.theme)
+    } catch {
+      /* 存储不可用也不影响这次的显示 */
+    }
+  }
 
-  // 面板背景：写进本地并广播一次，让【我】里的设置界面与浮层都跟上
+  // 面板背景：写进本地，让【我】里的设置界面显示正确。
+  // ⚠️ 只有"本地那份确实不一样"时才写 + 广播：
+  //    广播会触发 content.js 把本地值**上报**给扩展；如果每次都广播，
+  //    扩展刚下发的值又会被原样上报回去，和"使用者在别处改的值"抢，
+  //    表现为设置偶尔被旧值覆盖（测试里真的抓到过：改成 24px 又被拉回 12px）。
   if (message.panelBg) {
     try {
       localStorage.setItem('moments_panel_bg', JSON.stringify(message.panelBg))
     } catch {
       /* 存储不可用也不影响浮层本身（它取的是扩展里那份） */
     }
-    announcePanelBg(message.panelBg)
+    // ⚠️ 这里**刻意不广播**。广播会被 content.js 当成"使用者改了设置"上报给扩展，
+    //    而下发本身就是从扩展来的 —— 那会形成"下发→上报→下发"的回环，
+    //    把这个值又原样顶回去（测试里实测到：改成 24px 后立刻被拉回 12px）。
+    //    真正由使用者触发的修改走 setPanelBg()，那里会广播。
   }
 
   if (message.session) adoptSession(message.session)

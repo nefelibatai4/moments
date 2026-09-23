@@ -18,6 +18,10 @@
   // 与 src/lib/panelBackground.js 的 PANEL_BG_KEY 必须一致
   const PANEL_BG_KEY = 'moments_panel_bg'
 
+  // 是不是"面板里的那一层网页"（浮层 / 兜底小窗都是 iframe）。
+  // 提前声明：下面好几处逻辑都要据此决定"能不能把本地值当权威上报"。
+  const isPanelFrame = window.top !== window
+
   let lastPushed = null
 
   // ---------------------------------------------------------------- 会话同步
@@ -108,16 +112,34 @@
     send({ type: 'panel:settings', settings, theme })
   }
 
+  // 面板帧只走"使用者明确改过"这一条路（见上面的说明）
+  function onPanelSettingChangedByUser() {
+    lastPanelSent = null
+    pushPanelSettings()
+  }
+
+  // 周期性/被动触发（10 秒轮询、切回前台、主题属性变化）：
+  // **面板帧一律跳过**。它的 localStorage 可能只是扩展下发的副本，
+  // 上报上去会和使用者真正的设置互抢（实测：改成 24px 被旧值拉回 12px）。
+  function pushPanelSettingsIfAuthoritative() {
+    if (isPanelFrame) return
+    pushPanelSettings()
+  }
+
   // ---------------------------------------------------------------- 触发时机
 
   push()
-  pushPanelSettings()
+  // ⚠️ 启动这一次同样要守"面板帧不上报"的规矩。
+  //    否则：面板帧启动时把自己那份**旧值**（例如默认的 12px）上报上去，
+  //    如果这个请求恰好晚于使用者刚做的修改落地，就会把新值顶掉
+  //    （测试里实测到：改成 24px 后立刻被拉回 12px，就是这个时序）。
+  pushPanelSettingsIfAuthoritative()
 
   // 登录/登出、主题切换都不会触发 storage 事件（storage 事件只在*其他*标签页触发），
   // 所以这里用一个低频轮询兜住本标签页内的变化。读两个 localStorage key 很便宜。
   setInterval(() => {
     push()
-    pushPanelSettings()
+    pushPanelSettingsIfAuthoritative()
     pushGlobalState()
   }, 10000)
 
@@ -125,7 +147,7 @@
   window.addEventListener('storage', (e) => {
     if (!e.key) return
     if (e.key === KEY || e.key.startsWith(`${KEY}.`)) push()
-    if (e.key === PANEL_BG_KEY) pushPanelSettings()
+    if (e.key === PANEL_BG_KEY) pushPanelSettingsIfAuthoritative()
   })
 
   // 【我】里改设置时网页会 postMessage 广播（见 src/lib/panelBackground.js）。
@@ -135,13 +157,14 @@
   window.addEventListener('message', (e) => {
     if (e.source !== window) return
     const data = e.data
-    if (!data || data.source !== 'moments-app' || data.type !== 'panel-bg') return
-    pushPanelSettings()
+    if (!data || data.source !== 'moments-app') return
+    if (data.type !== 'panel-bg' && data.type !== 'theme-change') return
+    onPanelSettingChangedByUser()
   })
 
   // 主题是挂在 <html data-theme> 上的，改主题不会触发上面任何一条 → 观察属性。
   try {
-    new MutationObserver(pushPanelSettings).observe(document.documentElement, {
+    new MutationObserver(pushPanelSettingsIfAuthoritative).observe(document.documentElement, {
       attributes: true,
       attributeFilter: ['data-theme'],
     })
@@ -153,7 +176,7 @@
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       push()
-      pushPanelSettings()
+      pushPanelSettingsIfAuthoritative()
     }
   })
 
@@ -166,7 +189,6 @@
   //
   // ⚠️ 网页那边（src/lib/extensionBridge.js）会校验 `event.source === window`，
   //    所以宿主网页伪造的消息进不来；这里发的消息也**只发到本文档自己**（不是 parent）。
-  const isPanelFrame = window.top !== window
   let lastStateSent = null
 
   function pushGlobalState(force) {

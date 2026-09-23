@@ -31,6 +31,13 @@ export function setTheme(theme) {
     // 存不进去不影响这次会话的外观（属性照样设上）
   }
   document.documentElement.setAttribute('data-theme', theme)
+  // 广播"使用者主动改了主题"。面板帧里的 content.js 只认这一类主动修改
+  // （它的 data-theme 也可能只是扩展下发下来的副本，不该被当成使用者的意见上报）
+  try {
+    window.postMessage({ source: 'moments-app', type: 'theme-change', theme }, '*')
+  } catch {
+    /* 忽略 */
+  }
 }
 
 /** 只应用外观、不写存储：用于扩展把"全局主题"递进来的场景（见 lib/extensionBridge.js） */
