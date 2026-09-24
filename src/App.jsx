@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect } from 'react'
 import Timeline from './pages/Timeline'
 import RequireAuth from './components/RequireAuth'
 import SyncIndicator from './components/SyncIndicator'
+import NavIcon from './components/NavIcon'
 import { useAccess } from './lib/AuthContext'
 import { supabase } from './supabaseClient'
 import { subscribeToPush } from './lib/usePushNotification'
@@ -36,21 +37,39 @@ export default function App() {
 
   return (
     <div className="app-container">
+      {/* ⚠️ 这里刻意**不改 DOM 结构**：同一套 `header > h1 + 指示器 + nav > a`
+          由 CSS 按使用场景摆成三种样子（插件顶部横排 / 桌面左侧竖栏 / 手机底部 tab）。
+          好处：① 插件形态完全不受影响；② 测试里的 `header nav a`、`.app-header`、
+          `.nav-chat-link` 选择器继续有效（e2e 里有一条断言"导航是 3 项"，把
+          「动态」留在 h1 里而不是塞进 nav，正是为了不打破它）。
+          图标是内联 SVG：不占额外请求，也不给 innerText 添字，文字断言照样过。 */}
       <header className="app-header">
-        <h1><Link to="/">动态</Link></h1>
+        <h1>
+          <Link to="/" className="nav-item">
+            <NavIcon name="timeline" />
+            <span className="nav-label">动态</span>
+          </Link>
+        </h1>
         {/* 头部状态指示器（正在上传 NN% / 上次同步 HH:MM）。
             放在【动态】右侧、导航左侧；窄面板下会被 CSS 收紧而不是挤掉导航。 */}
         <SyncIndicator />
         {session && approved && (
           <nav>
-            <Link to="/publish">发布</Link>
-            <Link to="/chat" className="nav-chat-link">
-              私聊
+            <Link to="/publish" className="nav-item">
+              <NavIcon name="publish" />
+              <span className="nav-label">发布</span>
+            </Link>
+            <Link to="/chat" className="nav-item nav-chat-link">
+              <NavIcon name="chat" />
+              <span className="nav-label">私聊</span>
               {unread > 0 && (
                 <span className="nav-unread-badge">{unread > 99 ? '99+' : unread}</span>
               )}
             </Link>
-            <Link to="/profile">我</Link>
+            <Link to="/profile" className="nav-item">
+              <NavIcon name="me" />
+              <span className="nav-label">我</span>
+            </Link>
           </nav>
         )}
       </header>

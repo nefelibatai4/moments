@@ -2439,6 +2439,233 @@ html[data-surface="glass"] .app-header {
   backdrop-filter: none;
 }
 
+/* ══════════════════════════════════════════════════════════════
+   导航的三种摆放（同一套 DOM，只改 CSS）
+   ──────────────────────────────────────────────────────────────
+   使用者 2026-09-24 的要求：
+     · 电脑整页  → 【动态/发布/私聊/我】在**左上角、从上到下**排成一条竖栏
+     · 手机      → 同样的四项挪到**底部**，像微博那样的 tab 栏（图标 + 文字）
+     · 插件面板  → **不变**（仍是顶部横排）
+
+   三条分支的判据：
+     ① 插件：`html[data-surface]`（浮层/兜底小窗都会带上）→ 一律不套新布局
+     ② 手机：宽度 ≤600px（与项目既有断点一致；窄窗口的桌面浏览器也会得到底栏，
+        这本来也是想要的行为）
+     ③ 电脑：宽度 >600px
+   ⚠️ 两个坑写在这里，免得后人重踩：
+     · `.app-header` 有 `backdrop-filter`，而它会**成为 fixed 子元素的包含块** ——
+       所以新布局里把它关掉，指示器才能真正相对视口固定在顶部
+       （与 PITFALLS #45「transform/filter 改掉 fixed 参照物」是同一类问题）。
+     · 导航换了位置，**内容必须让位**：桌面给左边距，手机给下边距，
+       否则时间线会被栏压住（聊天页还有 100vh 的高度账要算）。
+   ══════════════════════════════════════════════════════════════ */
+
+/* 导航项的公共外观：图标在上、文字在下（横排时并排的间距由各分支再调） */
+.nav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  text-decoration: none;
+  position: relative;
+}
+
+.nav-item:hover {
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.nav-item svg {
+  flex: 0 0 auto;
+}
+
+/* ── 电脑整页：左侧竖栏 ── */
+@media (min-width: 601px) {
+  html:not([data-surface]) {
+    --rail-w: 92px;
+  }
+
+  html:not([data-surface]) .app-header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: var(--rail-w);
+    /* 关掉 backdrop-filter：它会变成 fixed 子元素的包含块（见上面的说明） */
+    backdrop-filter: none;
+    background-color: transparent;
+    border-bottom: 0;
+    border-right: 1px solid var(--border-standard);
+    padding: 14px 8px;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 22px;
+    z-index: 30;
+  }
+
+  /* 「动态」是 h1 里的链接，在这一栏里要和其它项长得一样 */
+  html:not([data-surface]) .app-header h1 {
+    font-size: 0.95rem;
+    margin: 0;
+  }
+
+  html:not([data-surface]) .app-header h1 .nav-item {
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 6px;
+    border-radius: 10px;
+  }
+
+  html:not([data-surface]) .app-header nav {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
+
+  html:not([data-surface]) .app-header nav .nav-item {
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 6px;
+    border-radius: 10px;
+    /* 竖栏里的项至少 44px 高，好点 */
+    min-height: 44px;
+    min-width: 60px;
+    justify-content: center;
+  }
+
+  /* 指示器太宽，塞不进 92px 的竖栏 → 固定到内容区顶部的细条里 */
+  html:not([data-surface]) .sync-indicator {
+    position: fixed;
+    top: 0;
+    left: var(--rail-w);
+    right: 0;
+    height: 30px;
+    margin: 0;
+    padding: 0 16px;
+    justify-content: flex-end;
+    align-items: center;
+    background-color: color-mix(in srgb, var(--bg-page) 86%, transparent);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border-subtle);
+    z-index: 29;
+  }
+
+  /* 内容让位：左边空出竖栏，右侧细条 30px 也留出来 */
+  html:not([data-surface]) .app-container {
+    padding-left: calc(var(--rail-w) + 20px);
+    padding-top: 30px;
+  }
+
+  /* 未读角标在竖栏里改成右上角的小点数字 */
+  html:not([data-surface]) .nav-unread-badge {
+    position: absolute;
+    top: 2px;
+    right: 4px;
+  }
+}
+
+/* ── 手机：底部 tab 栏 ── */
+@media (max-width: 600px) {
+  html:not([data-surface]) {
+    --tabbar-h: 54px;
+  }
+
+  html:not([data-surface]) .app-header {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    /* 关掉 backdrop-filter：同样是"包含块"那个坑 */
+    backdrop-filter: none;
+    background-color: color-mix(in srgb, var(--bg-page) 92%, transparent);
+    border-bottom: 0;
+    border-top: 1px solid var(--border-standard);
+    padding: 0 4px calc(env(safe-area-inset-bottom, 0px));
+    margin: 0;
+    height: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px));
+    display: flex;
+    align-items: center;
+    /* [动态] [nav: 发布 私聊 我] 四个等宽排开 */
+    justify-content: space-between;
+    z-index: 30;
+  }
+
+  html:not([data-surface]) .app-header h1 {
+    font-size: 0.72rem;
+    margin: 0;
+    flex: 1 1 0;
+    text-align: center;
+  }
+
+  html:not([data-surface]) .app-header nav {
+    flex: 3 1 0;
+    display: flex;
+    justify-content: space-around;
+    gap: 0;
+  }
+
+  html:not([data-surface]) .app-header .nav-item {
+    flex: 1 1 0;
+    flex-direction: column;
+    gap: 3px;
+    padding: 6px 0;
+    border-radius: 10px;
+    font-size: 0.72rem;
+    /* 触屏：每个 tab 都要够大好点 */
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  html:not([data-surface]) .app-header .nav-label {
+    font-size: 0.72rem;
+  }
+
+  /* 指示器改成顶部的一条细线（导航挪走了，手机上它没有"右侧"可放） */
+  html:not([data-surface]) .sync-indicator {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 26px;
+    margin: 0;
+    padding: 0 12px;
+    justify-content: flex-end;
+    align-items: center;
+    font-size: 0.7rem;
+    background-color: color-mix(in srgb, var(--bg-page) 86%, transparent);
+    backdrop-filter: blur(10px);
+    z-index: 29;
+  }
+
+  /* 内容让位：底部空出 tab 栏；顶部让出那条细线 */
+  html:not([data-surface]) .app-container {
+    padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 12px);
+    padding-top: 26px;
+  }
+
+  /* 聊天页：底部栏收起（使用者选定"像微信"，给键盘留空间），输入框直接贴底 */
+  html:not([data-surface]):has(.chat-thread) .app-header {
+    display: none;
+  }
+
+  html:not([data-surface]):has(.chat-thread) .app-container {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* 私聊列表页仍保留底栏（它是 tab 目的地之一） */
+  html:not([data-surface]) .nav-unread-badge {
+    position: absolute;
+    top: 2px;
+    right: 18%;
+  }
+}
+
 @media (max-width: 600px) {
   body {
     font-size: 15px;
