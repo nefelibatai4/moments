@@ -35,8 +35,11 @@ export default function App() {
     }
   }, [session, approved])
 
+  // 已激活才算"登录后"：导航/竖栏/底栏只在此时出现（登录页收起，见 index.css）
+  const authed = Boolean(session && approved)
+
   return (
-    <div className="app-container">
+    <div className={`app-container${authed ? ' authed' : ''}`}>
       {/* ⚠️ 这里刻意**不改 DOM 结构**：同一套 `header > h1 + 指示器 + nav > a`
           由 CSS 按使用场景摆成三种样子（插件顶部横排 / 桌面左侧竖栏 / 手机底部 tab）。
           好处：① 插件形态完全不受影响；② 测试里的 `header nav a`、`.app-header`、

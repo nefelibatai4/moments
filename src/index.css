@@ -28,6 +28,12 @@
   /* 页面顶部留白。归属权在 .app-header（它要吸顶），不再由 .app-container 出，
      否则吸顶时 header 上方会漏出一条缝、滚上去的内容从缝里透出来。 */
   --app-pad-top: calc(40px + env(safe-area-inset-top, 0px));
+  /* 顶部/底部安全区（iPhone 刘海、灵动岛、home 指示条）。
+     ⚠️ 导航从"文档流里的顶部条"改成"固定在底部"之后，顶部的安全区就没人管了 ——
+     整页形态的内容必须自己把它让出来，否则会顶到刘海底下（使用者 2026-09-24 报的
+     「每个页面都往上面延伸出去」就是这个）。抽成变量是为了测试里能模拟刘海高度。 */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
   --bg-page: #07080a;
   --bg-card: #101111;
   --bg-elevated: #191a1b;
@@ -2546,7 +2552,8 @@ html[data-surface="glass"] .app-header {
   /* 指示器太宽，塞不进 92px 的竖栏 → 固定到内容区顶部的细条里 */
   html:not([data-surface]) .sync-indicator {
     position: fixed;
-    top: 0;
+    /* 细条自己避开刘海：内容区的让位量 = 细条高 + 安全区（见上面的 padding-top） */
+    top: var(--safe-top);
     left: var(--rail-w);
     right: 0;
     height: 30px;
@@ -2567,12 +2574,13 @@ html[data-surface="glass"] .app-header {
      又偏右又窄，使用者一眼就看出"搜索框位置不对"）。
      加在 body 上，容器就会在"视口减去竖栏"的剩余空间里正常居中。
      padding-top 走容器自己（border-box，聊天页的 100vh 会把 30px 算进去，不会溢出）。 */
-  html:not([data-surface]) body {
+  /* 左边距只在**已登录**时让位：登录/注册页没有竖栏，不该被推右 */
+  html:not([data-surface]):has(.app-container.authed) body {
     padding-left: var(--rail-w);
   }
 
   html:not([data-surface]) .app-container {
-    padding-top: 30px;
+    padding-top: calc(30px + var(--safe-top));
   }
 
 
@@ -2591,6 +2599,18 @@ html[data-surface="glass"] .app-header {
    ⚠️ 必须放在两个媒体查询**之外**：第一版写进了桌面分支，手机上照样被压。 */
 html:not([data-surface]) .chat-page {
   margin-top: 0;
+}
+
+/* 未登录的页面（登录 / 注册 / 激活）：没有导航可去（点了也会被弹回登录），
+   留着只会像截图里那样"底部孤零零一个动态"。收起导航与指示器，只保留顶部安全区。
+   ⚠️ 用 `.authed` 而不是"路由判断"：类由 React 按 session+approved 打，CSS 不需要知道路由。 */
+html:not([data-surface]) .app-container:not(.authed) .app-header,
+html:not([data-surface]) .app-container:not(.authed) .sync-indicator {
+  display: none;
+}
+
+html:not([data-surface]) .app-container:not(.authed) {
+  padding-top: calc(24px + var(--safe-top));
 }
 
 /* ── 手机：底部 tab 栏 ── */
@@ -2653,7 +2673,7 @@ html:not([data-surface]) .chat-page {
   /* 指示器改成顶部的一条细线（导航挪走了，手机上它没有"右侧"可放） */
   html:not([data-surface]) .sync-indicator {
     position: fixed;
-    top: 0;
+    top: var(--safe-top);
     left: 0;
     right: 0;
     height: 26px;
@@ -2667,19 +2687,22 @@ html:not([data-surface]) .chat-page {
     z-index: 29;
   }
 
-  /* 内容让位：底部空出 tab 栏；顶部让出那条细线 */
+  /* 内容让位：底部空出 tab 栏；顶部让出细条 + **安全区（刘海/灵动岛）** */
   html:not([data-surface]) .app-container {
-    padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 12px);
-    padding-top: 26px;
+    padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 12px);
+    padding-top: calc(26px + var(--safe-top));
   }
 
-  /* 聊天页：底部栏收起（使用者选定"像微信"，给键盘留空间），输入框直接贴底 */
-  html:not([data-surface]):has(.chat-thread) .app-header {
+  /* 聊天页：进入"专注模式" —— 底栏与顶部细条都收起（使用者选定像微信，给键盘留空间），
+     只保留安全区，输入框直接贴底 */
+  html:not([data-surface]):has(.chat-thread) .app-header,
+  html:not([data-surface]):has(.chat-thread) .sync-indicator {
     display: none;
   }
 
   html:not([data-surface]):has(.chat-thread) .app-container {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-top: calc(8px + var(--safe-top));
+    padding-bottom: var(--safe-bottom);
   }
 
   /* 私聊列表页仍保留底栏（它是 tab 目的地之一） */
