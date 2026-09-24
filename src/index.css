@@ -1233,6 +1233,122 @@ html[data-surface="panel"] .sync-indicator {
    背后的文字与那团彩色光斑是**故意**加的：毛玻璃底下若是纯灰就没有可折射的东西，
    效果会看不出来。卡片的底色与 backdrop-filter 由 panelBgStyle() 内联给出，
    和扩展浮层用的是同一份映射（所以这里看到的就是面板里的样子）。 */
+/* ── 成员管理（只有管理员看得到，见 components/AdminPanel.jsx）── */
+.admin-panel {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 16px;
+  margin-bottom: 20px;
+}
+
+.admin-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.admin-head h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.admin-refresh,
+.admin-delete {
+  border: 1px solid var(--border-standard);
+  background: var(--btn-secondary-bg);
+  color: var(--text-secondary);
+  border-radius: 8px;
+  padding: 4px 12px;
+  font-size: 0.78rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.admin-refresh:hover:not(:disabled),
+.admin-delete:hover:not(:disabled) {
+  opacity: 0.8;
+}
+
+.admin-delete:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* 第二步确认：变红，明确"再点一次就真删了" */
+.admin-delete.confirming {
+  border-color: var(--accent-red);
+  color: var(--accent-red);
+  font-weight: 600;
+}
+
+.admin-user {
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: var(--bg-card);
+}
+
+.admin-user-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.admin-user-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 0.92rem;
+}
+
+.admin-tag {
+  font-size: 0.7rem;
+  border-radius: 999px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-standard);
+  color: var(--text-muted);
+}
+
+.admin-tag.admin {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+.admin-tag.ok {
+  color: var(--accent-green);
+  border-color: color-mix(in srgb, var(--accent-green) 50%, transparent);
+}
+
+.admin-tag.wait {
+  color: var(--accent-red);
+  border-color: color-mix(in srgb, var(--accent-red) 50%, transparent);
+}
+
+/* 删除按钮推到这一行最右边，离其他内容远一点，减少误点 */
+.admin-user-top .admin-delete {
+  margin-left: auto;
+}
+
+.admin-user-line {
+  font-size: 0.78rem;
+  line-height: 1.75;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.admin-user-line.muted {
+  color: var(--text-muted);
+}
+
+.admin-hint {
+  font-size: 0.75rem;
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+
 .panel-bg-preview {
   position: relative;
   height: 148px;

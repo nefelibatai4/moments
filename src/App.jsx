@@ -7,6 +7,7 @@ import { useAccess } from './lib/AuthContext'
 import { supabase } from './supabaseClient'
 import { subscribeToPush } from './lib/usePushNotification'
 import { useUnreadCount } from './lib/useUnreadCount'
+import { touchSession } from './lib/userPresence'
 
 // 按路由做代码分割：首屏只需要 React + 路由 + Supabase + 时间线，
 // 其余页面在真正导航过去时才下载。这样首屏 JS 明显变小。
@@ -28,6 +29,8 @@ export default function App() {
   useEffect(() => {
     if (session && approved) {
       subscribeToPush(supabase, session)
+      // 记一次"上次访问"（IP/国家/设备由服务端从请求头取，客户端伪造不了）
+      touchSession()
     }
   }, [session, approved])
 

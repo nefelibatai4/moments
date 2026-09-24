@@ -6,6 +6,7 @@ import { getTheme, setTheme } from '../lib/theme'
 import { compressImage } from '../lib/compressImage'
 import ImageLightbox from '../components/ImageLightbox'
 import PanelBackgroundSettings from '../components/PanelBackgroundSettings'
+import AdminPanel from '../components/AdminPanel'
 
 // 扩展只能在桌面版 Chrome 里安装：iOS 壳里没有「解压 + 装扩展」这个概念。
 // 原生端不显示下载按钮，但也不让它静默消失（那样会被当成 bug），改显示一句该去哪做。
@@ -273,6 +274,9 @@ export default function Profile() {
       </div>
 
       <PanelBackgroundSettings />
+
+      {/* 成员管理：只有管理员会看到内容（服务端也会再校验一次） */}
+      <AdminPanel />
 
       <div className="theme-section">
         <div className="theme-toggle-row">
