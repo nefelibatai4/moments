@@ -151,9 +151,18 @@ export default function AdminPanel() {
             </div>
 
             <p className="admin-user-line">{u.email || '（没有邮箱）'}</p>
+            {/* ⚠️ 「重新登录」与「最近活跃」必须分开显示：
+                last_sign_in_at 只在**输密码/验证**那一刻更新；一直保持登录的人
+                可以天天在用、这个时间却停在几天前（使用者 2026-09-24 就被这个误导过）。
+                last_active_at 取 打开应用 / 发消息 / 发动态 / 评论 / 会话刷新 里最新的一个。 */}
             <p className="admin-user-line">
-              上次登录 {absTime(u.last_sign_in_at)} · 上次打开 {relTime(u.last_seen_at)}
-              {u.last_seen_at ? `（${absTime(u.last_seen_at)}）` : ''}
+              最近活跃 <strong>{relTime(u.last_active_at)}</strong>
+              {u.last_active_at ? `（${absTime(u.last_active_at)}）` : ''}
+              · 重新登录 {absTime(u.last_sign_in_at)}
+            </p>
+            <p className="admin-user-line">
+              上次打开应用 {u.last_seen_at ? `${relTime(u.last_seen_at)}（${absTime(u.last_seen_at)}）` : '—'}
+              {u.session_refreshed_at ? ` · 会话最后续期 ${absTime(u.session_refreshed_at)}` : ''}
             </p>
             <p className="admin-user-line">
               IP {u.last_ip || '—'}{u.last_country ? `（${u.last_country}）` : ''} · 设备 {shortDevice(u.last_device)}
