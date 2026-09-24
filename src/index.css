@@ -2633,14 +2633,17 @@ html:not([data-surface]) .app-container:not(.authed) {
     --tabbar-h: 54px;
   }
 
-  /* 滚动交给 main，body 不再滚 —— 固定定位的坑整套绕开 */
+  /* 滚动交给 main，body 不再滚 —— 固定定位的坑整套绕开。
+     ⚠️ 高度用 JS 钉的 `--app-h`（见 lib/useViewportHeight.js），不再直接用 100dvh：
+     iOS 上启动时的视口高度比真实可见区域大一个固定值，四个页面会整体浮起来
+     （使用者 2026-09-24 实测）；`--app-h` 取的是 visualViewport，也就是眼睛能看到的高度。 */
   html:not([data-surface]) body {
-    height: 100dvh;
+    height: var(--app-h, 100dvh);
     overflow: hidden;
   }
 
   html:not([data-surface]) .app-container {
-    height: 100dvh;
+    height: var(--app-h, 100dvh);
     display: flex;
     flex-direction: column;
     /* 内边距与安全区都挪到 main / header 上，这里清零 */

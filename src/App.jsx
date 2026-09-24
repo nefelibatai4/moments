@@ -8,6 +8,7 @@ import { supabase } from './supabaseClient'
 import { subscribeToPush } from './lib/usePushNotification'
 import { useUnreadCount } from './lib/useUnreadCount'
 import { touchSession } from './lib/userPresence'
+import { useViewportHeight } from './lib/useViewportHeight'
 
 // 按路由做代码分割：首屏只需要 React + 路由 + Supabase + 时间线，
 // 其余页面在真正导航过去时才下载。这样首屏 JS 明显变小。
@@ -23,6 +24,8 @@ const UserProfile = lazy(() => import('./pages/UserProfile'))
 
 export default function App() {
   const { session, approved } = useAccess()
+  // 手机端外壳高度跟着"可见视口"走（CSS 视口单位在 iOS 上启动时偏大，见 hook 里的说明）
+  useViewportHeight()
   const unread = useUnreadCount(session && approved ? session.user.id : null)
 
   // 只有已激活账号才注册 Web Push 订阅
