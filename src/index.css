@@ -161,16 +161,31 @@ button:disabled {
 /* 头部状态指示器：正在上传 NN% / 上次同步 HH:MM。
    放在【动态】和右侧导航之间，所以给它 margin-right:auto 自己吃满中间的空档。
    数字用等宽字形，百分比跳动时不会左右抖。 */
+/* 同步/上传状态：现在只出现在【我】里的一行（原来在头部，会占一条黑框，
+   使用者 2026-09-24 要求挪走）。 */
 .sync-indicator {
   display: inline-flex;
   align-items: baseline;
   gap: 5px;
-  margin-right: auto;
-  margin-left: 10px;
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   color: var(--text-muted);
   white-space: nowrap;
   transition: opacity 0.25s ease, color 0.25s ease;
+}
+
+.profile-sync-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.profile-sync-label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
 }
 
 .sync-indicator.uploading {
@@ -193,13 +208,6 @@ button:disabled {
   /* 最窄处也要留够"100%"的宽度，避免数字变化时挤动旁边的导航 */
   min-width: 2.6em;
   text-align: right;
-}
-
-/* 面板形态下头部本来就只有 420px 宽，这个指示器要让位给导航 */
-html[data-surface="glass"] .sync-indicator,
-html[data-surface="panel"] .sync-indicator {
-  font-size: 0.72rem;
-  margin-left: 6px;
 }
 
 .app-header h1 {
@@ -2549,23 +2557,6 @@ html[data-surface="glass"] .app-header {
     justify-content: center;
   }
 
-  /* 指示器太宽，塞不进 92px 的竖栏 → 固定到内容区顶部的细条里 */
-  html:not([data-surface]) .sync-indicator {
-    position: fixed;
-    /* 细条自己避开刘海：内容区的让位量 = 细条高 + 安全区（见上面的 padding-top） */
-    top: var(--safe-top);
-    left: var(--rail-w);
-    right: 0;
-    height: 30px;
-    margin: 0;
-    padding: 0 16px;
-    justify-content: flex-end;
-    align-items: center;
-    background-color: color-mix(in srgb, var(--bg-page) 86%, transparent);
-    backdrop-filter: blur(12px);
-    border-bottom: 1px solid var(--border-subtle);
-    z-index: 29;
-  }
 
   /* 内容让位。
      ⚠️ 左边距必须加在 **body** 上，不能加在 .app-container 上：
@@ -2580,7 +2571,7 @@ html[data-surface="glass"] .app-header {
   }
 
   html:not([data-surface]) .app-container {
-    padding-top: calc(30px + var(--safe-top));
+    padding-top: calc(16px + var(--safe-top));
   }
 
 
@@ -2604,8 +2595,8 @@ html:not([data-surface]) .chat-page {
 /* 未登录的页面（登录 / 注册 / 激活）：没有导航可去（点了也会被弹回登录），
    留着只会像截图里那样"底部孤零零一个动态"。收起导航与指示器，只保留顶部安全区。
    ⚠️ 用 `.authed` 而不是"路由判断"：类由 React 按 session+approved 打，CSS 不需要知道路由。 */
-html:not([data-surface]) .app-container:not(.authed) .app-header,
-html:not([data-surface]) .app-container:not(.authed) .sync-indicator {
+
+html:not([data-surface]) .app-container:not(.authed) .app-header {
   display: none;
 }
 
@@ -2670,38 +2661,22 @@ html:not([data-surface]) .app-container:not(.authed) {
     font-size: 0.72rem;
   }
 
-  /* 指示器改成顶部的一条细线（导航挪走了，手机上它没有"右侧"可放） */
-  html:not([data-surface]) .sync-indicator {
-    position: fixed;
-    top: var(--safe-top);
-    left: 0;
-    right: 0;
-    height: 26px;
-    margin: 0;
-    padding: 0 12px;
-    justify-content: flex-end;
-    align-items: center;
-    font-size: 0.7rem;
-    background-color: color-mix(in srgb, var(--bg-page) 86%, transparent);
-    backdrop-filter: blur(10px);
-    z-index: 29;
-  }
 
   /* 内容让位：底部空出 tab 栏；顶部让出细条 + **安全区（刘海/灵动岛）** */
   html:not([data-surface]) .app-container {
     padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 12px);
-    padding-top: calc(26px + var(--safe-top));
+    padding-top: calc(14px + var(--safe-top));
   }
 
   /* 聊天页：进入"专注模式" —— 底栏与顶部细条都收起（使用者选定像微信，给键盘留空间），
      只保留安全区，输入框直接贴底 */
-  html:not([data-surface]):has(.chat-thread) .app-header,
-  html:not([data-surface]):has(.chat-thread) .sync-indicator {
+
+  html:not([data-surface]):has(.chat-thread) .app-header {
     display: none;
   }
 
   html:not([data-surface]):has(.chat-thread) .app-container {
-    padding-top: calc(8px + var(--safe-top));
+    padding-top: calc(6px + var(--safe-top));
     padding-bottom: var(--safe-bottom);
   }
 

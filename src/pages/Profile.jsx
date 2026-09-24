@@ -7,6 +7,7 @@ import { compressImage } from '../lib/compressImage'
 import ImageLightbox from '../components/ImageLightbox'
 import PanelBackgroundSettings from '../components/PanelBackgroundSettings'
 import AdminPanel from '../components/AdminPanel'
+import SyncIndicator from '../components/SyncIndicator'
 
 // 扩展只能在桌面版 Chrome 里安装：iOS 壳里没有「解压 + 装扩展」这个概念。
 // 原生端不显示下载按钮，但也不让它静默消失（那样会被当成 bug），改显示一句该去哪做。
@@ -173,6 +174,13 @@ export default function Profile() {
   return (
     <div className="profile-page">
       <h2>我</h2>
+
+      {/* 同步/上传状态（原来在头部，会占一条黑框；使用者 2026-09-24 要求挪进【我】） */}
+      <div className="profile-sync-row">
+        <span className="profile-sync-label">本地备份</span>
+        <SyncIndicator />
+      </div>
+
 
       <div className="profile-avatar-section">
         <button

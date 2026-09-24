@@ -2,7 +2,6 @@ import { Routes, Route, Link } from 'react-router-dom'
 import { lazy, Suspense, useEffect } from 'react'
 import Timeline from './pages/Timeline'
 import RequireAuth from './components/RequireAuth'
-import SyncIndicator from './components/SyncIndicator'
 import NavIcon from './components/NavIcon'
 import { useAccess } from './lib/AuthContext'
 import { supabase } from './supabaseClient'
@@ -53,9 +52,6 @@ export default function App() {
             <span className="nav-label">动态</span>
           </Link>
         </h1>
-        {/* 头部状态指示器（正在上传 NN% / 上次同步 HH:MM）。
-            放在【动态】右侧、导航左侧；窄面板下会被 CSS 收紧而不是挤掉导航。 */}
-        <SyncIndicator />
         {session && approved && (
           <nav>
             <Link to="/publish" className="nav-item">
