@@ -2575,12 +2575,22 @@ html[data-surface="glass"] .app-header {
     padding-top: 30px;
   }
 
+
   /* 未读角标在竖栏里改成右上角的小点数字 */
   html:not([data-surface]) .nav-unread-badge {
     position: absolute;
     top: 2px;
     right: 4px;
   }
+}
+
+/* ⚠️ `.chat-page` 自带 `margin: -16px -4px`（当年为了抵消头部内边距、让列表往上贴）。
+   现在整页形态顶部多了一条固定细条（桌面 30px / 手机 26px），这个负边距会把
+   「搜索联系人」顶到**细条下面**去（实测框顶 y=18 被 0..30 的细条压住 ——
+   使用者报的"位置不对"就是这个）。所以整页形态下取消它。
+   ⚠️ 必须放在两个媒体查询**之外**：第一版写进了桌面分支，手机上照样被压。 */
+html:not([data-surface]) .chat-page {
+  margin-top: 0;
 }
 
 /* ── 手机：底部 tab 栏 ── */
