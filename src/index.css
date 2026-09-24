@@ -2503,7 +2503,12 @@ html[data-surface="glass"] .app-header {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 22px;
+    /* ⚠️ 必须显式写 flex-start：基础规则里为"顶部横排"写了
+       `justify-content: space-between`（标题靠左、导航靠右），
+       改成列方向后它会把首尾两项顶到**上下两端** ——
+       实测就是"发布/私聊/我 跑到竖栏最下面"。 */
+    justify-content: flex-start;
+    gap: 14px;
     z-index: 30;
   }
 
@@ -2524,13 +2529,13 @@ html[data-surface="glass"] .app-header {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 14px;
+    gap: 8px;
   }
 
   html:not([data-surface]) .app-header nav .nav-item {
     flex-direction: column;
-    gap: 4px;
-    padding: 8px 6px;
+    gap: 3px;
+    padding: 6px;
     border-radius: 10px;
     /* 竖栏里的项至少 44px 高，好点 */
     min-height: 44px;
@@ -2555,9 +2560,18 @@ html[data-surface="glass"] .app-header {
     z-index: 29;
   }
 
-  /* 内容让位：左边空出竖栏，右侧细条 30px 也留出来 */
+  /* 内容让位。
+     ⚠️ 左边距必须加在 **body** 上，不能加在 .app-container 上：
+     那是个 `max-width: 680px; margin: 0 auto` 的居中容器 —— 给它加 padding-left，
+     内容会被推右并且**可用宽度少掉一栏**（实测 1280 宽下内容落在 412..960，
+     又偏右又窄，使用者一眼就看出"搜索框位置不对"）。
+     加在 body 上，容器就会在"视口减去竖栏"的剩余空间里正常居中。
+     padding-top 走容器自己（border-box，聊天页的 100vh 会把 30px 算进去，不会溢出）。 */
+  html:not([data-surface]) body {
+    padding-left: var(--rail-w);
+  }
+
   html:not([data-surface]) .app-container {
-    padding-left: calc(var(--rail-w) + 20px);
     padding-top: 30px;
   }
 
