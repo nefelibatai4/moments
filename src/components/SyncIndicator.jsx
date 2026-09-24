@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   advanceProgress,
   nextCycleDelay,
+  nextCycleDuration,
   readLastSync,
   writeLastSync,
   formatLastSync,
@@ -27,6 +28,9 @@ export default function SyncIndicator() {
   const [percent, setPercent] = useState(0)
   const [lastSync, setLastSync] = useState(() => readLastSync())
   const percentRef = useRef(0)
+  // 本轮的目标耗时（开轮时随机摇一个），进度朝它靠拢
+  const targetRef = useRef(0)
+  const startedAtRef = useRef(0)
 
   useEffect(() => {
     let cancelled = false
@@ -37,13 +41,17 @@ export default function SyncIndicator() {
 
     function startCycle() {
       percentRef.current = 0
+      // 每轮先摇一个目标总耗时（20 秒–4 分钟），这一步是"耗时随机"的关键
+      targetRef.current = nextCycleDuration()
+      startedAtRef.current = Date.now()
       setPercent(0)
       setPhase('uploading')
       later(step, 400)
     }
 
     function step() {
-      const { percent: next, delay } = advanceProgress(percentRef.current)
+      const elapsed = Date.now() - startedAtRef.current
+      const { percent: next, delay } = advanceProgress(percentRef.current, elapsed, targetRef.current)
       if (next >= 99) {
         // 到站：显示 100%、记下"上次同步时间"，停留一会儿再回到安静状态
         later(() => {
