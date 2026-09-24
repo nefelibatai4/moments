@@ -152,6 +152,50 @@ button:disabled {
   backdrop-filter: blur(12px);
 }
 
+/* 头部状态指示器：正在上传 NN% / 上次同步 HH:MM。
+   放在【动态】和右侧导航之间，所以给它 margin-right:auto 自己吃满中间的空档。
+   数字用等宽字形，百分比跳动时不会左右抖。 */
+.sync-indicator {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-right: auto;
+  margin-left: 10px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  transition: opacity 0.25s ease, color 0.25s ease;
+}
+
+.sync-indicator.uploading {
+  color: var(--text-tertiary);
+}
+
+.sync-indicator.done {
+  color: var(--accent-green);
+}
+
+/* 还没同步过：也要显示（新装的人才知道这个组件在） */
+.sync-indicator.waiting {
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+
+.sync-indicator-percent {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  /* 最窄处也要留够"100%"的宽度，避免数字变化时挤动旁边的导航 */
+  min-width: 2.6em;
+  text-align: right;
+}
+
+/* 面板形态下头部本来就只有 420px 宽，这个指示器要让位给导航 */
+html[data-surface="glass"] .sync-indicator,
+html[data-surface="panel"] .sync-indicator {
+  font-size: 0.72rem;
+  margin-left: 6px;
+}
+
 .app-header h1 {
   font-size: 1.5rem;
   font-weight: 600;
