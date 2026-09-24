@@ -1671,6 +1671,21 @@ button:disabled {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* 手机上是"应用外壳 + main 内部滚动"，聊天页要撑满的是 main（不是视口），
+   否则 100vh 会比 main 高出一截、把底部顶出去。 */
+@media (max-width: 600px) {
+  html:not([data-surface]) .app-container:has(.chat-thread) {
+    /* ⚠️ 这里**不要**写 height: 100%：它的父级 #root 没有高度，百分比会退化成 auto、
+       整个聊天页塌成内容高（实测消息区只剩 10px）。外壳本身已经是 100dvh，够用了。 */
+    padding-bottom: var(--safe-bottom);
+  }
+
+  html:not([data-surface]) .app-container:has(.chat-thread) main {
+    display: flex;
+    flex-direction: column;
+  }
+}
+
 /* ⚠️ 路由外面还套着一层 <main>（见 App.jsx），它才是 .app-container 的 flex 子项。
    不把它也设成"可伸缩的列"，下面的 .chat-thread 根本撑不开 —— 实测只改 .chat-thread 时
    它只有 133px，比改之前还矮。 */
@@ -2604,30 +2619,63 @@ html:not([data-surface]) .app-container:not(.authed) {
   padding-top: calc(24px + var(--safe-top));
 }
 
-/* ── 手机：底部 tab 栏 ── */
+/* ── 手机：底部 tab 栏（**不用 position: fixed**）──
+   ⚠️ 为什么不做固定定位（使用者 2026-09-24 反馈：「动态和我贴底，发布和私聊飞上去」）：
+   iOS 上 `position: fixed; bottom: 0` 跟的是**布局视口**，而布局视口与"你眼睛看到的
+   可见视口"在工具栏收起/展开时并不一致 —— 于是长页面（滚动过、工具栏收起）看着贴底，
+   短页面（没滚动过）底栏就浮在半空。实测四个路由在本机（Chromium）几何完全一致，
+   所以这是纯 iOS 视口语义问题，只能在结构上绕开：
+   把整页做成 `100dvh` 的**应用外壳**（列 + 内部滚动），底栏是外壳的最后一个 flex 子项，
+   它永远贴在外壳底部 —— 不依赖任何固定定位，也就没有"参照哪个视口"的问题。
+   `100dvh` 会跟着可见视口变化，键盘弹起时外壳自己收缩，底栏自然被顶到键盘上方。 */
 @media (max-width: 600px) {
   html:not([data-surface]) {
     --tabbar-h: 54px;
   }
 
+  /* 滚动交给 main，body 不再滚 —— 固定定位的坑整套绕开 */
+  html:not([data-surface]) body {
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  html:not([data-surface]) .app-container {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    /* 内边距与安全区都挪到 main / header 上，这里清零 */
+    padding: 0;
+  }
+
+  html:not([data-surface]) .app-container main {
+    /* 视觉上 main 在前、底栏在后（DOM 顺序不变，用 order 调） */
+    order: 1;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: calc(14px + var(--safe-top)) 16px calc(var(--tabbar-h) + var(--safe-bottom) + 12px);
+  }
+
   html:not([data-surface]) .app-header {
-    position: fixed;
+    order: 2;
+    flex: 0 0 auto;
+    /* 不再 fixed：就是外壳的最后一项 */
+    position: static;
     top: auto;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    /* 关掉 backdrop-filter：同样是"包含块"那个坑 */
-    backdrop-filter: none;
-    background-color: color-mix(in srgb, var(--bg-page) 92%, transparent);
-    border-bottom: 0;
-    border-top: 1px solid var(--border-standard);
-    padding: 0 4px calc(env(safe-area-inset-bottom, 0px));
+    bottom: auto;
+    left: auto;
+    right: auto;
+    width: auto;
+    height: calc(var(--tabbar-h) + var(--safe-bottom));
+    padding: 0 4px var(--safe-bottom);
     margin: 0;
-    height: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px));
     display: flex;
     align-items: center;
-    /* [动态] [nav: 发布 私聊 我] 四个等宽排开 */
     justify-content: space-between;
+    background-color: color-mix(in srgb, var(--bg-page) 92%, transparent);
+    border-top: 1px solid var(--border-standard);
+    border-bottom: 0;
     z-index: 30;
   }
 
@@ -2652,7 +2700,6 @@ html:not([data-surface]) .app-container:not(.authed) {
     padding: 6px 0;
     border-radius: 10px;
     font-size: 0.72rem;
-    /* 触屏：每个 tab 都要够大好点 */
     min-height: 44px;
     justify-content: center;
   }
@@ -2661,30 +2708,25 @@ html:not([data-surface]) .app-container:not(.authed) {
     font-size: 0.72rem;
   }
 
-
-  /* 内容让位：底部空出 tab 栏；顶部让出细条 + **安全区（刘海/灵动岛）** */
-  html:not([data-surface]) .app-container {
-    padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 12px);
-    padding-top: calc(14px + var(--safe-top));
-  }
-
-  /* 聊天页：进入"专注模式" —— 底栏与顶部细条都收起（使用者选定像微信，给键盘留空间），
-     只保留安全区，输入框直接贴底 */
-
-  html:not([data-surface]):has(.chat-thread) .app-header {
-    display: none;
-  }
-
-  html:not([data-surface]):has(.chat-thread) .app-container {
-    padding-top: calc(6px + var(--safe-top));
-    padding-bottom: var(--safe-bottom);
-  }
-
-  /* 私聊列表页仍保留底栏（它是 tab 目的地之一） */
   html:not([data-surface]) .nav-unread-badge {
     position: absolute;
     top: 2px;
     right: 18%;
+  }
+
+  /* 未登录页：底栏不显示 → 底部内边距也收回，只留安全区 */
+  html:not([data-surface]) .app-container:not(.authed) main {
+    padding-bottom: calc(12px + var(--safe-bottom));
+  }
+
+  /* 聊天页：专注模式 —— 底栏收起，会话自己占满整个外壳（它内部有消息滚动区） */
+  html:not([data-surface]):has(.chat-thread) .app-header {
+    display: none;
+  }
+
+  html:not([data-surface]):has(.chat-thread) main {
+    overflow: hidden;
+    padding: 0;
   }
 }
 
