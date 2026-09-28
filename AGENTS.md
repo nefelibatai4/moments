@@ -11,7 +11,7 @@
 |---|---|
 | 线上 | https://nefelibatai4.github.io/moments/ |
 | 技术栈 | Vite + React 19（纯 SPA）／Supabase（Postgres + Auth + Storage + Realtime）／GitHub Pages 托管／PWA + Capacitor iOS |
-| 数据库 | Supabase `public` schema，8 张表 |
+| 数据库 | Supabase `public` schema，9 张表（2026-09-24 新增 `user_presence`） |
 
 ## ⚠️ 硬约束
 
