@@ -12,12 +12,16 @@
 //
 // 用法：
 //   node build-extension-zip.mjs        （npm run build 会通过 prebuild 自动跑）
+//
+// ⚠️ 刻意**不调用系统的 zip/unzip 命令**（2026-09-24 换 Windows 时改的）：
+//    Windows 默认没有这两个命令，而本文件是 prebuild 的一环 —— 一旦依赖它们，
+//    `npm run build` 在新机器上会直接失败。改用纯 JS 的 adm-zip：
+//    打包含自检全在 Node 里完成，三个平台（macOS / Windows / Linux）行为一致。
 
-import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import AdmZip from 'adm-zip'
 
 const ROOT = dirname(fileURLToPath(import.meta.url))
 const SRC = join(ROOT, 'extension')
@@ -47,14 +51,6 @@ function fail(msg) {
   process.exit(1)
 }
 
-for (const bin of ['zip', 'unzip']) {
-  try {
-    execFileSync(bin, ['-v'], { stdio: 'ignore' })
-  } catch {
-    fail(`找不到 ${bin} 命令，无法打包扩展`)
-  }
-}
-
 if (!existsSync(SRC)) fail(`找不到扩展目录：${SRC}`)
 for (const rel of REQUIRED) {
   if (!existsSync(join(SRC, rel))) fail(`扩展缺少必需文件：extension/${rel}`)
@@ -63,46 +59,39 @@ for (const rel of REQUIRED) {
 const manifest = JSON.parse(readFileSync(join(SRC, 'manifest.json'), 'utf8'))
 if (!manifest.name || !manifest.version) fail('extension/manifest.json 缺少 name 或 version')
 
-// 在临时目录里搭台：既让 zip 内的顶层目录名可控，也避免把仓库里的杂物卷进去
-const stage = mkdtempSync(join(tmpdir(), 'moments-ext-'))
-try {
-  cpSync(SRC, join(stage, TOP), { recursive: true })
-  // macOS 的 zip 会带 __MACOSX 资源分叉与 .DS_Store，必须清掉
-  rmSync(join(stage, TOP, '.DS_Store'), { force: true })
+// 直接用 adm-zip 打包：不落临时目录、不调用外部命令。
+// 顶层目录名用 TOP，这样解压出来是一个文件夹（Chrome 的「加载已解压的扩展程序」要选目录）。
+rmSync(OUT, { force: true })
+mkdirSync(dirname(OUT), { recursive: true })
 
-  mkdirSync(dirname(OUT), { recursive: true })
-  // 不先删的话 zip 是「更新」旧包，已经删掉的文件会残留在里面
-  rmSync(OUT, { force: true })
+const zip = new AdmZip()
+// 过滤掉 macOS 的杂物：__MACOSX 资源分叉与 .DS_Store
+const JUNK = /(^|\/)(__MACOSX|\.DS_Store)(\/|$)/
+zip.addLocalFolder(SRC, TOP, (entry) => !JUNK.test(entry))
+zip.writeZip(OUT)
 
-  execFileSync('zip', ['-r', '-X', '-q', OUT, TOP, '-x', '*.DS_Store', '__MACOSX/*'], {
-    cwd: stage,
-  })
+// 自检：打成什么样就核对什么样（读回产物，而不是信任写入时的返回值）
+const readBack = new AdmZip(OUT)
+const entries = readBack.getEntries()
+  .map((e) => e.entryName)
+  .filter((n) => n && !n.endsWith('/'))
 
-  // 自检：打成什么样就核对什么样，不信任 zip 的退出码
-  const entries = execFileSync('unzip', ['-Z1', OUT], { encoding: 'utf8' })
-    .split('\n')
-    .map((s) => s.trim())
-    .filter(Boolean)
+if (entries.length === 0) fail('生成的 zip 是空的')
 
-  if (entries.length === 0) fail('生成的 zip 是空的')
+const stray = entries.filter((e) => !e.startsWith(`${TOP}/`))
+if (stray.length > 0) fail(`zip 里混进了顶层目录之外的东西：${stray.slice(0, 5).join('、')}`)
 
-  const stray = entries.filter((e) => !e.startsWith(`${TOP}/`))
-  if (stray.length > 0) fail(`zip 里混进了顶层目录之外的东西：${stray.slice(0, 5).join('、')}`)
+const junk = entries.filter((e) => JUNK.test(e))
+if (junk.length > 0) fail(`zip 里混进了 macOS 杂物：${junk.slice(0, 5).join('、')}`)
 
-  const junk = entries.filter((e) => e.includes('__MACOSX') || e.endsWith('.DS_Store'))
-  if (junk.length > 0) fail(`zip 里混进了 macOS 杂物：${junk.slice(0, 5).join('、')}`)
-
-  if (!entries.includes(`${TOP}/manifest.json`)) {
-    fail(`zip 里没有 ${TOP}/manifest.json —— 层级不对，Chrome 会装不上`)
-  }
-  for (const rel of REQUIRED) {
-    if (!entries.includes(`${TOP}/${rel}`)) fail(`zip 里缺少 ${TOP}/${rel}`)
-  }
-
-  const kib = (statSync(OUT).size / 1024).toFixed(0)
-  console.log(
-    `✅ 扩展包已生成：public/moments-extension.zip（${kib} KB，${entries.length} 项，${manifest.name} v${manifest.version}）`,
-  )
-} finally {
-  rmSync(stage, { recursive: true, force: true })
+if (!entries.includes(`${TOP}/manifest.json`)) {
+  fail(`zip 里没有 ${TOP}/manifest.json —— 层级不对，Chrome 会装不上`)
 }
+for (const rel of REQUIRED) {
+  if (!entries.includes(`${TOP}/${rel}`)) fail(`zip 里缺少 ${TOP}/${rel}`)
+}
+
+const kib = (statSync(OUT).size / 1024).toFixed(0)
+console.log(
+  `✅ 扩展包已生成：public/moments-extension.zip（${kib} KB，${entries.length} 项，${manifest.name} v${manifest.version}）`,
+)

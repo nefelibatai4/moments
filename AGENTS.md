@@ -19,7 +19,9 @@
    Management token、`.env`。提交前检查 `git status` 与待提交内容。
 2. **下列路径被 `.gitignore` 排除是刻意的，不是遗漏**——它们只在本机，线上没有副本：
    `.env`、`supabase/`、`scripts/`、`db-backups/`、`Moments全量交接文档.md`。
-   不要"帮忙"把它们加进版本控制。
+   不要"帮忙"把它们加进**本公开仓库**的版本控制。
+   （2026-09-24 起：这些本机文件在**私有仓库** `~/moments-workspace/local-files/` 有副本，
+   换机器时用那里的 `restore.cjs` 放回；详见该仓库 `docs/MIGRATION-WINDOWS.md`。）
 3. **测试数据必须清理**：`scripts/` 下的验证脚本会创建临时账号并占用邀请码。
    一律用 `bash scripts/run-all-tests.sh` 跑（跑前跑后各清一次 + 审计，有残留以非 0 退出）；
    **邀请码只复位、绝不删除**。跑完要**看清理那几行**，不能只看最后一句"结果: N 通过"——
