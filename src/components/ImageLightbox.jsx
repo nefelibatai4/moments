@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 /** 把索引夹在 [0, total-1]：越界不报错，只是老老实实停在边界（不绕圈） */
 function clampIndex(i, total) {
@@ -118,7 +119,15 @@ export default function ImageLightbox({ src, images, index = 0, alt = '', onClos
 
   const showNav = total > 1
 
-  return (
+  // ⚠️ 用 portal 挂到 <body>，不要留在原地（2026-09-29 在真 iOS App 里量出来的坑）：
+  //    灯箱原来是渲染在 `.moment-card` 里的，而手机上 `main` 是滚动容器
+  //    （`overflow-y: auto` + `-webkit-overflow-scrolling: touch`）。
+  //    WebKit 会给这样的滚动容器建自己的图层，于是**灯箱的 z-index: 100 只在 main 内部有效**，
+  //    在外层它整块被排在 `.app-header`（底部 tab 栏）**下面** ——
+  //    现象是：看大图时底栏反而亮着压在图上，角上的「2 / 3」计数被底栏挡住看不见。
+  //    Chrome（桌面/安卓）不复现，所以本地那套 Playwright 断言全绿也照样漏了它。
+  //    挂在 body 上就与任何祖先的图层规则无关了。
+  const overlay = (
     <div
       className="lightbox"
       role="dialog"
@@ -172,4 +181,6 @@ export default function ImageLightbox({ src, images, index = 0, alt = '', onClos
       />
     </div>
   )
+
+  return createPortal(overlay, document.body)
 }
