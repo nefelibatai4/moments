@@ -416,6 +416,30 @@ button:disabled {
   margin-bottom: 12px;
 }
 
+/* 每张图外面包了一层 button（见 components/MomentCard.jsx）：
+   鼠标能点、键盘能 Tab 到再回车。所以要把浏览器给 button 的默认外观全部抹掉，
+   否则九宫格里会多出内边距和灰底。 */
+.moment-image-btn {
+  display: block;
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 8px;
+  overflow: hidden;
+  line-height: 0;
+  cursor: zoom-in;
+}
+
+.moment-image-btn:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+/* 图片在 button 里是行内元素，底部会多出基线那几像素的空隙 */
+.moment-images img {
+  display: block;
+}
+
 .moment-images.single img {
   max-width: 100%;
   border-radius: 8px;
@@ -2247,8 +2271,9 @@ button:disabled {
 
 .lightbox-close {
   position: absolute;
-  top: 12px;
-  right: 14px;
+  /* 刘海屏上别被状态栏压住（iOS 独立 App 里 env() 才有值） */
+  top: calc(12px + var(--safe-top));
+  right: calc(14px + env(safe-area-inset-right, 0px));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2266,6 +2291,61 @@ button:disabled {
 
 .lightbox-close:hover {
   background: rgba(255, 255, 255, 0.28);
+}
+
+/* 图集模式才出现的「上一张 / 下一张」与计数（见 components/ImageLightbox.jsx）。
+   手机上主要靠横滑，箭头就做得小一点、贴边一点，不挡图。 */
+.lightbox-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-size: 1.7rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.lightbox-nav.prev {
+  left: 10px;
+}
+
+.lightbox-nav.next {
+  right: 10px;
+}
+
+/* 全局的 button:hover 会把它淡到 0.6，这里连 opacity 一起写死回 1 */
+.lightbox-nav:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.3);
+  opacity: 1;
+}
+
+/* 到头了就明确"按不动了"，而不是点了没反应（也不绕圈） */
+.lightbox-nav:disabled {
+  opacity: 0.22;
+  cursor: default;
+}
+
+.lightbox-counter {
+  position: absolute;
+  left: 50%;
+  bottom: calc(16px + var(--safe-bottom));
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
 }
 
 .chat-input-row button {

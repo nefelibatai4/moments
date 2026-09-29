@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import MomentExpandMenu from './MomentExpandMenu'
 import CommentSection from './CommentSection'
+import ImageLightbox from './ImageLightbox'
 import { mapLink } from '../lib/mapLink'
 import { useAuth } from '../lib/AuthContext'
 import { supabase } from '../supabaseClient'
@@ -35,6 +36,9 @@ export default function MomentCard({
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState(null)
   const [editing, setEditing] = useState(false)
+  // 看图用的下标：null = 没在看。不存 URL 而存下标，是因为图集里要能左右翻页，
+  // 翻页时得知道"现在看到第几张了"（见 components/ImageLightbox.jsx）。
+  const [viewerIndex, setViewerIndex] = useState(null)
   const [draft, setDraft] = useState(moment.content ?? '')
   const [saving, setSaving] = useState(false)
   const session = useAuth()
@@ -171,9 +175,28 @@ export default function MomentCard({
       {moment.images?.length > 0 && (
         <div className={`moment-images ${moment.images.length === 1 ? 'single' : 'grid'}`}>
           {moment.images.map((url, i) => (
-            <img key={i} src={url} alt="" loading="lazy" />
+            // 包一层 button：鼠标能点、键盘能 Tab 到再回车，屏幕阅读器也知道这是能按的。
+            // ⚠️ 点第几张就要开第几张 —— 只传 url 不传下标的话，多图动态里点第 3 张
+            //    打开的是第 1 张，图长得像的时候根本看不出来（回归用例 verify-moment-gallery）。
+            <button
+              key={i}
+              type="button"
+              className="moment-image-btn no-opacity-hover"
+              aria-label={`查看第 ${i + 1} 张图片`}
+              onClick={() => setViewerIndex(i)}
+            >
+              <img src={url} alt="" loading="lazy" />
+            </button>
           ))}
         </div>
+      )}
+      {viewerIndex != null && (
+        <ImageLightbox
+          images={moment.images}
+          index={viewerIndex}
+          alt={`${displayName} 发布的图片`}
+          onClose={() => setViewerIndex(null)}
+        />
       )}
       {deleteError && <p className="error-text">{deleteError}</p>}
 
