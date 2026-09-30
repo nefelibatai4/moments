@@ -20,6 +20,11 @@ import { useEffect } from 'react'
 export function useViewportHeight() {
   useEffect(() => {
     const vv = window.visualViewport
+    // ⚠️ 这行曾经被我删掉过（大改时误删），后果是 effect 一进来就 `root is not defined`：
+    //    **整个 hook 静默失效**（--app-h 永远不设置、监听器也不挂），
+    //    而页面看起来"还行"——因为 CSS 里 `height: var(--app-h, 100dvh)` 有 100dvh 兜底。
+    //    是"在真机/模拟器里读 `--app-h` 读到空"才把它揪出来的（见 docs/MOBILE-VERIFY.md）。
+    const root = document.documentElement
     let frame = 0
     let poll = 0
 
