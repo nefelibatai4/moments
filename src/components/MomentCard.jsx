@@ -272,7 +272,13 @@ export default function MomentCard({
           <button
             type="button"
             className="moment-act"
-            onClick={() => { setCommentBoxOpen(true); setAnonCommentOpen(false) }}
+            onClick={() => {
+              // 点一次展开评论区（全部评论 + 正常评论输入框），再点一次收起。
+              // 数字始终留在按钮旁边（使用者 2026-09-30 的要求）。
+              setCommentBoxOpen((v) => !v)
+              setAnonCommentOpen(false)
+            }}
+            aria-expanded={commentBoxOpen}
             aria-label="评论"
           >
             <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
@@ -321,6 +327,7 @@ export default function MomentCard({
               session={session}
               comments={comments}
               previewCount={2}
+              onExpand={() => { setCommentBoxOpen(true); setAnonCommentOpen(false) }}
               open={commentBoxOpen}
               anonOpen={anonCommentOpen}
               onCommentAdded={(c) => onCommentAdded?.(moment.id, c)}

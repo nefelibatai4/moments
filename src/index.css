@@ -795,6 +795,11 @@ button:disabled {
 
 .comment-form input[type="text"] {
   flex: 1;
+  /* ⚠️ flex 项默认 `min-width: auto`，不让收缩到内容宽度以下 —— 结果在窄容器里
+     被挤的**不是输入框而是按钮**：按钮被压成 ~35px 宽的竖条，文字竖排把整行撑到 100px 高，
+     输入框再 align-items: stretch 跟着变高 → 看上去"一塌糊涂"（使用者 2026-09-30 的截图）。
+     所以：输入框 min-width: 0（允许它收缩），按钮 flex: 0 0 auto（不许被压）。 */
+  min-width: 0;
   background: var(--bg-input);
   border: 1px solid var(--border-standard);
   border-radius: 8px;
@@ -816,6 +821,8 @@ button:disabled {
 }
 
 .comment-form button {
+  flex: 0 0 auto;
+  white-space: nowrap;
   border: 1px solid var(--border-strong);
   background: var(--btn-secondary-bg);
   border-radius: 8px;
@@ -834,7 +841,24 @@ button:disabled {
 }
 
 .anon-form input:first-child {
-  flex: 0 0 100px;
+  flex: 0 0 88px;
+}
+
+/* 窄容器（插件面板 420、手机 390）里匿名表单**竖排**：一行一个，按钮右对齐。
+   横排挤在一行看着乱，这是使用者明确说"一塌糊涂"的地方。 */
+@media (max-width: 480px) {
+  .anon-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .anon-form input:first-child {
+    flex: 0 0 auto;
+  }
+
+  .anon-form button {
+    align-self: flex-end;
+  }
 }
 
 .anon-form input {
@@ -3054,6 +3078,13 @@ html:not([data-surface]) .app-container:not(.authed) {
   html:not([data-surface]) .moment-skeleton-card + .moment-skeleton-card {
     border-top: 7px solid var(--feed-divider);
   }
+  /* 更简洁：操作条不要那根分隔线，留白收紧（微博也没有这条线） */
+  html:not([data-surface]) .moment-actions {
+    border-top: 0;
+    padding-top: 0;
+    margin-top: 6px;
+  }
+
   /* 通栏：只把「动态页」的左右内边距去掉，其它页面照旧 */
   html:not([data-surface]) .app-container:has(.timeline) main {
     padding-left: 0;
@@ -3083,18 +3114,10 @@ html[data-surface] .moment-skeleton-card + .moment-skeleton-card {
   border-top: 7px solid var(--feed-divider);
 }
 
-/* 评论/点赞那块也拍平：微博里它们是直接铺在卡片上的，不是另一个小卡片 */
-@media (max-width: 600px) {
-  html:not([data-surface]) .moment-panel {
-    background: transparent;
-    border: 0;
-    border-radius: 0;
-    padding: 0;
-    margin-top: 8px;
-  }
-}
-
-html[data-surface] .moment-panel {
+/* 评论/点赞那块**所有布局都拍平**：直接铺在卡片上，不是另一个小卡片。
+   ⚠️ 之前只拍了手机和面板，桌面那份 `background: var(--bg-elevated)` 就成了使用者
+   截图里那块"乌云一样的灰色卡片"（2026-09-30 反馈）。 */
+.moment-panel {
   background: transparent;
   border: 0;
   border-radius: 0;
@@ -3106,6 +3129,12 @@ html[data-surface] .moment-panel {
 html[data-surface]:has(.timeline) .app-container {
   padding-left: 0;
   padding-right: 0;
+}
+
+html[data-surface] .moment-actions {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 6px;
 }
 
 html[data-surface] .moment-card .moment-header,

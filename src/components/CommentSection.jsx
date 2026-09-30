@@ -48,6 +48,7 @@ export default function CommentSection({
   open,
   anonOpen,
   previewCount = 0,     // >0 时只先露最新的几条 + 「查看全部 N 条评论」（微博那种信息流）
+  onExpand,             // 点「查看全部 N 条评论」时通知父级展开（父级顺便把输入框打开）
   onCommentAdded,
   onCommentDeleted,
   onCommentUpdated,
@@ -57,7 +58,6 @@ export default function CommentSection({
   const [anonContent, setAnonContent] = useState('')
   const [anonNickname, setAnonNickname] = useState('')
   const [replyTo, setReplyTo] = useState(null)
-  const [showAll, setShowAll] = useState(false)
   const [replyContent, setReplyContent] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
@@ -405,7 +405,7 @@ export default function CommentSection({
 
   // 信息流里评论**默认只露最新几条**（微博那样），点「查看全部 N 条评论」再展开。
   // 取的是最新的：comments 按时间升序，所以从尾部切。
-  const hiddenCount = previewCount > 0 && !showAll && roots.length > previewCount
+  const hiddenCount = previewCount > 0 && !open && roots.length > previewCount
     ? roots.length - previewCount
     : 0
   const visibleRoots = hiddenCount > 0 ? roots.slice(hiddenCount) : roots
@@ -429,7 +429,7 @@ export default function CommentSection({
       )}
 
       {hiddenCount > 0 && (
-        <button type="button" className="comment-show-all" onClick={() => setShowAll(true)}>
+        <button type="button" className="comment-show-all" onClick={() => onExpand?.()}>
           查看全部 {roots.length} 条评论
         </button>
       )}
@@ -443,7 +443,7 @@ export default function CommentSection({
         <form className="comment-form" onSubmit={handleSubmit}>
           <input
             type="text"
-            placeholder="说点什么…"
+            placeholder="写下你的评论…"
             value={content}
             onChange={(e) => setContent(e.target.value)}
             maxLength={200}
