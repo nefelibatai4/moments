@@ -2829,8 +2829,9 @@ html:not([data-surface]) .app-container:not(.authed) {
     padding: 0 16px calc(40px + env(safe-area-inset-bottom, 0px));
   }
 
+  /* 微博那种信息流是**一行 3 张**小图（原来手机上是 2 张大图，9 张会把卡片拉得很长） */
   .moment-images.grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, 1fr);
   }
 }
 /* ══════════════════════════════════════════════════════════════
@@ -3158,4 +3159,41 @@ html[data-surface] .moment-card .moment-actions {
 
 .moment-act.liked .moment-act-count {
   color: inherit;
+}
+
+
+/* ── 第 9 格上的「+N」遮罩（信息流里最多铺 9 张，见 MomentCard） ── */
+.moment-image-btn {
+  position: relative;      /* 承载遮罩 */
+}
+
+.moment-image-more {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  pointer-events: none;    /* 点击穿透给按钮本身（照旧开灯箱） */
+}
+
+/* ── 信息流里评论默认只露 2 条，这是"查看全部"按钮 ── */
+.comment-show-all {
+  display: block;
+  margin: 2px 0 8px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-blue);
+  font-size: 0.84rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.comment-show-all:hover {
+  opacity: 0.8;
 }

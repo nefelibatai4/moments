@@ -47,6 +47,7 @@ export default function CommentSection({
   comments,
   open,
   anonOpen,
+  previewCount = 0,     // >0 时只先露最新的几条 + 「查看全部 N 条评论」（微博那种信息流）
   onCommentAdded,
   onCommentDeleted,
   onCommentUpdated,
@@ -56,6 +57,7 @@ export default function CommentSection({
   const [anonContent, setAnonContent] = useState('')
   const [anonNickname, setAnonNickname] = useState('')
   const [replyTo, setReplyTo] = useState(null)
+  const [showAll, setShowAll] = useState(false)
   const [replyContent, setReplyContent] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
@@ -401,11 +403,18 @@ export default function CommentSection({
 
   const { roots, repliesByRoot, byId } = buildThreads(comments)
 
+  // 信息流里评论**默认只露最新几条**（微博那样），点「查看全部 N 条评论」再展开。
+  // 取的是最新的：comments 按时间升序，所以从尾部切。
+  const hiddenCount = previewCount > 0 && !showAll && roots.length > previewCount
+    ? roots.length - previewCount
+    : 0
+  const visibleRoots = hiddenCount > 0 ? roots.slice(hiddenCount) : roots
+
   return (
     <div className="comment-section">
-      {roots.length > 0 && (
+      {visibleRoots.length > 0 && (
         <ul className="comment-list">
-          {roots.map((root) => (
+          {visibleRoots.map((root) => (
             <li key={root.id} className="comment-thread">
               <ul className="comment-list comment-list-nested">
                 {renderComment(root, null)}
@@ -417,6 +426,12 @@ export default function CommentSection({
             </li>
           ))}
         </ul>
+      )}
+
+      {hiddenCount > 0 && (
+        <button type="button" className="comment-show-all" onClick={() => setShowAll(true)}>
+          查看全部 {roots.length} 条评论
+        </button>
       )}
 
       {/* 回复的是一条回复时，表单挂在最外层 */}
