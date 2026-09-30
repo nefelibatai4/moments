@@ -320,13 +320,14 @@ export default function MomentCard({
               ♥ {likes.map((l) => l.profiles?.nickname ?? '匿名').join('、')}
             </p>
           )}
-          {session && (
+          {/* ⚠️ 评论正文**只在展开时渲染**：使用者 2026-09-30 明确要"整个评论内容都收进去，
+              点【评论】才展开"（0 条评论时点评论就直接是输入框）。 */}
+          {session && (commentBoxOpen || anonCommentOpen) && (
             <CommentSection
               momentId={moment.id}
               momentOwnerId={moment.user_id}
               session={session}
               comments={comments}
-              previewCount={2}
               onExpand={() => { setCommentBoxOpen(true); setAnonCommentOpen(false) }}
               open={commentBoxOpen}
               anonOpen={anonCommentOpen}

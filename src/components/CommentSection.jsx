@@ -459,9 +459,11 @@ export default function CommentSection({
             placeholder="自定义昵称"
             value={anonNickname}
             onChange={(e) => setAnonNickname(e.target.value)}
-            maxLength={30}
+            maxLength={12}
             autoFocus
           />
+          {/* 按钮在 DOM 里排在两个输入框之间：CSS 让它待在第一行右侧、内容框换到第二行 */}
+          <button type="submit" disabled={submitting}>匿名发送</button>
           <input
             type="text"
             placeholder="匿名说点什么…"
@@ -469,7 +471,6 @@ export default function CommentSection({
             onChange={(e) => setAnonContent(e.target.value)}
             maxLength={200}
           />
-          <button type="submit" disabled={submitting}>匿名发送</button>
         </form>
       )}
       {error && <p className="error-text">{error}</p>}

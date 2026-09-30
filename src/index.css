@@ -846,25 +846,27 @@ button:disabled {
   gap: 6px;
 }
 
-.anon-form input:first-child {
-  flex: 0 0 88px;
+/* 匿名表单排成两行（使用者 2026-09-30 的版式）：
+     第一行：[ 自定义昵称 …… ] [ 匿名发送 ]
+     第二行：[ 匿名说点什么 ……………………… ]
+   DOM 顺序是 昵称 → 按钮 → 内容，靠 flex-wrap + 内容框 100% 宽度自然换行
+   （不改变输入框在 DOM 里的先后，所以 Tab 顺序与既有测试都不受影响）。 */
+.anon-form {
+  flex-wrap: wrap;
 }
 
-/* 窄容器（插件面板 420、手机 390）里匿名表单**竖排**：一行一个，按钮右对齐。
-   横排挤在一行看着乱，这是使用者明确说"一塌糊涂"的地方。 */
-@media (max-width: 480px) {
-  .anon-form {
-    flex-direction: column;
-    align-items: stretch;
-  }
+.anon-form input:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 
-  .anon-form input:first-child {
-    flex: 0 0 auto;
-  }
+.anon-form input:nth-of-type(2) {
+  flex: 1 0 100%;
+}
 
-  .anon-form button {
-    align-self: flex-end;
-  }
+.anon-form button {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .anon-form input {
@@ -3164,8 +3166,11 @@ html[data-surface] .moment-card .moment-actions {
 }
 
 .moment-act {
+  /* 微博那种均匀分布：两个按钮**各占一半宽度、内容居中** */
+  flex: 1 1 0;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
   min-height: 36px;
   padding: 4px 12px;
