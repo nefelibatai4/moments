@@ -9,6 +9,7 @@ import { subscribeToPush } from './lib/usePushNotification'
 import { useUnreadCount } from './lib/useUnreadCount'
 import { touchSession } from './lib/userPresence'
 import { useViewportHeight } from './lib/useViewportHeight'
+import ViewportDebug from './components/ViewportDebug'
 
 // 按路由做代码分割：首屏只需要 React + 路由 + Supabase + 时间线，
 // 其余页面在真正导航过去时才下载。这样首屏 JS 明显变小。
@@ -93,6 +94,8 @@ export default function App() {
           </Routes>
         </Suspense>
       </main>
+        {/* 隐藏的手机视口自检面板：连点标题 5 次或 ?debug=1 打开（见组件注释） */}
+        <ViewportDebug />
     </div>
   )
 }

@@ -2967,3 +2967,51 @@ html:not([data-surface]) .app-container:not(.authed) {
     scroll-behavior: auto !important;
   }
 }
+
+/* ── 隐藏的手机视口自检面板（见 components/ViewportDebug.jsx）──
+   真机上量视口用的；平时不渲染，连点标题 5 次或 ?debug=1 才出现。
+   z-index 要高过灯箱（100），否则看大图时打不开。 */
+.viewport-debug {
+  position: fixed;
+  top: calc(8px + var(--safe-top, 0px));
+  left: 8px;
+  right: 8px;
+  z-index: 300;
+  max-height: 70vh;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.86);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+}
+
+.viewport-debug-close {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.viewport-debug-title {
+  margin-bottom: 6px;
+  font-weight: 600;
+  color: #9ad;
+}
+
+.viewport-debug pre {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
