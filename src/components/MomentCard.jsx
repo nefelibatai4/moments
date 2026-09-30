@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import MomentExpandMenu from './MomentExpandMenu'
 import CommentSection from './CommentSection'
 import ImageLightbox from './ImageLightbox'
@@ -36,6 +36,10 @@ export default function MomentCard({
   // 翻页时得知道"现在看到第几张了"（见 components/ImageLightbox.jsx）。
   const [viewerIndex, setViewerIndex] = useState(null)
   const [likePending, setLikePending] = useState(false)
+  // 双击点赞：`burst` 是那颗心的位置（相对卡片），`id` 换了就重播动画
+  const [burst, setBurst] = useState(null)
+  const cardRef = useRef(null)
+  const lastTapRef = useRef(0)
   const [draft, setDraft] = useState(moment.content ?? '')
   const [saving, setSaving] = useState(false)
   const session = useAuth()
@@ -77,6 +81,27 @@ export default function MomentCard({
       if (!error && data) onLikesChanged?.(moment.id, [...likes, data])
     }
     setLikePending(false)
+  }
+
+  /**
+   * 双击卡片点赞（微博/Instagram 那种：双击任意空白处 → 冒一颗心 + 顺手点赞）。
+   *
+   * 为什么自己判"双击"而不是用 onDoubleClick：iOS 上 `dblclick` 的触发时机不牢靠，
+   * 而"两次 click 在 300ms 内"在鼠标与触摸上是同一套逻辑，也更好写用例。
+   * ⚠️ 必须让开这些地方：图片（单击是开灯箱）、按钮/链接、评论区 —— 否则会抢别人的交互。
+   */
+  function handleClick(e) {
+    if (e.target.closest('button, a, input, textarea, .moment-images, .comment-section, .moment-actions')) return
+    const now = Date.now()
+    if (now - lastTapRef.current > 300) {
+      lastTapRef.current = now
+      return
+    }
+    lastTapRef.current = 0
+    const rect = cardRef.current?.getBoundingClientRect()
+    if (rect) setBurst({ x: e.clientX - rect.left, y: e.clientY - rect.top, id: now })
+    // 已经赞过就只放动画（微博也是这个行为：双击不取消赞）
+    if (session && !liked) handleToggleLike()
   }
 
   function startEdit() {
@@ -140,7 +165,7 @@ export default function MomentCard({
   }
 
   return (
-    <article className="moment-card">
+    <article className="moment-card" ref={cardRef} onClick={handleClick}>
       <div className="moment-header">
         <span className="moment-avatar">
           {!isAnon && profile?.avatar_url ? (
@@ -226,7 +251,7 @@ export default function MomentCard({
         <div className="moment-actions">
           <button
             type="button"
-            className={`moment-act${liked ? ' liked' : ''}`}
+            className={`moment-act${liked ? ' liked' : ''}${likePending ? ' popping' : ''}`}
             onClick={handleToggleLike}
             disabled={likePending}
             aria-pressed={liked}
@@ -263,6 +288,22 @@ export default function MomentCard({
             {comments.length > 0 && <span className="moment-act-count">{comments.length}</span>}
           </button>
         </div>
+      )}
+      {burst && (
+        <span
+          key={burst.id}
+          className="like-burst"
+          style={{ left: burst.x, top: burst.y }}
+          aria-hidden="true"
+          onAnimationEnd={() => setBurst(null)}
+        >
+          <svg viewBox="0 0 24 24" width="88" height="88">
+            <path
+              d="M12 20.2l-1.05-.95C6.2 14.9 3.2 12.2 3.2 8.7 3.2 6.1 5.2 4 7.8 4c1.5 0 2.9.7 3.8 1.8l.4.5.4-.5C13.3 4.7 14.7 4 16.2 4 18.8 4 20.8 6.1 20.8 8.7c0 3.5-3 6.2-7.75 10.55L12 20.2z"
+              fill="currentColor"
+            />
+          </svg>
+        </span>
       )}
       {deleteError && <p className="error-text">{deleteError}</p>}
 

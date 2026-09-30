@@ -66,5 +66,10 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<!-- 允许网页内容在 ProMotion 屏幕上超过 60Hz（iPhone 上默认被限到 60）。
+	     现在用不到（使用者用 PWA），但**哪天做成原生 App 就需要它**，
+	     否则双击点赞的心形动画在 120Hz 屏上也只有 60 帧。详见 docs/STATUS.md。 -->
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
 </dict>
 </plist>

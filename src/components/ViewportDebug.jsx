@@ -25,6 +25,7 @@ export default function ViewportDebug() {
   )
   const [tick, setTick] = useState(0)
   const [stats, setStats] = useState({ maxGap: 0, maxKb: 0, maxOffsetTop: 0, minAppH: 0, maxAppH: 0 })
+  const [fps, setFps] = useState(null)
 
   // 双击底部「动态」标题（.app-header h1）
   useEffect(() => {
@@ -76,6 +77,33 @@ export default function ViewportDebug() {
     }
   }, [open])
 
+  // 面板打开时实测 rAF 帧率：这是"动画能跑多快"的唯一真凭据。
+  // iPhone 上网页内容被系统限在 60Hz（WebKit #272165），想看真实数值就开这个面板。
+  useEffect(() => {
+    if (!open) return
+    let raf = 0
+    let last = 0
+    let intervals = []
+    let worst = 0
+    let worstAt = 0
+    const loop = (t) => {
+      if (last) {
+        const dt = t - last
+        intervals.push(dt)
+        if (intervals.length > 30) intervals.shift()
+        if (dt > worst || t - worstAt > 3000) { worst = dt; worstAt = t }
+      }
+      last = t
+      if (intervals.length >= 5) {
+        const avg = intervals.reduce((a, b) => a + b, 0) / intervals.length
+        setFps({ hz: Math.round(1000 / avg), worst: Math.round(worst) })
+      }
+      raf = requestAnimationFrame(loop)
+    }
+    raf = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(raf)
+  }, [open])
+
   if (!open) return null
   void tick // 只为触发重渲染
 
@@ -111,6 +139,7 @@ export default function ViewportDebug() {
     `.app-header ${r('.app-header')}`,
     `底栏离底    ${gapNow === null ? '—' : gapNow + 'px'}`,
     `standalone  ${standalone ? '是' : '否'}   surface ${doc.getAttribute('data-surface') || '(无)'}`,
+    `rAF 帧率 ≈ ${fps ? fps.hz + ' fps' : '测量中…'}（最近最慢一帧 ${fps ? fps.worst : '—'}ms）`,
     `—— 历史极值（从打开面板起）——`,
     `底栏离底最大 ${stats.maxGap}px   键盘最高 ${stats.maxKb}px   offsetTop 最大 ${stats.maxOffsetTop}px`,
     `--app-h 区间 ${Math.round(stats.minAppH)}~${Math.round(stats.maxAppH)}px`,
