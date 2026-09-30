@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 /**
  * 隐藏的"手机视口自检面板"。
@@ -22,6 +22,8 @@ export default function ViewportDebug() {
     typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1'
   )
   const [, setTick] = useState(0)
+  // 历史极值：使用者操作一遍（进私聊→弹键盘→收起）之后，只要截一张图就能看到最坏情况
+  const hist = useRef({ maxGap: 0, maxKb: 0, maxOffsetTop: 0, minAppH: 1e9 || Infinity, maxAppH: 0 })
 
   // 双击底部导航里的「动态」标题（.app-header h1）也能开 —— 手机上没法敲 ?debug=1。
   // 用双击而不是连点 5 次：手机上更好按，且误触概率极低（双击导航项本来就是无操作）。
@@ -42,19 +44,34 @@ export default function ViewportDebug() {
     return () => document.removeEventListener('click', onClick)
   }, [])
 
-  // 打开时跟着视口变化刷新数字（键盘弹起/收起都能看到实时值）
+  // 打开时跟着视口变化刷新数字（键盘弹起/收起都能看到实时值），并记录历史极值。
+  // ⚠️ 采样只在这里做（事件/定时器里），**不能在渲染期间写 ref** —— oxlint 会报
+  //    "不要在渲染时写 ref"，而且渲染可能被 React 重放。
   useEffect(() => {
     if (!open) return
-    const bump = () => setTick((t) => t + 1)
+    const sample = () => {
+      const vv = window.visualViewport
+      const headerEl = document.querySelector('.app-header')
+      const gap = headerEl ? Math.round(window.innerHeight - headerEl.getBoundingClientRect().bottom) : 0
+      const kb = vv ? window.innerHeight - Math.round(vv.height) : 0
+      const h = hist.current
+      if (gap > h.maxGap) h.maxGap = gap
+      if (kb > h.maxKb) h.maxKb = kb
+      if (vv && vv.offsetTop > h.maxOffsetTop) h.maxOffsetTop = Math.round(vv.offsetTop)
+      const ah = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--app-h')) || 0
+      if (ah && ah < h.minAppH) h.minAppH = ah
+      if (ah > h.maxAppH) h.maxAppH = ah
+      setTick((t) => t + 1)
+    }
     const vv = window.visualViewport
-    vv?.addEventListener('resize', bump)
-    vv?.addEventListener('scroll', bump)
-    window.addEventListener('resize', bump)
-    const id = setInterval(bump, 500)
+    vv?.addEventListener('resize', sample)
+    vv?.addEventListener('scroll', sample)
+    window.addEventListener('resize', sample)
+    const id = setInterval(sample, 500)
     return () => {
-      vv?.removeEventListener('resize', bump)
-      vv?.removeEventListener('scroll', bump)
-      window.removeEventListener('resize', bump)
+      vv?.removeEventListener('resize', sample)
+      vv?.removeEventListener('scroll', sample)
+      window.removeEventListener('resize', sample)
       clearInterval(id)
     }
   }, [open])
@@ -91,6 +108,10 @@ export default function ViewportDebug() {
     `.app-header ${r('.app-header')}`,
     `底栏离底    ${(() => { const el = document.querySelector('.app-header'); return el ? Math.round(window.innerHeight - el.getBoundingClientRect().bottom) + 'px' : '—' })()}`,
     `standalone  ${standalone ? '是' : '否'}   surface ${doc.getAttribute('data-surface') || '(无)'}`,
+    `— 历史极值（从打开面板起）—`,
+    `底栏离底最大 ${hist.current.maxGap}px   键盘最高 ${hist.current.maxKb}px`,
+    `vv.offsetTop 最大 ${hist.current.maxOffsetTop}px`,
+    `--app-h 区间 ${Math.round(hist.current.minAppH === Infinity ? 0 : hist.current.minAppH)}~${Math.round(hist.current.maxAppH)}px`,
   ]
 
   return (

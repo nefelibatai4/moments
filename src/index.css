@@ -2972,12 +2972,14 @@ html:not([data-surface]) .app-container:not(.authed) {
    真机上量视口用的；平时不渲染，连点标题 5 次或 ?debug=1 才出现。
    z-index 要高过灯箱（100），否则看大图时打不开。 */
 .viewport-debug {
+  /* 不挡操作：面板开着也能正常进私聊、弹键盘（只有 × 可点） */
+  pointer-events: none;
   position: fixed;
   top: calc(8px + var(--safe-top, 0px));
   left: 8px;
   right: 8px;
   z-index: 300;
-  max-height: 70vh;
+  max-height: 46vh;
   overflow: auto;
   padding: 10px 12px;
   border-radius: 10px;
@@ -2989,6 +2991,7 @@ html:not([data-surface]) .app-container:not(.authed) {
 }
 
 .viewport-debug-close {
+  pointer-events: auto;
   position: absolute;
   top: 4px;
   right: 6px;

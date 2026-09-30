@@ -17,6 +17,7 @@ export function useViewportHeight() {
   useEffect(() => {
     const vv = window.visualViewport
     let frame = 0
+    let poll = 0
 
     const apply = () => {
       const h = vv?.height || window.innerHeight
@@ -24,10 +25,20 @@ export function useViewportHeight() {
       document.documentElement.style.setProperty('--app-h', `${Math.round(h)}px`)
     }
 
-    // 合并同一帧内的多次触发（resize + scroll 常常一起来）
+    // 合并同一帧内的多次触发（resize + scroll 常常一起来），并在之后**持续跟 2 秒**再定稿。
+    // ⚠️ 为什么必须"跟一段"：iOS（尤其「添加到主屏幕」的独立网页模式）在**收起键盘**时
+    //    有时只补发一个中间态高度、最后一次 resize 干脆不发 —— 外壳就永远短一截，
+    //    表现是底栏浮空、下面空出一条（使用者 2026-09-30 真机实测：差值正好约一段键盘高度）。
+    //    100ms × 20 的轮询就是为了兜住"事件缺失"，代价可忽略。
     const schedule = () => {
       cancelAnimationFrame(frame)
       frame = requestAnimationFrame(apply)
+      clearInterval(poll)
+      let n = 0
+      poll = setInterval(() => {
+        apply()
+        if (++n >= 20) clearInterval(poll)
+      }, 100)
     }
 
     apply()
@@ -41,17 +52,23 @@ export function useViewportHeight() {
     vv?.addEventListener('resize', schedule)
     vv?.addEventListener('scroll', schedule)
     document.addEventListener('visibilitychange', schedule)
+    // 键盘收起时不保证有 resize —— 焦点变化也重算（capture 才能听到所有输入框）
+    document.addEventListener('focusin', schedule, true)
+    document.addEventListener('focusout', schedule, true)
 
     return () => {
       clearTimeout(t1)
       clearTimeout(t2)
       cancelAnimationFrame(frame)
+      clearInterval(poll)
       window.removeEventListener('resize', schedule)
       window.removeEventListener('orientationchange', schedule)
       window.removeEventListener('pageshow', schedule)
       vv?.removeEventListener('resize', schedule)
       vv?.removeEventListener('scroll', schedule)
       document.removeEventListener('visibilitychange', schedule)
+      document.removeEventListener('focusin', schedule, true)
+      document.removeEventListener('focusout', schedule, true)
     }
   }, [])
 }
