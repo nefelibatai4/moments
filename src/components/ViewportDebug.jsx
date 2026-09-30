@@ -23,18 +23,19 @@ export default function ViewportDebug() {
   )
   const [, setTick] = useState(0)
 
-  // 连点标题 5 次（3 秒内）也能开 —— 手机上没法敲 ?debug=1
+  // 双击底部导航里的「动态」标题（.app-header h1）也能开 —— 手机上没法敲 ?debug=1。
+  // 用双击而不是连点 5 次：手机上更好按，且误触概率极低（双击导航项本来就是无操作）。
   useEffect(() => {
-    let taps = []
+    let last = 0
     const onClick = (e) => {
       const h1 = document.querySelector('.app-header h1')
       if (!h1 || !h1.contains(e.target)) return
       const now = Date.now()
-      taps = taps.filter((t) => now - t < 3000)
-      taps.push(now)
-      if (taps.length >= 5) {
-        taps = []
+      if (now - last < 500) {
+        last = 0
         setOpen((v) => !v)
+      } else {
+        last = now
       }
     }
     document.addEventListener('click', onClick)
@@ -95,7 +96,7 @@ export default function ViewportDebug() {
   return (
     <div className="viewport-debug" role="dialog" aria-label="视口自检">
       <button type="button" className="viewport-debug-close" aria-label="关闭" onClick={() => setOpen(false)}>×</button>
-      <div className="viewport-debug-title">视口自检（连点标题 5 次开关）</div>
+      <div className="viewport-debug-title">视口自检（双击底部「动态」开关）</div>
       <pre>{rows.join('\n')}</pre>
     </div>
   )
