@@ -1,43 +1,14 @@
 import { useState } from 'react'
-import { supabase } from '../supabaseClient'
 
-export default function MomentExpandMenu({ momentId, session, likes, onLikesChanged, onRequestComment, onRequestAnonymousComment, isOwner, onEdit, onDelete, deleting }) {
+/**
+ * 卡片右上角的 ⋯ 菜单。
+ *
+ * ⚠️ 2026-09-30 起「赞 / 评论」**搬到了卡片底部操作条**（微博那种信息流形态，见 MomentCard
+ * 的 `.moment-actions`），这里只留不能放在操作条上的操作：匿名评论 / 编辑 / 删除。
+ * 点赞逻辑也随之搬到 MomentCard（同一处实现，避免两套）。
+ */
+export default function MomentExpandMenu({ onRequestAnonymousComment, isOwner, onEdit, onDelete, deleting }) {
   const [menuOpen, setMenuOpen] = useState(false)
-  const [pending, setPending] = useState(false)
-
-  const liked = likes.some((l) => l.user_id === session.user.id)
-
-  async function handleToggleLike() {
-    if (pending) return
-    setPending(true)
-    if (liked) {
-      // 带 .select() 确认真的删掉了：被 RLS 拦下的 delete 不报错、只影响 0 行。
-      // 不确认就会显示"已取消赞"，刷新后赞又回来了。
-      const { data, error } = await supabase
-        .from('likes')
-        .delete()
-        .eq('moment_id', momentId)
-        .eq('user_id', session.user.id)
-        .select('user_id')
-      if (!error && data && data.length > 0) {
-        onLikesChanged(likes.filter((l) => l.user_id !== session.user.id))
-      }
-    } else {
-      const { data, error } = await supabase
-        .from('likes')
-        .insert({ moment_id: momentId, user_id: session.user.id })
-        .select('user_id, profiles(nickname)')
-        .single()
-      if (!error && data) onLikesChanged([...likes, data])
-    }
-    setPending(false)
-    setMenuOpen(false)
-  }
-
-  function handleComment() {
-    setMenuOpen(false)
-    onRequestComment()
-  }
 
   function handleAnonymousComment() {
     setMenuOpen(false)
@@ -66,10 +37,6 @@ export default function MomentExpandMenu({ momentId, session, likes, onLikesChan
       </button>
       {menuOpen && (
         <div className="expand-popup">
-          <button type="button" className={liked ? 'liked' : ''} onClick={handleToggleLike} disabled={pending}>
-            {liked ? '✓ 赞' : '赞'}
-          </button>
-          <button type="button" onClick={handleComment}>评论</button>
           <button type="button" className="anon" onClick={handleAnonymousComment}>匿名评论</button>
           {isOwner && (
             <button type="button" onClick={handleEdit}>编辑</button>

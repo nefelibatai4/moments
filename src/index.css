@@ -48,6 +48,8 @@
   --accent-green: #5fc992;
   --border-subtle: rgba(255, 255, 255, 0.06);
   --border-standard: rgba(255, 255, 255, 0.08);
+  /* 「通栏 + 粗分割线」信息流的色带（手机端 + 插件面板；桌面仍是卡片流） */
+  --feed-divider: rgba(255, 255, 255, 0.075);
   --border-strong: rgba(255, 255, 255, 0.1);
   --btn-primary-bg: hsla(0, 0%, 100%, 0.815);
   --btn-primary-text: #18191a;
@@ -75,6 +77,7 @@
   --accent-red: #cc3333;
   --accent-green: #339955;
   --border-subtle: rgba(0, 0, 0, 0.06);
+  --feed-divider: #ececee;
   --border-standard: rgba(0, 0, 0, 0.08);
   --border-strong: rgba(0, 0, 0, 0.12);
   --btn-primary-bg: #18191a;
@@ -3017,4 +3020,142 @@ html:not([data-surface]) .app-container:not(.authed) {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   「通栏 + 粗分割线」信息流（手机端 + 插件面板）
+
+   使用者 2026-09-30 的原话：动态页要像微博那样 —— **不是一张张独立卡片**，
+   而是通栏的整块，块与块之间用一条 **7px 粗色带**分隔。
+
+   为什么桌面保持卡片：宽屏下通栏会拉得很长，卡片更适合桌面阅读；
+   而手机与插件面板是窄屏竖排，正是微博那种信息流的形态。
+   ⚠️ 类名 `.moment-card` **保持不变**（e2e 里大量选择器依赖它）。
+   ⚠️ 骨架屏一起改：否则"加载中是卡片、加载完变通栏"，视觉会跳一下。
+   ══════════════════════════════════════════════════════════════ */
+@media (max-width: 600px) {
+  html:not([data-surface]) .timeline {
+    gap: 0;
+    border-top: 7px solid var(--feed-divider);   /* 列表最上方也来一条（微博顶部也有） */
+  }
+  html:not([data-surface]) .moment-card,
+  html:not([data-surface]) .moment-skeleton-card {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 14px 16px;
+  }
+  html:not([data-surface]) .moment-card + .moment-card,
+  html:not([data-surface]) .moment-card + .moment-skeleton-card,
+  html:not([data-surface]) .moment-skeleton-card + .moment-card,
+  html:not([data-surface]) .moment-skeleton-card + .moment-skeleton-card {
+    border-top: 7px solid var(--feed-divider);
+  }
+  /* 通栏：只把「动态页」的左右内边距去掉，其它页面照旧 */
+  html:not([data-surface]) .app-container:has(.timeline) main {
+    padding-left: 0;
+    padding-right: 0;
+  }
+}
+
+/* 插件面板（毛玻璃浮层 / 兜底小窗）：同样改成块流 */
+html[data-surface] .timeline {
+  gap: 0;
+  border-top: 7px solid var(--feed-divider);
+}
+
+html[data-surface] .moment-card,
+html[data-surface] .moment-skeleton-card {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 12px 0;
+}
+
+html[data-surface] .moment-card + .moment-card,
+html[data-surface] .moment-card + .moment-skeleton-card,
+html[data-surface] .moment-skeleton-card + .moment-card,
+html[data-surface] .moment-skeleton-card + .moment-skeleton-card {
+  border-top: 7px solid var(--feed-divider);
+}
+
+/* 评论/点赞那块也拍平：微博里它们是直接铺在卡片上的，不是另一个小卡片 */
+@media (max-width: 600px) {
+  html:not([data-surface]) .moment-panel {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    margin-top: 8px;
+  }
+}
+
+html[data-surface] .moment-panel {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  margin-top: 8px;
+}
+
+/* 面板的容器左右内边距归零 → 粗色带才能真正通栏；内容缩进改由卡片自己出 */
+html[data-surface]:has(.timeline) .app-container {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+html[data-surface] .moment-card .moment-header,
+html[data-surface] .moment-card .moment-content,
+html[data-surface] .moment-card .moment-images,
+html[data-surface] .moment-card .moment-panel,
+html[data-surface] .moment-card .moment-actions {
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+/* ── 卡片底部操作条（微博那种：赞 / 评论 + 数字）
+   使用者定的口径：**不做转发**，先只放赞和评论。 */
+.moment-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.moment-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 36px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 0.82rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.moment-act:hover {
+  background: var(--hover-wrap-bg);
+  opacity: 1;                     /* 抹掉全局 button:hover 的淡出 */
+}
+
+.moment-act.liked {
+  color: var(--accent-red);
+}
+
+.moment-act-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.moment-act.liked .moment-act-count {
+  color: inherit;
 }

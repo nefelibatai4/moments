@@ -3,13 +3,9 @@ import MomentExpandMenu from './MomentExpandMenu'
 import CommentSection from './CommentSection'
 import ImageLightbox from './ImageLightbox'
 import { mapLink } from '../lib/mapLink'
+import { relativeTime } from '../lib/relativeTime'
 import { useAuth } from '../lib/AuthContext'
 import { supabase } from '../supabaseClient'
-
-function formatTime(iso) {
-  const d = new Date(iso)
-  return d.toLocaleString('zh-CN', { hour12: false })
-}
 
 function storagePathFromUrl(url) {
   const marker = '/moment-images/'
@@ -39,6 +35,7 @@ export default function MomentCard({
   // 看图用的下标：null = 没在看。不存 URL 而存下标，是因为图集里要能左右翻页，
   // 翻页时得知道"现在看到第几张了"（见 components/ImageLightbox.jsx）。
   const [viewerIndex, setViewerIndex] = useState(null)
+  const [likePending, setLikePending] = useState(false)
   const [draft, setDraft] = useState(moment.content ?? '')
   const [saving, setSaving] = useState(false)
   const session = useAuth()
@@ -48,6 +45,34 @@ export default function MomentCard({
   const displayName = moment.anon_nickname || (profile?.nickname ?? '匿名')
   const comments = moment.comments ?? []
   const likes = moment.likes ?? []
+
+  const liked = !!session && likes.some((l) => l.user_id === session.user.id)
+
+  // 点赞/取消赞：从 MomentExpandMenu 搬过来的（现在操作条上的 ♥ 直接点，不用先进 ⋯ 菜单）。
+  // ⚠️ 两处 `.select()` 都是为了"确认真的写进去了"：被 RLS 拦下的写操作不报错、只影响 0 行。
+  async function handleToggleLike() {
+    if (likePending || !session) return
+    setLikePending(true)
+    if (liked) {
+      const { data, error } = await supabase
+        .from('likes')
+        .delete()
+        .eq('moment_id', moment.id)
+        .eq('user_id', session.user.id)
+        .select('user_id')
+      if (!error && data && data.length > 0) {
+        onLikesChanged?.(moment.id, likes.filter((l) => l.user_id !== session.user.id))
+      }
+    } else {
+      const { data, error } = await supabase
+        .from('likes')
+        .insert({ moment_id: moment.id, user_id: session.user.id })
+        .select('user_id, profiles(nickname)')
+        .single()
+      if (!error && data) onLikesChanged?.(moment.id, [...likes, data])
+    }
+    setLikePending(false)
+  }
 
   function startEdit() {
     setDraft(moment.content ?? '')
@@ -122,7 +147,7 @@ export default function MomentCard({
         <span className="moment-author">
           <span className="moment-author-name">
             {displayName}
-            <span className="moment-author-time">· {formatTime(moment.created_at)}</span>
+            <span className="moment-author-time">· {relativeTime(moment.created_at)}</span>
           </span>
         </span>
         <span className="moment-meta-spacer" />
@@ -138,11 +163,6 @@ export default function MomentCard({
         )}
         {session && (
           <MomentExpandMenu
-            momentId={moment.id}
-            session={session}
-            likes={likes}
-            onLikesChanged={(next) => onLikesChanged?.(moment.id, next)}
-            onRequestComment={() => { setCommentBoxOpen(true); setAnonCommentOpen(false) }}
             onRequestAnonymousComment={() => { setAnonCommentOpen(true); setCommentBoxOpen(false) }}
             isOwner={isOwner}
             onEdit={startEdit}
@@ -190,13 +210,51 @@ export default function MomentCard({
           ))}
         </div>
       )}
-      {viewerIndex != null && (
-        <ImageLightbox
-          images={moment.images}
-          index={viewerIndex}
-          alt={`${displayName} 发布的图片`}
-          onClose={() => setViewerIndex(null)}
-        />
+
+      {/* 底部操作条：微博那种"赞 / 评论 + 数字"。
+          使用者 2026-09-30 定的口径：不做转发，先只放这两个。
+          点赞直接在这里点（原来藏在右上 ⋯ 菜单里），⋯ 里只剩匿名评论/编辑/删除。 */}
+      {session && (
+        <div className="moment-actions">
+          <button
+            type="button"
+            className={`moment-act${liked ? ' liked' : ''}`}
+            onClick={handleToggleLike}
+            disabled={likePending}
+            aria-pressed={liked}
+            aria-label={liked ? '取消赞' : '赞'}
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <path
+                d="M12 20.2l-1.05-.95C6.2 14.9 3.2 12.2 3.2 8.7 3.2 6.1 5.2 4 7.8 4c1.5 0 2.9.7 3.8 1.8l.4.5.4-.5C13.3 4.7 14.7 4 16.2 4 18.8 4 20.8 6.1 20.8 8.7c0 3.5-3 6.2-7.75 10.55L12 20.2z"
+                fill={liked ? 'currentColor' : 'none'}
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span>赞</span>
+            {likes.length > 0 && <span className="moment-act-count">{likes.length}</span>}
+          </button>
+          <button
+            type="button"
+            className="moment-act"
+            onClick={() => { setCommentBoxOpen(true); setAnonCommentOpen(false) }}
+            aria-label="评论"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <path
+                d="M20.2 11.7c0 3.5-3.5 6.3-7.8 6.3-.95 0-1.9-.14-2.75-.4L5.3 19.6l1.15-3.05C5.4 15.4 4.8 13.7 4.8 11.7c0-3.5 3.5-6.3 7.8-6.3s7.6 2.8 7.6 6.3z"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span>评论</span>
+            {comments.length > 0 && <span className="moment-act-count">{comments.length}</span>}
+          </button>
+        </div>
       )}
       {deleteError && <p className="error-text">{deleteError}</p>}
 
@@ -223,7 +281,14 @@ export default function MomentCard({
           )}
         </div>
       )}
+      {viewerIndex != null && (
+        <ImageLightbox
+          images={moment.images}
+          index={viewerIndex}
+          alt={`${displayName} 发布的图片`}
+          onClose={() => setViewerIndex(null)}
+        />
+      )}
     </article>
   )
 }
-
