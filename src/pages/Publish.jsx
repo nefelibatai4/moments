@@ -117,7 +117,7 @@ export default function Publish() {
             placeholder="自定义显示名称"
             value={anonNickname}
             onChange={(e) => setAnonNickname(e.target.value)}
-            maxLength={30}
+            maxLength={12}   /* 同上：卡片头一行放不下更长的 */
           />
         )}
       </div>

@@ -341,6 +341,12 @@ button:disabled {
   font-size: 0.95rem;
   font-weight: 600;
   color: var(--text-primary);
+  /* 兜底：昵称上限是 12 字（数据库约束），万一还有更长的（历史数据/极端字符），
+     宁可显示省略号，也不要把卡片头折成三行（微博也是这个处理）。 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 .moment-author-time {

@@ -203,7 +203,7 @@ export default function Profile() {
           type="text"
           value={nickname}
           onChange={(e) => setNickname(e.target.value)}
-          maxLength={30}
+          maxLength={12}   /* 与数据库约束一致：太长会让信息流卡片头折行（实测 14 字起折，见 db-backups/20260930_nickname_length.sql） */
           required
         />
         <button type="submit" disabled={savingNickname}>

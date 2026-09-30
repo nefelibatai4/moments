@@ -174,11 +174,11 @@ export default function MomentCard({
             displayName.slice(0, 1)
           )}
         </span>
+        {/* 上行 ID、下行时间（微博那种；字体与颜色都不变，只是换了位置）。
+            ⚠️ ID 长度有上限（见 docs/STATUS.md）：太长会把第一行撑到折行、卡片头变成三行。 */}
         <span className="moment-author">
-          <span className="moment-author-name">
-            {displayName}
-            <span className="moment-author-time">· {relativeTime(moment.created_at)}</span>
-          </span>
+          <span className="moment-author-name">{displayName}</span>
+          <span className="moment-author-time">{relativeTime(moment.created_at)}</span>
         </span>
         <span className="moment-meta-spacer" />
         {moment.latitude != null && moment.longitude != null && (
