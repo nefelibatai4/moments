@@ -32,9 +32,19 @@ export function useViewportHeight() {
     const isMobileShell = () =>
       !root.hasAttribute('data-surface') && window.matchMedia('(max-width: 600px)').matches
 
+    // 独立网页模式（Safari「添加到主屏幕」）：iOS 把 innerHeight / visualViewport.height
+    // 报成「屏幕高 − 状态栏高」（真机实测 812 vs 屏幕 874），但 web view 实际从屏幕顶端铺满，
+    // 于是外壳矮 62px → **底栏下面空一条**（微博那种原生 App 没有这个偏差）。
+    // 只在「独立网页 + 键盘没开」时用 screen.height 兜底；Safari 标签页/App 内都不受影响。
+    const isStandalone = () =>
+      window.navigator.standalone === true ||
+      (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+
     const apply = () => {
-      const h = vv?.height || window.innerHeight
+      let h = vv?.height || window.innerHeight
       if (!h) return
+      const kb = Math.max(0, window.innerHeight - h)   // 键盘占掉的高度
+      if (kb <= 20 && isStandalone()) h = Math.max(h, window.screen?.height || 0)
       root.style.setProperty('--app-h', `${Math.round(h)}px`)
       // ⚠️ 光有外壳收缩还不够（使用者 2026-09-30 真机实测）：
       //    iOS 在输入框获得焦点时会**把整个页面往下滚**一段（把输入框"露"出来）——
