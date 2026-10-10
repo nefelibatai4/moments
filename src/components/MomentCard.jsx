@@ -4,6 +4,7 @@ import CommentSection from './CommentSection'
 import ImageLightbox from './ImageLightbox'
 import { mapLink } from '../lib/mapLink'
 import { relativeTime } from '../lib/relativeTime'
+import { CARD_COLORS, normalizeCardColor } from '../lib/cardColors'
 import { useAuth } from '../lib/AuthContext'
 import { supabase } from '../supabaseClient'
 
@@ -41,6 +42,7 @@ export default function MomentCard({
   const cardRef = useRef(null)
   const lastTapRef = useRef(0)
   const [draft, setDraft] = useState(moment.content ?? '')
+  const [draftColor, setDraftColor] = useState(normalizeCardColor(moment.card_color))
   const [saving, setSaving] = useState(false)
   const session = useAuth()
   const isOwner = session && session.user.id === moment.user_id
@@ -93,7 +95,9 @@ export default function MomentCard({
   function handleClick(e) {
     if (e.target.closest('button, a, input, textarea, .moment-images, .comment-section, .moment-actions')) return
     const now = Date.now()
-    if (now - lastTapRef.current > 300) {
+    // 400ms 而不是 300：双击判定要留点余量（机器忙时两下间隔会变长，
+    // 太紧会出现"两次单击"各走各的 → 双击点了赞却没反应）。iOS 自己的双击阈值也在 300~500。
+    if (now - lastTapRef.current > 400) {
       lastTapRef.current = now
       return
     }
@@ -106,6 +110,7 @@ export default function MomentCard({
 
   function startEdit() {
     setDraft(moment.content ?? '')
+    setDraftColor(normalizeCardColor(moment.card_color))
     setDeleteError(null)
     setEditing(true)
   }
@@ -121,14 +126,18 @@ export default function MomentCard({
       // 界面会显示保存成功、实际库里一个字都没变。
       const { data, error } = await supabase
         .from('moments')
-        .update({ content: next || null })
+        // 颜色跟着一起改（默认色 = null，与历史数据一致）
+        .update({ content: next || null, card_color: draftColor === 'default' ? null : draftColor })
         .eq('id', moment.id)
         .select('id')
       if (error) throw error
       if (!data || data.length === 0) {
         throw new Error('保存失败：这条动态不存在，或你没有修改权限')
       }
-      onMomentUpdated?.(moment.id, { content: next || null })
+      onMomentUpdated?.(moment.id, {
+        content: next || null,
+        card_color: draftColor === 'default' ? null : draftColor,
+      })
       setEditing(false)
     } catch (err) {
       setDeleteError(err.message)
@@ -165,7 +174,12 @@ export default function MomentCard({
   }
 
   return (
-    <article className="moment-card" ref={cardRef} onClick={handleClick}>
+    <article
+      className="moment-card"
+      ref={cardRef}
+      data-card-color={normalizeCardColor(moment.card_color)}
+      onClick={handleClick}
+    >
       <div className="moment-header">
         <span className="moment-avatar">
           {!isAnon && profile?.avatar_url ? (
@@ -211,6 +225,20 @@ export default function MomentCard({
             maxLength={1000}
             autoFocus
           />
+          <div className="card-color-row" role="group" aria-label="卡片颜色">
+            {CARD_COLORS.map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                className={`card-color-dot${draftColor === c.key ? ' on' : ''}`}
+                data-color={c.key}
+                aria-pressed={draftColor === c.key}
+                aria-label={c.label}
+                title={c.label}
+                onClick={() => setDraftColor(c.key)}
+              />
+            ))}
+          </div>
           <div className="moment-edit-actions">
             <button type="submit" disabled={saving}>{saving ? '保存中…' : '保存'}</button>
             <button type="button" className="ghost" onClick={() => setEditing(false)} disabled={saving}>

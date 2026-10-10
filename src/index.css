@@ -3281,3 +3281,87 @@ html[data-surface] .moment-card .moment-actions {
   70%  { transform: scale(0.92); }
   100% { transform: scale(1); }
 }
+
+
+/* ══════════════════════════════════════════════════════════════
+   动态卡片颜色（每条动态单独选；见 src/lib/cardColors.js）
+
+   只存 key，色值在这里按主题给 —— OKLCH 的好处：**只改亮度 L** 就能让
+   亮/暗主题下的观感都成立（浅底 vs 深底），色相与彩度保持同一套，
+   对比度可控、也不会像直接压 hex 那样在某个主题里发脏。
+   ══════════════════════════════════════════════════════════════ */
+:root {
+  --moment-tint-default: transparent;
+  --moment-tint-rose: oklch(0.32 0.055 15);
+  --moment-tint-sky: oklch(0.32 0.05 235);
+  --moment-tint-amber: oklch(0.32 0.05 85);
+  --moment-tint-mint: oklch(0.32 0.05 160);
+  --moment-tint-violet: oklch(0.32 0.055 295);
+  --moment-tint-slate: oklch(0.3 0.012 260);
+}
+
+[data-theme="light"] {
+  --moment-tint-rose: oklch(0.965 0.03 15);
+  --moment-tint-sky: oklch(0.965 0.03 235);
+  --moment-tint-amber: oklch(0.965 0.035 85);
+  --moment-tint-mint: oklch(0.965 0.03 160);
+  --moment-tint-violet: oklch(0.965 0.03 295);
+  --moment-tint-slate: oklch(0.96 0.008 260);
+}
+
+/* 卡片按 data-card-color 取色；默认色仍是原来的样式（不覆盖）。
+   ⚠️ 同时也把 --moment-tint 定义在卡片上：块流布局（手机/面板）用它当背景。 */
+.moment-card[data-card-color="rose"] { --moment-tint: var(--moment-tint-rose); }
+.moment-card[data-card-color="sky"] { --moment-tint: var(--moment-tint-sky); }
+.moment-card[data-card-color="amber"] { --moment-tint: var(--moment-tint-amber); }
+.moment-card[data-card-color="mint"] { --moment-tint: var(--moment-tint-mint); }
+.moment-card[data-card-color="violet"] { --moment-tint: var(--moment-tint-violet); }
+.moment-card[data-card-color="slate"] { --moment-tint: var(--moment-tint-slate); }
+.moment-card[data-card-color="rose"] { background: var(--moment-tint-rose); }
+.moment-card[data-card-color="sky"] { background: var(--moment-tint-sky); }
+.moment-card[data-card-color="amber"] { background: var(--moment-tint-amber); }
+.moment-card[data-card-color="mint"] { background: var(--moment-tint-mint); }
+.moment-card[data-card-color="violet"] { background: var(--moment-tint-violet); }
+.moment-card[data-card-color="slate"] { background: var(--moment-tint-slate); }
+
+/* 有颜色的块在"通栏块流"里也成立：色带仍由 7px 分割线负责，块自己带底色 */
+@media (max-width: 600px) {
+  html:not([data-surface]) .moment-card[data-card-color]:not([data-card-color="default"]) {
+    background: var(--moment-tint, transparent);
+  }
+}
+
+html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]) {
+  background: var(--moment-tint, transparent);
+}
+
+/* ── 发布/编辑时的那排色点 ── */
+.card-color-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.card-color-dot {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border-standard);
+  border-radius: 50%;
+  background: var(--moment-tint, transparent);
+  cursor: pointer;
+}
+
+.card-color-dot[data-color="default"] { background: var(--bg-card); }
+.card-color-dot[data-color="rose"] { --moment-tint: var(--moment-tint-rose); }
+.card-color-dot[data-color="sky"] { --moment-tint: var(--moment-tint-sky); }
+.card-color-dot[data-color="amber"] { --moment-tint: var(--moment-tint-amber); }
+.card-color-dot[data-color="mint"] { --moment-tint: var(--moment-tint-mint); }
+.card-color-dot[data-color="violet"] { --moment-tint: var(--moment-tint-violet); }
+.card-color-dot[data-color="slate"] { --moment-tint: var(--moment-tint-slate); }
+
+.card-color-dot.on {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}

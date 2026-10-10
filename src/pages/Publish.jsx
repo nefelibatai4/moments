@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient'
 import { useAuth } from '../lib/AuthContext'
 import { safeStorageKey } from '../lib/sanitizeFilename'
 import { compressImage } from '../lib/compressImage'
+import { CARD_COLORS } from '../lib/cardColors'
 
 export default function Publish() {
   const session = useAuth()
@@ -17,6 +18,7 @@ export default function Publish() {
   const [anonNickname, setAnonNickname] = useState('')
   const [error, setError] = useState(null)
   const [uploadHint, setUploadHint] = useState(null)
+  const [cardColor, setCardColor] = useState('default')
 
   function handleGetLocation() {
     if (!navigator.geolocation) {
@@ -73,6 +75,8 @@ export default function Publish() {
         longitude: location?.longitude ?? null,
         user_id: session.user.id,
         anon_nickname: anonMode ? anonNickname.trim() || null : null,
+        // 卡片颜色：default 存 null（历史数据也是 null，两边含义一致）
+        card_color: cardColor === 'default' ? null : cardColor,
       })
       if (insertError) throw insertError
 
@@ -120,6 +124,21 @@ export default function Publish() {
             maxLength={12}   /* 同上：卡片头一行放不下更长的 */
           />
         )}
+      </div>
+      {/* 卡片颜色：一排色点，选中的描一圈蓝边（微博那种"给这条动态挑个底色"） */}
+      <div className="card-color-row" role="group" aria-label="卡片颜色">
+        {CARD_COLORS.map((c) => (
+          <button
+            key={c.key}
+            type="button"
+            className={`card-color-dot${cardColor === c.key ? ' on' : ''}`}
+            data-color={c.key}
+            aria-pressed={cardColor === c.key}
+            aria-label={c.label}
+            title={c.label}
+            onClick={() => setCardColor(c.key)}
+          />
+        ))}
       </div>
       {error && <p className="error-text">{error}</p>}
       {uploadHint && <p className="status-text">{uploadHint}</p>}
