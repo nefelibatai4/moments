@@ -27,7 +27,7 @@ const APPROVAL_RETRY_DELAY_MS = 400
 //
 // 为什么（2026-09-21 线上事故）：旧实现把 false 也写进缓存，而当时
 // 「查询失败」被当成「未激活」—— 于是**一次网络抖动就把已激活账号的缓存写成了 false**，
-// 之后每次打开都先按缓存把人弹到 /activate 要邀请码，
+// 之后每次打开都先按缓存把人弹到 /activate 要口令，
 // 刷新几次、等某次查询碰巧成功才恢复。详见 docs/PITFALLS.md #47。
 function readCachedApproval(userId) {
   try {
@@ -59,7 +59,7 @@ export function AuthProvider({ children }) {
   const [approved, setApproved] = useState(undefined)
   const lastUserIdRef = useRef(undefined)
   // 请求序号：只让"最新那次"查询的结果生效，避免先发出的旧请求（例如刚注册、
-  // 邀请码还没认领时读到 approved=false）后返回、把新结果覆盖掉。
+  // 口令还没认领时读到 approved=false）后返回、把新结果覆盖掉。
   const seqRef = useRef(0)
 
   const loadApproval = useCallback(async (userId) => {
@@ -81,7 +81,7 @@ export function AuthProvider({ children }) {
       //      而且 RLS 允许读自己那一行。所以 0 行只可能是 **access token 还没就绪 / RLS 竞态**。
       //      这**正是本次线上事故的真实触发路径**：PostgREST 返回 200 + 空数组，
       //      旧代码用 single() 拿到 PGRST116，然后写成 approved=false 并污染缓存，
-      //      于是已激活账号被弹到 /activate 要邀请码。
+      //      于是已激活账号被弹到 /activate 要口令。
       const { data, error } = await supabase
         .from('profiles')
         .select('approved')
@@ -133,7 +133,7 @@ export function AuthProvider({ children }) {
     loadApproval(uid)
   }, [session, loadApproval])
 
-  // 认领邀请码成功后手动刷新激活状态。
+  // 认领注册口令成功后手动刷新激活状态。
   // 这里直接从 supabase 现取 session，而不是用闭包里的 session：
   // 注册流程里 signUp 刚返回时，Context 的 session 可能还没更新，用闭包值会拿到 undefined
   // 导致刷新被跳过，用户就会被 RequireAuth 误判为未激活而弹回 /activate。

@@ -8,7 +8,7 @@ const STUCK_RETRY_MS = 5000
 /**
  * 路由守卫。
  *
- * requireApproved（默认 true）：要求账号已用邀请码激活。
+ * requireApproved（默认 true）：要求账号已凭注册口令激活。
  * 未激活的账号可以登录，但读不到任何数据（服务端 RLS 强制），
  * 所以这里直接把它们送到 /activate，避免看到一堆空列表和 RLS 报错。
  * /activate 自己用 requireApproved={false}。

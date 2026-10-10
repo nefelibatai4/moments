@@ -11,7 +11,7 @@
 |---|---|
 | 线上 | https://nefelibatai4.github.io/moments/ |
 | 技术栈 | Vite + React 19（纯 SPA）／Supabase（Postgres + Auth + Storage + Realtime）／GitHub Pages 托管／PWA + Capacitor iOS |
-| 数据库 | Supabase `public` schema，10 张表（2026-09-24 新增 `user_presence`；2026-09-30 新增 `app_settings`——注册口令） |
+| 数据库 | Supabase `public` schema，10 张表（2026-09-30：新增 `app_settings` 注册口令、`auth_attempts` 失败限速；删除 `invite_codes`——邀请码机制已退场） |
 
 ## ⚠️ 硬约束
 
@@ -22,9 +22,10 @@
    不要"帮忙"把它们加进**本公开仓库**的版本控制。
    （2026-09-24 起：这些本机文件在**私有仓库** `~/moments-workspace/local-files/` 有副本，
    换机器时用那里的 `restore.cjs` 放回；详见该仓库 `docs/MIGRATION-WINDOWS.md`。）
-3. **测试数据必须清理**：`scripts/` 下的验证脚本会创建临时账号并占用邀请码。
+3. **测试数据必须清理**：`scripts/` 下的验证脚本会创建临时账号（域名固定 `@example.com`）。
    一律用 `bash scripts/run-all-tests.sh` 跑（跑前跑后各清一次 + 审计，有残留以非 0 退出）；
-   **邀请码只复位、绝不删除**。跑完要**看清理那几行**，不能只看最后一句"结果: N 通过"——
+   口令的失败限速计数（`auth_attempts`）也要清零，否则会把使用者自己的 IP 锁住。
+   跑完要**看清理那几行**，不能只看最后一句"结果: N 通过"——
    曾经因为只看了最后一行，让 14 个测试账号静默泄漏（详见私有库 `docs/PITFALLS.md` #33）。
 4. **数据库变更流程固定**：先备份 → 写 SQL 到 `db-backups/` → 记 `db-backups/CHANGELOG.md`
    → 执行 → 验证 → 写明回退方法。
@@ -55,9 +56,12 @@ git@github.com:nefelibatai4/moments-workspace.git
 
 ## 关键认知（先记住这一条）
 
-**「登录」不等于「能看内容」。** `auth.signUp` 是公开端点、不校验邀请码，
-所以邀请制做在数据层：新账号 `profiles.approved = false`，所有读取策略都要求 `is_approved()`。
-未激活账号能登录但读不到任何一行，必须凭 `claim_invite_code()` 原子认领邀请码才会被激活。
+**「登录」不等于「能看内容」。** 门禁分两步，都在服务端（2026-09-30 起「邀请码」→「注册口令」）：
+① **建号**由 Auth Hook「Before User Created」调用 `hook_signup_passphrase()` 比对口令（口令在 `app_settings`，
+只有管理员可读，在【我】里更换；同 IP 30 分钟失败 5 次即限速）；
+② **激活**靠 `profiles.approved`，所有读取策略都要求 `is_approved()`，必须凭 `claim_passphrase()` 激活。
+⚠️ 建号那步的 Hook 需要在 Supabase Dashboard 里**手动开启一次**（跑了才会拦），
+所以 `approved=false` 这道兜底永远要留着 —— 两边都成立才算安全。
 
 ## 常用命令
 

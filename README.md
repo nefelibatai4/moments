@@ -75,9 +75,15 @@ npm run dev      # http://localhost:5173/moments/
 
 **「登录」不等于「能看内容」。**
 
-`auth.signUp` 是 Supabase 的公开端点，服务端不校验邀请码——任何人拿公开的 anon key 都能注册出账号。
-因此邀请制做在数据层而不是 UI 层：新账号 `profiles.approved = false`，**所有读取策略都要求 `is_approved()`**。
-未激活账号可以登录，但读不到任何一行、也写不进任何数据；必须凭 `claim_invite_code()` 原子认领一个有效邀请码才会被激活。
+门禁分两步，都做在服务端（2026-09-30 起由「邀请码」改为「注册口令」）：
+
+1. **建号**：Supabase Auth Hook「Before User Created」调用 `hook_signup_passphrase()`，
+   口令不对直接拒绝创建用户（口令存在只有管理员可读的 `app_settings` 里，在【我】的成员管理里更换）。
+2. **激活**：新账号 `profiles.approved = false`，**所有读取策略都要求 `is_approved()`**。
+   未激活账号可以登录，但读不到任何一行、也写不进任何数据；
+   必须凭 `claim_passphrase()` 原子比对口令才会被激活。
+
+口令按 IP 限速：同一 IP 30 分钟内失败 5 次即拒绝（含正确口令），成功即清零。
 
 | 动作 | 谁可以 |
 |------|--------|
@@ -87,7 +93,7 @@ npm run dev      # http://localhost:5173/moments/
 | 删除评论 | 评论作者本人 **或** 该动态的作者 |
 | 标记已读 | 消息接收方 |
 | 撤回消息 | 消息发送方（前端限 2 分钟窗口） |
-| 校验 / 认领邀请码 | 只能通过 RPC，且不可枚举 |
+| 认领注册口令（激活账号） | 只能通过 RPC；口令不可枚举、按 IP 限速 |
 
 消息的字段级约束（改内容、改已读、改收发人）由 `tr_messages_immutable` 触发器强制——
 RLS 只能管「哪些行可写」，管不了「哪些列可写」。
@@ -123,4 +129,5 @@ node scripts/e2e-phase-c.cjs      # 评论删除 / 动态编辑 / 消息撤回
 node scripts/e2e-phase-d.cjs      # 分页与图片压缩
 ```
 
-脚本会创建临时账号并占用邀请码，结束（含异常路径）自动回滚清理。
+脚本会创建临时账号，结束（含异常路径）自动回滚清理；跑完务必看清理那几行。
+完整一套请用 `bash scripts/run-all-tests.sh`（跑前跑后各清一次 + 审计，有残留以非 0 退出）。

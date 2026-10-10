@@ -33,8 +33,6 @@ export default function Profile() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [changingPassword, setChangingPassword] = useState(false)
   const [darkMode, setDarkMode] = useState(getTheme() === 'dark')
-  const [inviteCode, setInviteCode] = useState(null)
-  const [generatingInvite, setGeneratingInvite] = useState(false)
   const [error, setError] = useState(null)
   const [message, setMessage] = useState(null)
 
@@ -151,23 +149,6 @@ export default function Profile() {
     setTheme(next ? 'dark' : 'light')
   }
 
-  async function handleGenerateInvite() {
-    setGeneratingInvite(true)
-    setError(null)
-    try {
-      const code = crypto.randomUUID().replace(/-/g, '').slice(0, 8)
-      const { error: insertError } = await supabase
-        .from('invite_codes')
-        .insert({ code, created_by: session.user.id })
-      if (insertError) throw insertError
-      setInviteCode(code)
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setGeneratingInvite(false)
-    }
-  }
-
   if (loading) return <p className="status-text">加载中…</p>
 
   return (
@@ -243,13 +224,6 @@ export default function Profile() {
       {error && <p className="error-text">{error}</p>}
       {message && <p className="success-text">{message}</p>}
 
-      <div className="invite-section">
-        <button type="button" onClick={handleGenerateInvite} disabled={generatingInvite}>
-          {generatingInvite ? '生成中…' : '生成邀请码'}
-        </button>
-        {inviteCode && <p className="invite-code-display">邀请码：<strong>{inviteCode}</strong></p>}
-      </div>
-
       <div className="share-section">
         <h3>给朋友用</h3>
         {isNative ? (
@@ -261,7 +235,7 @@ export default function Profile() {
             <p className="share-hint">
               下载扩展压缩包发给朋友。解压后打开 <code>chrome://extensions/</code>，开启右上角
               「开发者模式」，点「加载已解压的扩展程序」，选择解压出来的{' '}
-              <code>moments-extension</code> 文件夹即可。注册还需要一个邀请码。
+              <code>moments-extension</code> 文件夹即可。注册还需要一个注册口令（在下面的「注册口令」里看）。
             </p>
             <a
               className="share-download"

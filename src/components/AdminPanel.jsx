@@ -51,6 +51,11 @@ export default function AdminPanel() {
   // 删除的两步确认：记下"哪一行正在等确认"
   const [confirming, setConfirming] = useState(null)
   const [deleting, setDeleting] = useState(null)
+  // 注册口令（管理员才能取；明文回显是刻意的 —— 站长要能把它发给朋友）
+  const [passphrase, setPassphrase] = useState(null)
+  const [showPassphrase, setShowPassphrase] = useState(false)
+  const [newPassphrase, setNewPassphrase] = useState('')
+  const [savingPassphrase, setSavingPassphrase] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -84,9 +89,49 @@ export default function AdminPanel() {
       if (cancelled) return
       if (err) setError(err.message)
       else setUsers(data || [])
+
+      const { data: pw, error: pwErr } = await supabase.rpc('admin_get_passphrase')
+      if (cancelled) return
+      if (pwErr) setError(pwErr.message)
+      else setPassphrase(pw)
     })()
     return () => { cancelled = true }
   }, [isAdmin])
+
+  /** 口令强度：与服务端 passphrase_strength_ok() 同一套规则（先给出人话提示，服务端仍会再校验一次） */
+  function strengthHint(p) {
+    const s = p.trim()
+    if (s.length < 12) return `还差 ${12 - s.length} 个字符（至少要 12 个）`
+    const classes = [/[A-Z]/, /[a-z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((re) => re.test(s)).length
+    if (classes < 3) return '大写、小写、数字、符号 里至少要包含三类'
+    return null
+  }
+
+  async function handleSavePassphrase(e) {
+    e.preventDefault()
+    const next = newPassphrase.trim()
+    const hint = strengthHint(next)
+    if (hint) { setError(`新口令不合要求：${hint}`); setNotice(null); return }
+
+    setSavingPassphrase(true)
+    setError(null)
+    setNotice(null)
+    const { error: err } = await supabase.rpc('admin_set_passphrase', { p_new: next })
+    setSavingPassphrase(false)
+    if (err) { setError(err.message); return }
+    setPassphrase(next)
+    setNewPassphrase('')
+    setNotice('注册口令已更新：旧口令立刻失效，已注册的人不受影响')
+  }
+
+  async function handleCopyPassphrase() {
+    try {
+      await navigator.clipboard.writeText(passphrase ?? '')
+      setNotice('口令已复制，可以直接发给朋友')
+    } catch {
+      setError('复制失败，请手动长按/划选口令')
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -128,6 +173,41 @@ export default function AdminPanel() {
       {error && <p className="error-text">{error}</p>}
       {notice && <p className="success-text">{notice}</p>}
 
+      {/* 注册口令：这是全站唯一的门禁。朋友注册时要输它（Auth Hook 校验），
+          激活账号也要输它（claim_passphrase）。换掉之后旧口令立刻失效。 */}
+      <div className="admin-passphrase">
+        <h4>注册口令</h4>
+        <p className="passphrase-display">
+          当前口令：
+          <strong>{showPassphrase ? (passphrase ?? '（读取中…）') : '••••••••••••'}</strong>
+        </p>
+        <div className="passphrase-actions">
+          <button type="button" onClick={() => setShowPassphrase((v) => !v)}>
+            {showPassphrase ? '隐藏' : '显示'}
+          </button>
+          <button type="button" onClick={handleCopyPassphrase} disabled={!passphrase}>
+            复制
+          </button>
+        </div>
+        <form className="profile-form" onSubmit={handleSavePassphrase}>
+          <label>更换口令</label>
+          <input
+            type="text"
+            placeholder="新口令：≥12 位，大小写/数字/符号至少三类"
+            value={newPassphrase}
+            onChange={(e) => setNewPassphrase(e.target.value)}
+            maxLength={64}
+          />
+          <button type="submit" disabled={savingPassphrase || !newPassphrase.trim()}>
+            {savingPassphrase ? '更换中…' : '更换口令'}
+          </button>
+        </form>
+        <p className="admin-hint">
+          新朋友注册时要输这个口令。换掉之后：新注册立刻按新口令来，已注册的人不受影响
+          （他们只在注册/激活时输过一次）。口令是明文保存的 —— 因为你要能回看并发给朋友。
+        </p>
+      </div>
+
       {users.map((u) => {
         const isMe = u.id === me
         return (
@@ -168,8 +248,7 @@ export default function AdminPanel() {
               IP {u.last_ip || '—'}{u.last_country ? `（${u.last_country}）` : ''} · 设备 {shortDevice(u.last_device)}
             </p>
             <p className="admin-user-line muted">
-              动态 {u.moments_count} · 私聊 {u.messages_count} · 推送订阅 {u.push_count} · 邀请码 {u.invite_code || '—'}
-              {u.invite_used_at ? `（${absTime(u.invite_used_at)} 使用）` : ''}
+              动态 {u.moments_count} · 私聊 {u.messages_count} · 推送订阅 {u.push_count}
             </p>
             <p className="admin-user-line muted">注册于 {absTime(u.created_at)}</p>
           </div>
@@ -179,7 +258,6 @@ export default function AdminPanel() {
       <p className="admin-hint">
         IP / 国家 / 设备是从 2026-09-24 才开始记录的，之前的记录没有这些数据（显示"—"）。
         删除会连带清掉该用户的动态、评论、私聊与推送订阅，**不可撤销**；存储里的历史图片不会被删除。
-        该用户用掉的邀请码会**复位成未使用**，他创建的邀请码会**改归你名下**（不会丢）。
       </p>
     </div>
   )

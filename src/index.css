@@ -1072,14 +1072,19 @@ button:disabled {
   opacity: 1;
 }
 
-/* 邀请码区域 */
-.invite-section {
+/* 注册口令区域（管理员，在成员管理里） */
+.admin-passphrase {
   border-top: 1px solid var(--border-subtle);
   padding-top: 16px;
   margin-top: 8px;
 }
 
-.invite-section button {
+.admin-passphrase h4 {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+}
+
+.admin-passphrase button {
   border: none;
   background: var(--btn-primary-bg);
   color: var(--btn-primary-text);
@@ -1090,20 +1095,32 @@ button:disabled {
   letter-spacing: 0.3px;
 }
 
-.invite-section button:hover {
+.admin-passphrase button:hover {
   opacity: 0.85;
 }
 
-.invite-code-display {
-  margin-top: 8px;
-  font-size: 0.95rem;
-  color: var(--text-secondary);
+.admin-passphrase button:disabled {
+  opacity: 0.5;
 }
 
-.invite-code-display strong {
+.passphrase-display {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  /* 口令可能很长：允许在任意字符处断行，别把容器撑破 */
+  overflow-wrap: anywhere;
+}
+
+.passphrase-display strong {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   letter-spacing: 1px;
   color: var(--text-primary);
+}
+
+.passphrase-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 /* 给朋友用：扩展下载 */
