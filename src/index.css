@@ -3365,3 +3365,63 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
   outline: 2px solid var(--accent-blue);
   outline-offset: 2px;
 }
+
+
+/* ══════════════════════════════════════════════════════════════
+   卡片上的「跟随鼠标柔光」（使用者 2026-09-30：鼠标像刷子，滑到哪儿哪儿有微妙变化）
+   * 只在**有鼠标**的设备开（`pointer: fine`），手机整段不参与；"减少动态效果"时也关。
+   * 只动 transform（伪元素 translate3d）→ 合成器处理，不重排不重绘。
+   * 颜色取自这张卡自己的"心情色"（--moment-tint）；没选颜色时用一层中性蓝光，
+     所以有没有选色都能看到"被刷到"的反馈。
+   ══════════════════════════════════════════════════════════════ */
+@media (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .moment-card {
+    position: relative;
+    overflow: hidden;          /* 柔光不越出卡片边界 */
+  }
+
+  .moment-card::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 360px;
+    height: 360px;
+    margin: -180px 0 0 -180px;
+    border-radius: 50%;
+    pointer-events: none;
+    background: radial-gradient(
+      closest-side,
+      var(--moment-tint, rgba(122, 162, 255, 0.16)),
+      transparent 72%
+    );
+    transform: translate3d(var(--mx, -999px), var(--my, -999px), 0);
+    opacity: 0;
+    transition: opacity 0.18s ease;
+    /* 暗色主题：提亮（像手电筒扫过）；亮色主题在下面改成压暗 */
+    mix-blend-mode: screen;
+    will-change: transform, opacity;
+  }
+
+  .moment-card:hover::after {
+    opacity: 1;
+  }
+
+  [data-theme="light"] .moment-card::after {
+    mix-blend-mode: multiply;
+    background: radial-gradient(
+      closest-side,
+      var(--moment-tint, rgba(0, 0, 0, 0.05)),
+      transparent 72%
+    );
+  }
+
+  /* 没选颜色的卡片：中性蓝光太扎眼，调淡一点 */
+  .moment-card[data-card-color="default"]::after {
+    background: radial-gradient(closest-side, rgba(122, 162, 255, 0.12), transparent 72%);
+  }
+
+  [data-theme="light"] .moment-card[data-card-color="default"]::after {
+    background: radial-gradient(closest-side, rgba(0, 0, 0, 0.04), transparent 72%);
+  }
+}

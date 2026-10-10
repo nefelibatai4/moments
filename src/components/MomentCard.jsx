@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import MomentExpandMenu from './MomentExpandMenu'
 import CommentSection from './CommentSection'
 import ImageLightbox from './ImageLightbox'
@@ -41,6 +41,7 @@ export default function MomentCard({
   const [burst, setBurst] = useState(null)
   const cardRef = useRef(null)
   const lastTapRef = useRef(0)
+  const brushRaf = useRef(0)
   const [draft, setDraft] = useState(moment.content ?? '')
   const [draftColor, setDraftColor] = useState(normalizeCardColor(moment.card_color))
   const [saving, setSaving] = useState(false)
@@ -107,6 +108,32 @@ export default function MomentCard({
     // 已经赞过就只放动画（微博也是这个行为：双击不取消赞）
     if (session && !liked) handleToggleLike()
   }
+
+  /**
+   * 卡片上的"跟随鼠标柔光"（使用者要的那种"鼠标像刷子"的观感，**只做在卡片上**）。
+   *
+   * 性能口径（别改坏）：
+   *   * 只更新两个 CSS 变量 `--mx/--my`，真正动的是伪元素上的 **transform: translate3d**
+   *     → 走合成器，不触发布局/重绘（长列表滚动时也不会抖）。
+   *   * pointermove 用 rAF 合并：事件可达屏幕刷新率，但一帧只写一次。
+   *   * 只有**有鼠标**的设备才有意义 → 用 `(pointer: fine)` 在 CSS 里整体关掉（手机不参与），
+   *     并且 `prefers-reduced-motion` 时也关。
+   */
+  function handlePointerMove(e) {
+    const el = cardRef.current
+    if (!el || !window.matchMedia('(pointer: fine)').matches) return
+    const x = e.clientX
+    const y = e.clientY
+    if (brushRaf.current) return
+    brushRaf.current = requestAnimationFrame(() => {
+      brushRaf.current = 0
+      const r = el.getBoundingClientRect()
+      el.style.setProperty('--mx', `${Math.round(x - r.left)}px`)
+      el.style.setProperty('--my', `${Math.round(y - r.top)}px`)
+    })
+  }
+
+  useEffect(() => () => { if (brushRaf.current) cancelAnimationFrame(brushRaf.current) }, [])
 
   function startEdit() {
     setDraft(moment.content ?? '')
@@ -179,6 +206,7 @@ export default function MomentCard({
       ref={cardRef}
       data-card-color={normalizeCardColor(moment.card_color)}
       onClick={handleClick}
+      onPointerMove={handlePointerMove}
     >
       <div className="moment-header">
         <span className="moment-avatar">
