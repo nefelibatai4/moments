@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import { clearTimelineSnapshots } from './timelineSnapshot.js'
+import { clearChatListSnapshots } from './chatCache.js'
 
 // session:   undefined = 还在加载 / null = 未登录 / object = 已登录
 // approved:  undefined = 还在查询 / null = 未登录 / false = 已登录但未激活 / true = 已激活
@@ -113,7 +114,10 @@ export function AuthProvider({ children }) {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
     const { data: listener } = supabase.auth.onAuthStateChange((event, s) => {
       // 登出时清掉本机的时间线快照：换账号打开时不该看到上一个人的内容
-      if (event === 'SIGNED_OUT') clearTimelineSnapshots()
+      if (event === 'SIGNED_OUT') {
+        clearTimelineSnapshots()
+        clearChatListSnapshots()
+      }
       setSession(s)
     })
     return () => listener.subscription.unsubscribe()

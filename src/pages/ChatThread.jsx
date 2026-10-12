@@ -7,6 +7,7 @@ import { compressImage } from '../lib/compressImage'
 import ImageLightbox from '../components/ImageLightbox'
 import SignedImage from '../components/SignedImage'
 import { objectLocator, resolveSignedUrl, storagePathFromUrl, useSignedUrls } from '../lib/signedUrls'
+import { fetchThreadData, readCachedThread, writeCachedThread } from '../lib/chatCache'
 
 // 撤回 / 编辑窗口：2 分钟内（与微信一致）。
 // 两个窗口一致，但**服务端各有一份强制**，前端这里只是控制按钮出不出来。
@@ -97,27 +98,29 @@ export default function ChatThread() {
     }
 
     async function load() {
+      // 先用内存里的缓存把这一屏画出来（同一次会话里返回再进、或列表悬停预取过）。
+      // 画完照旧去取最新的 —— 缓存只是"先顶一下"，不改变任何判断。
+      const cached = readCachedThread(me, userId)
+      if (cached) {
+        setOtherProfile((prev) => prev ?? cached.profile)
+        setMessages((prev) => (prev.length > 0 ? prev : cached.messages))
+        setHasMore((prev) => (messages.length > 0 ? prev : cached.messages.length >= PAGE_SIZE))
+        setLoading(false)
+      }
       // 只取最近一页，进来就能用；更早的历史按需加载。
       // 用 desc + limit 拿最新 N 条，再反转成时间正序展示。
-      const [profileRes, messagesRes] = await Promise.all([
-        supabase.from('profiles').select('id, nickname, avatar_url').eq('id', userId).single(),
-        supabase
-          .from('messages')
-          .select('*')
-          .or(`and(sender_id.eq.${me},recipient_id.eq.${userId}),and(sender_id.eq.${userId},recipient_id.eq.${me})`)
-          .order('created_at', { ascending: false })
-          .limit(PAGE_SIZE),
-      ])
+      const data = await fetchThreadData(me, userId, PAGE_SIZE)
       if (cancelled) return
-      if (profileRes.error) setError(profileRes.error.message)
-      else setOtherProfile(profileRes.data)
-      if (messagesRes.error) {
-        setError(messagesRes.error.message)
-      } else {
-        const page = messagesRes.data ?? []
-        setMessages(page.slice().reverse())
-        setHasMore(page.length === PAGE_SIZE)
+      if (!data) {
+        // 拿不到数据：有缓存就留着内容，没缓存才报错
+        if (!cached) setError('加载失败，请下拉刷新或稍后再试')
+        setLoading(false)
+        return
       }
+      setOtherProfile(data.profile)
+      setMessages(data.messages)
+      setHasMore(data.pageLength === PAGE_SIZE)
+      writeCachedThread(me, userId, { profile: data.profile, messages: data.messages })
       setLoading(false)
 
       // Mark incoming messages as read only if the page is actually in front of the user
@@ -426,6 +429,13 @@ export default function ChatThread() {
     if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' })
     else loadOlder()
   }
+
+  // 消息有任何变化（自己发的、对方发的、撤回/编辑）都同步进内存缓存，
+  // 这样"返回列表再进来"看到的就是最新状态，而不是缓存那一刻的旧快照。
+  useEffect(() => {
+    if (loading || !otherProfile) return
+    writeCachedThread(me, userId, { profile: otherProfile, messages })
+  }, [loading, otherProfile, messages, me, userId])
 
   if (loading) return <p className="status-text">加载中…</p>
 

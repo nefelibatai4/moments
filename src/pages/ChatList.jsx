@@ -1,8 +1,9 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useLayoutEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../lib/AuthContext'
 import SignedImage from '../components/SignedImage'
+import { prefetchThread, readChatListSnapshot, writeChatListSnapshot } from '../lib/chatCache'
 
 function formatChatTime(iso) {
   if (!iso) return ''
@@ -29,6 +30,17 @@ export default function ChatList() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [search, setSearch] = useState('')
+
+  // 先用上次的快照把联系人画出来（见 lib/chatCache.js）。
+  // ⚠️ useLayoutEffect：要在**第一帧之前**就把内容放进去，否则先闪一下"加载中"。
+  useLayoutEffect(() => {
+    const uid = session?.user?.id
+    if (!uid) return
+    const cached = readChatListSnapshot(uid)
+    if (!cached) return
+    setConversations((prev) => (prev.length > 0 ? prev : cached))
+    setLoading(false)
+  }, [session?.user?.id])
 
   useEffect(() => {
     async function load() {
@@ -84,6 +96,7 @@ export default function ChatList() {
         })
 
         setConversations(merged)
+        writeChatListSnapshot(me, merged)
       }
       setLoading(false)
     }
@@ -114,7 +127,13 @@ export default function ChatList() {
       ) : (
         <ul className="chat-list">
           {filtered.map((c) => (
-            <li key={c.id}>
+            <li
+              key={c.id}
+              // 悬停（桌面）或手指按下（触屏）就开始拉这个会话：
+              // 等人真的点进去时，通常已经拿到了 → 那一次"加载中"就看不到了。
+              onMouseEnter={() => prefetchThread(session?.user?.id, c.id)}
+              onTouchStart={() => prefetchThread(session?.user?.id, c.id)}
+            >
               <Link to={`/chat/${c.id}`} className="chat-list-item">
                 <span className="chat-list-avatar">
                   {c.avatar_url ? <SignedImage bucket="avatars" stored={c.avatar_url} alt="" /> : c.nickname.slice(0, 1)}
