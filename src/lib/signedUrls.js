@@ -147,7 +147,10 @@ async function flushQueue() {
   const batches = Array.from(queue.entries())
   queue.clear()
 
-  for (const [bucket, item] of batches) {
+  // ⚠️ 必须**并行**：动态页一次要签两个桶（moment-images + avatars）。
+  //    以前是 for-await 串行，实测两个桶各 300–950ms → 白白多等一倍
+  //    （线上实测：签名 +319ms(950ms) 与 +1271ms(942ms)，合计 1.9s）。
+  await Promise.all(batches.map(async ([bucket, item]) => {
     const paths = Array.from(item.paths)
     let rows = []
     try {
@@ -165,7 +168,7 @@ async function flushQueue() {
       if (url) { cache.set(keyOf(bucket, waiter.path), { url, expiresAt }); persistSoon() }
       waiter.resolve(url)
     }
-  }
+  }))
 }
 
 /**

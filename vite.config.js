@@ -35,8 +35,38 @@ function serviceWorkerVersion() {
   }
 }
 
+/**
+ * 首屏之前就把 Supabase 的连接准备好（DNS + TCP + TLS）。
+ *
+ * 为什么值：动态页要连它两次（REST 取数据、Storage 签地址/取图片），
+ * 实测单次往返 300–500ms；握手本身在移动网络下能占掉其中一大截。
+ * 用 preconnect 让浏览器在**解析 HTML 时**就并行去握手，而不是等 JS 跑起来。
+ * 地址从 VITE_SUPABASE_URL 取（不在公开源码里硬编码项目 ref）。
+ */
+function supabasePreconnect() {
+  return {
+    name: 'moments-supabase-preconnect',
+    transformIndexHtml(html) {
+      const base = process.env.VITE_SUPABASE_URL
+      if (!base) return html
+      let origin
+      try {
+        origin = new URL(base).origin
+      } catch {
+        return html
+      }
+      return html.replace(
+        '</head>',
+        `  <link rel="dns-prefetch" href="${origin}">\n` +
+        `  <link rel="preconnect" href="${origin}" crossorigin>\n` +
+        '</head>',
+      )
+    },
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   base: process.env.VITE_APP_BASE || '/moments/',
-  plugins: [react(), serviceWorkerVersion()],
+  plugins: [react(), serviceWorkerVersion(), supabasePreconnect()],
 })

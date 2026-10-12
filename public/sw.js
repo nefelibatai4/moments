@@ -17,9 +17,10 @@
      3. 其余同源 GET（favicon / manifest / 图标）：stale-while-revalidate（先用缓存、后台更新）。
 
    刻意**不**缓存的东西：
-     - 任何跨域请求（Supabase 的 REST/Auth/Storage 一律不碰 —— 数据必须永远实时，
-       而且带签名的图片地址每次都不一样，缓存它们只会白占空间）
+     - 跨域的数据请求（Supabase 的 REST/Auth 不碰 —— 数据必须永远实时）
      - 非 GET 请求、`sw.js` 自己、以及非 200 的响应
+     - **头像桶**（`avatars`）：同一个路径会被 upsert 覆盖（换头像），按路径缓存会显示老的
+   ⚠️ 唯一的跨域例外是**动态图片**（`moment-images`），见下面的"② 动态图片按对象路径缓存"。
 
    版本与更新：
      - 构建时由 vite.config.js 的插件把 `__SW_VERSION__` 换成当次构建的入口哈希
@@ -33,6 +34,92 @@
 const SW_VERSION = '__SW_VERSION__'
 const SHELL_CACHE_PREFIX = 'moments-shell-'
 const SHELL_CACHE = `${SHELL_CACHE_PREFIX}${SW_VERSION}`
+
+// ── ② 动态图片按"对象路径"缓存（跨域，唯一的一处例外）──
+//
+// 为什么要单独做：私有桶之后图片地址是**签名地址**，里面带 token ——
+//   两次签发必然不同，而浏览器的 HTTP 缓存是**按 URL** 命中的 → 每次签名过期后
+//   打开都会把整屏照片重下一遍（线上实测一次 8MB）。这里把响应按 **bucket+path**
+//   （去掉 token）存进 Cache Storage：token 换了也能命中，照片就不再重下。
+//
+// 只缓存 `moment-images`：它的对象路径由上传时的时间戳+随机名决定，**内容不可变**；
+//   `avatars` 是 `upsert` 覆盖同一个路径（换头像），按路径缓存会一直显示老头像。
+// 过期：条目里记 `x-cached-at`，超过 IMG_MAX_AGE_MS 就当作没有（重新取）；
+//   同时把条目数控制在 IMG_MAX_ENTRIES 以内（超了删最旧的），避免无限占磁盘。
+const IMG_CACHE = 'moments-img-v1'
+const IMG_BUCKET = 'moment-images'
+const IMG_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
+const IMG_MAX_ENTRIES = 400
+const IMG_PATH_RE = /\/storage\/v1\/object\/sign\/([^/]+)\/(.+)$/
+
+/** 从一次图片请求里认出 (bucket, path)；不是签名图片就返回 null */
+function imageRef(url) {
+  if (!/\.supabase\.(co|in)$/.test(url.hostname)) return null
+  const m = url.pathname.match(IMG_PATH_RE)
+  if (!m) return null
+  try {
+    return { bucket: decodeURIComponent(m[1]), path: decodeURIComponent(m[2]) }
+  } catch {
+    return null
+  }
+}
+
+/** 该对象的稳定缓存键（**不带 token**，所以换个 token 也能命中） */
+function imageCacheKey(url, bucket, path) {
+  return new Request(`${url.origin}/storage/v1/object/sign/${bucket}/${encodeURI(path)}`)
+}
+
+/** 动态图片：先按对象路径找缓存，没有再走网络（成功就存一份） */
+async function handleImageRequest(event, url, ref) {
+  try {
+    return await imageRequestInner(event, url, ref)
+  } catch {
+    // 缓存这一层出任何问题都不能让图片挂掉：直接退回网络
+    return (await fetch(event.request).catch(() => null)) || Response.error()
+  }
+}
+
+async function imageRequestInner(event, url, ref) {
+  const key = imageCacheKey(url, ref.bucket, ref.path)
+  const cache = await caches.open(IMG_CACHE)
+
+  const hit = await cache.match(key)
+  if (hit) {
+    const cachedAt = Number(hit.headers.get('x-cached-at') || 0)
+    // 没有时间戳（老条目）或没过期 → 直接用
+    if (!cachedAt || Date.now() - cachedAt < IMG_MAX_AGE_MS) return hit
+    await cache.delete(key).catch(() => {})
+  }
+
+  const fresh = await fetch(event.request).catch(() => null)
+  // ⚠️ 只有 200 才存。签名过期时上游回 4xx —— 那种响应绝不能存进去，
+  //    否则这张图会一直坏到缓存过期为止。
+  if (fresh && fresh.status === 200) {
+    try {
+      const body = await fresh.clone().arrayBuffer()
+      const headers = new Headers(fresh.headers)
+      headers.set('x-cached-at', String(Date.now()))
+      await cache.put(key, new Response(body, { status: 200, statusText: 'OK', headers }))
+      await pruneImageCache(cache)
+    } catch { /* 存不下就算了：缓存永远不该影响功能 */ }
+  }
+  return fresh || Response.error()
+}
+
+/** 条目太多时删掉最旧的一批（按 x-cached-at） */
+async function pruneImageCache(cache) {
+  try {
+    const keys = await cache.keys()
+    if (keys.length <= IMG_MAX_ENTRIES) return
+    const rows = []
+    for (const k of keys) {
+      const r = await cache.match(k)
+      rows.push({ k, at: Number(r?.headers.get('x-cached-at') || 0) })
+    }
+    rows.sort((a, b) => a.at - b.at)
+    for (const row of rows.slice(0, rows.length - IMG_MAX_ENTRIES)) await cache.delete(row.k)
+  } catch { /* 忽略 */ }
+}
 
 // 首屏之外的小文件：装 SW 时就顺手放进来（离线打开也有图标/清单）。
 // 只有这几个是"名字固定"的；带 hash 的 JS/CSS 不预缓存 —— 它们的名字每次构建都变。
@@ -99,9 +186,20 @@ self.addEventListener('fetch', (event) => {
   } catch {
     return
   }
-  // ① 跨域一律不碰（Supabase 等）
+
+  // ── ② 动态图片（跨域，**唯一刻意开的口子**）：按对象路径缓存，token 换了也命中。
+  //    ⚠️ 必须放在下面"跨域一律不碰"之前。
+  if (!req.headers.get('range')) {
+    const ref = imageRef(url)
+    if (ref && ref.bucket === IMG_BUCKET) {
+      event.respondWith(handleImageRequest(event, url, ref))
+      return
+    }
+  }
+
+  // 跨域的其他请求（Supabase 的 REST/Auth）一律不碰：数据必须永远实时
   if (url.origin !== self.location.origin) return
-  // ② 不缓存 SW 自己（否则就永远更新不了）
+  // 不缓存 SW 自己（否则就永远更新不了）
   if (url.pathname.endsWith('/sw.js')) return
 
   const isNavigate = req.mode === 'navigate' || (req.headers.get('accept') || '').includes('text/html')
