@@ -6,7 +6,7 @@ import { safeStorageKey } from '../lib/sanitizeFilename'
 import { compressImage } from '../lib/compressImage'
 import ImageLightbox from '../components/ImageLightbox'
 import SignedImage from '../components/SignedImage'
-import { objectLocator, storagePathFromUrl, useSignedUrls } from '../lib/signedUrls'
+import { objectLocator, resolveSignedUrl, storagePathFromUrl, useSignedUrls } from '../lib/signedUrls'
 
 // 撤回 / 编辑窗口：2 分钟内（与微信一致）。
 // 两个窗口一致，但**服务端各有一份强制**，前端这里只是控制按钮出不出来。
@@ -55,9 +55,6 @@ export default function ChatThread() {
   const [quotedCache, setQuotedCache] = useState({})
   // 点开看的图片地址（灯箱）。null = 没打开
   const [lightboxSrc, setLightboxSrc] = useState(null)
-  // 私有桶：聊天里的图片也要换成签名地址（批量签，见 lib/signedUrls.js）。
-  // 灯箱/新标签页都直接用**签名地址**，不能再用库里存的那个老公开地址。
-  const [signedAvatar, setSignedAvatar] = useState(null)
   // 一次把当前所有消息图片签出来（点灯箱、开新标签页都用它）
   const chatImageUrls = useMemo(
     () => messages.map((m) => m.image_url).filter(Boolean),
@@ -462,11 +459,11 @@ export default function ChatThread() {
         <button
           type="button"
           className="chat-header-avatar"
-          onClick={() => signedAvatar && setLightboxSrc(signedAvatar)}
+          onClick={async () => setLightboxSrc(await resolveSignedUrl('avatars', otherProfile?.avatar_url))}
           aria-label={otherProfile?.avatar_url ? '查看头像大图' : '没有头像'}
         >
           {otherProfile?.avatar_url ? (
-            <SignedImage bucket="avatars" stored={otherProfile.avatar_url} alt="" onResolved={setSignedAvatar} />
+            <SignedImage bucket="avatars" stored={otherProfile.avatar_url} alt="" />
           ) : (
             (otherProfile?.nickname ?? '').slice(0, 1)
           )}

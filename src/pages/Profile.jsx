@@ -8,7 +8,7 @@ import ImageLightbox from '../components/ImageLightbox'
 import PanelBackgroundSettings from '../components/PanelBackgroundSettings'
 import AdminPanel from '../components/AdminPanel'
 import SignedImage from '../components/SignedImage'
-import { objectLocator, invalidateSignedUrl } from '../lib/signedUrls'
+import { objectLocator, invalidateSignedUrl, resolveSignedUrl } from '../lib/signedUrls'
 
 // 扩展只能在桌面版 Chrome 里安装：iOS 壳里没有「解压 + 装扩展」这个概念。
 // 原生端不显示下载按钮，但也不让它静默消失（那样会被当成 bug），改显示一句该去哪做。
@@ -24,8 +24,6 @@ export default function Profile() {
   const navigate = useNavigate()
   const [nickname, setNickname] = useState('')
   const [avatarUrl, setAvatarUrl] = useState(null)
-  // 灯箱要用签名地址（桶已私有），由 SignedImage 解析后回传
-  const [signedAvatar, setSignedAvatar] = useState(null)
   const [loading, setLoading] = useState(true)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [savingNickname, setSavingNickname] = useState(false)
@@ -166,11 +164,11 @@ export default function Profile() {
         <button
           type="button"
           className="profile-avatar"
-          onClick={() => signedAvatar && setLightboxSrc(signedAvatar)}
+          onClick={async () => setLightboxSrc(await resolveSignedUrl('avatars', avatarUrl))}
           aria-label={avatarUrl ? '查看头像大图' : '还没有头像'}
         >
           {avatarUrl
-            ? <SignedImage bucket="avatars" stored={avatarUrl} alt="" onResolved={setSignedAvatar} />
+            ? <SignedImage bucket="avatars" stored={avatarUrl} alt="" />
             : nickname.slice(0, 1)}
         </button>
         <label className="avatar-upload-label">

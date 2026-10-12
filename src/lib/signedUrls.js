@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabaseClient'
 
 /**
@@ -41,6 +41,9 @@ let flushTimer = null
  */
 export function storagePathFromUrl(stored) {
   if (!stored || typeof stored !== 'string') return null
+  // ⚠️ 必须先把"带协议但不是 http(s)"的挡掉：`data:`（测试里的 1px gif）、`blob:` 之类
+  //    以前会被当成"裸路径"，于是拿它去请求签名 → 报错 → 图片永远不显示。
+  if (/^[a-z][a-z0-9+.-]*:/i.test(stored) && !/^https?:\/\//i.test(stored)) return null
   if (!/^https?:\/\//i.test(stored)) return stored.replace(/^\/+/, '') || null
   try {
     const { pathname } = new URL(stored)
@@ -136,13 +139,30 @@ export function __resetSignedUrlCache() {
   if (flushTimer) { clearTimeout(flushTimer); flushTimer = null }
 }
 
+/** 不是桶里的地址（外链、data:、favicon 之类）原样返回：这类图片不需要签名 */
+function isStorageRef(stored) {
+  return !!storagePathFromUrl(stored)
+}
+
 function snapshot(bucket, list) {
   const map = new Map()
   for (const stored of list) {
+    if (!isStorageRef(stored)) { map.set(stored, stored); continue }
     const url = peekSignedUrl(bucket, stored)
     if (url) map.set(stored, url)
   }
   return map
+}
+
+/**
+ * 点开大图/下载时用：**不管签名有没有就绪都能拿到地址**。
+ * 为什么需要它：签名要走一次网络，如果只在"签名回来之后"才允许点开，
+ * 手快的人点第一下会没反应（测试里表现为点不开灯箱）。
+ */
+export async function resolveSignedUrl(bucket, stored) {
+  if (!stored) return null
+  if (!isStorageRef(stored)) return stored
+  return peekSignedUrl(bucket, stored) ?? requestSignedUrl(bucket, stored)
 }
 
 /**
@@ -156,7 +176,7 @@ export function useSignedUrls(list, bucket) {
 
   useEffect(() => {
     let cancelled = false
-    const missing = stored.filter((s) => !peekSignedUrl(bucket, s))
+    const missing = stored.filter((s) => isStorageRef(s) && !peekSignedUrl(bucket, s))
     if (missing.length === 0) return undefined
     ;(async () => {
       const pairs = await Promise.all(
@@ -174,7 +194,15 @@ export function useSignedUrls(list, bucket) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [joinKey, bucket])
 
-  return map
+  // ⚠️ 渲染期兜底：**不是桶里的地址**（外链、data:、favicon）原样返回。
+  //    不能只在 useState 初始化时处理 —— 聊天页那种"先空列表、后追加消息"的场景，
+  //    后加进来的外链图会不在 map 里，界面就永远不显示（踩过一次）。
+  return useMemo(() => {
+    const merged = new Map(map)
+    for (const stored of list ?? []) if (stored && !storagePathFromUrl(stored)) merged.set(stored, stored)
+    return merged
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, joinKey])
 }
 
 /** 单个图片的签名地址（内部走同一套缓存与批处理） */

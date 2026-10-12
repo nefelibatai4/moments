@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import { useSignedUrl } from '../lib/signedUrls'
 
 /**
@@ -9,15 +8,10 @@ import { useSignedUrl } from '../lib/signedUrls'
  * 拿到地址后自动换成真图（同一个元素，不会二次布局）。
  * 测试可以看 `data-signed="1"` 判断"地址已经拿到了"。
  *
- * ⚠️ 拿到地址后如果还要用（例如灯箱、下载链接），用 `onResolved` 回传，
- *    不要在调用处自己再拼 URL —— 那会绕开缓存、变成每张图一个请求。
+ * ⚠️ 需要"点开看大图"时不要依赖这里的解析结果：手快的人会点在解析之前。
+ *    用 `resolveSignedUrl()`（按需解析，命中缓存时同步返回）。
  */
-export default function SignedImage({ bucket, stored, alt = '', onResolved, ...rest }) {
+export default function SignedImage({ bucket, stored, alt = '', ...rest }) {
   const url = useSignedUrl(stored, bucket)
-
-  useEffect(() => {
-    if (url && onResolved) onResolved(url)
-  }, [url, onResolved])
-
   return <img src={url ?? undefined} alt={alt} data-signed={url ? '1' : '0'} {...rest} />
 }
