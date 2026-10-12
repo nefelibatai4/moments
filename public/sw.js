@@ -72,9 +72,15 @@ self.addEventListener('activate', (event) => {
   )
 })
 
-/** 存一份响应（只存能存的：同源、200、basic 类型） */
-async function putInCache(request, response) {
-  if (!response || response.status !== 200 || response.type === 'opaque') return
+/**
+ * 存一份响应。
+ * ⚠️ 导航请求要连 **404** 一起存：GitHub Pages 上 /moments/xxx 这种 SPA 深链返回的是
+ *    `404.html`（状态码 404、内容是应用外壳）。只存 200 的话，离线打开深链（比如
+ *    /moments/login）会直接 ERR_FAILED —— 线上实测踩到过。
+ */
+async function putInCache(request, response, { allow404 = false } = {}) {
+  if (!response || response.type === 'opaque') return
+  if (response.status !== 200 && !(allow404 && response.status === 404)) return
   try {
     const cache = await caches.open(SHELL_CACHE)
     await cache.put(request, response.clone())
@@ -106,7 +112,7 @@ self.addEventListener('fetch', (event) => {
       (async () => {
         try {
           const fresh = await fetch(req)
-          await putInCache(req, fresh)
+          await putInCache(req, fresh, { allow404: true })
           return fresh
         } catch {
           // 离线：回落到缓存。ignoreSearch 让 ?surface=panel 之类的参数也能命中
