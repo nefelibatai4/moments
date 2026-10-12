@@ -18,8 +18,13 @@ import { supabase } from '../supabaseClient'
  * ── 两个工程细节 ─────────────────────────────────────────────────
  * 1. **同一个 tick 里的请求会合并**成一次 `createSignedUrls`（一屏 9 张图 = 1 个请求，
  *    而不是 9 个）。因为签名要走网络，逐张签会让信息流明显变慢。
- * 2. **内存缓存**：签名地址默认 1 小时有效，缓存里提前 5 分钟就重新签，
- *    所以正常的翻页/重渲染不会再打网络。缓存只在内存里（刷新即失效）。
+ * 2. **内存 + localStorage 缓存**：签名地址默认 1 小时有效，缓存里提前 5 分钟就重新签。
+ *    ⚠️ 只放内存里是不够的（2026-09-30 实测）：每次**新打开**页面都会重新签发，
+ *    而签名地址里带 token、**两次签发必然不同** → 浏览器按 URL 缓存，于是
+ *    "同一个 URL 才命中缓存"这条就永远不成立 → 每次打开都把照片重新下一遍
+ *    （实测 1.2–2.7MB，而 JS/CSS 已经是 0KB）！所以把签名地址连同过期时间**落盘到
+ *    localStorage**：1 小时内重复打开复用同一个地址，图片字节就能命中浏览器缓存。
+ *    安全边界不变：地址本身的有效期仍然是 1 小时。
  */
 
 /** 签名有效期（秒）。越短越安全（泄漏的链接更快失效），越长越不容易在长时间停留的页面上裂图 */
@@ -30,6 +35,47 @@ const RENEW_MARGIN_MS = 5 * 60 * 1000
 
 /** `${bucket}/${path}` → { url, expiresAt } */
 const cache = new Map()
+
+// 落盘（localStorage）：键里带 bucket/path，值是 {u: 签名地址, e: 过期时间戳}
+// 为什么要落盘：见文件头第 2 点 —— 不落盘的话每次新打开都要把所有照片重下一遍。
+const LS_KEY = 'moments_signed_urls_v1'
+const LS_MAX_ENTRIES = 300
+
+function loadPersisted() {
+  if (typeof localStorage === 'undefined') return
+  try {
+    const raw = JSON.parse(localStorage.getItem(LS_KEY) || '{}')
+    const now = Date.now()
+    for (const [key, val] of Object.entries(raw)) {
+      if (!val?.u || !val?.e) continue
+      if (val.e - now < RENEW_MARGIN_MS) continue        // 快过期的不加载
+      cache.set(key, { url: val.u, expiresAt: val.e })
+    }
+  } catch {
+    /* 存储坏了就当没有：缓存永远不该影响功能 */
+  }
+}
+
+let persistTimer = null
+function persistSoon() {
+  if (typeof localStorage === 'undefined' || persistTimer) return
+  persistTimer = setTimeout(() => {
+    persistTimer = null
+    try {
+      const now = Date.now()
+      const entries = [...cache.entries()]
+        .filter(([, v]) => v.expiresAt - now >= RENEW_MARGIN_MS)
+        .slice(-LS_MAX_ENTRIES)
+      localStorage.setItem(LS_KEY, JSON.stringify(Object.fromEntries(
+        entries.map(([k, v]) => [k, { u: v.url, e: v.expiresAt }]),
+      )))
+    } catch {
+      /* 写不进去（隐私模式/配额满）就算了 */
+    }
+  }, 200)
+}
+
+loadPersisted()
 /** 待签队列：bucket → { paths:Set, waiters:[] } */
 const queue = new Map()
 let flushTimer = null
@@ -116,7 +162,7 @@ async function flushQueue() {
     const expiresAt = Date.now() + SIGNED_URL_TTL_SECONDS * 1000
     for (const waiter of item.waiters) {
       const url = byPath.get(waiter.path) || null
-      if (url) cache.set(keyOf(bucket, waiter.path), { url, expiresAt })
+      if (url) { cache.set(keyOf(bucket, waiter.path), { url, expiresAt }); persistSoon() }
       waiter.resolve(url)
     }
   }
@@ -129,12 +175,15 @@ async function flushQueue() {
  */
 export function invalidateSignedUrl(bucket, stored) {
   const path = storagePathFromUrl(stored)
-  if (path) cache.delete(keyOf(bucket, path))
+  if (!path) return
+  cache.delete(keyOf(bucket, path))
+  persistSoon()
 }
 
 /** 测试用：清空内存缓存与队列 */
 export function __resetSignedUrlCache() {
   cache.clear()
+  try { localStorage.removeItem(LS_KEY) } catch { /* 忽略 */ }
   queue.clear()
   if (flushTimer) { clearTimeout(flushTimer); flushTimer = null }
 }
