@@ -250,6 +250,18 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return
   // 不缓存 SW 自己（否则就永远更新不了）
   if (url.pathname.endsWith('/sw.js')) return
+  // ⚠️ 开发服务器的模块路径一律不碰（/src/…、/@vite/…、/@fs/…、node_modules、/__vite_ping 等）。
+  //    踩过的坑：下面的"策略 3"原本对所有同源 GET 生效，于是 SW 用**缓存优先**把
+  //    `/src/pages/Timeline.jsx` 也缓存了 —— 改了代码刷新页面还是旧逻辑（而且看不出原因，
+  //    因为 HMR 也拿不到请求）。生产环境只有带 hash 的 /assets/* 和 HTML，不受影响。
+  if (
+    url.pathname.startsWith('/src/') ||
+    url.pathname.startsWith('/@') ||
+    url.pathname.startsWith('/__') ||
+    url.pathname.includes('/node_modules/')
+  ) {
+    return
+  }
 
   const isNavigate = req.mode === 'navigate' || (req.headers.get('accept') || '').includes('text/html')
 

@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { supabase } from '../supabaseClient'
+import { useAuth } from '../lib/AuthContext'
+import { readTimelineSnapshot, writeTimelineSnapshot } from '../lib/timelineSnapshot'
 import MomentCard from '../components/MomentCard'
 import MomentSkeleton from '../components/MomentSkeleton'
 
@@ -9,6 +11,8 @@ const MOMENT_SELECT =
 const PAGE_SIZE = 15
 
 export default function Timeline() {
+  const session = useAuth()
+  const userId = session?.user?.id
   const [moments, setMoments] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -17,6 +21,18 @@ export default function Timeline() {
   // 用回调 ref 而不是 useRef：首屏渲染的是"加载中…"，哨兵元素还没进 DOM，
   // 用 useRef + [] 依赖的 effect 会在挂载时拿到 null，观察器就永远不生效了。
   const [sentinelEl, setSentinelEl] = useState(null)
+
+  // 先用上次的快照把内容画出来（见 lib/timelineSnapshot.js）。
+  // ⚠️ 必须用 useLayoutEffect 而不是 useEffect：后者在**浏览器画完第一帧之后**才跑，
+  //    用户会先看到骨架屏闪一下再看到内容 —— 那就白做了。layout effect 在绘制前跑，
+  //    这里 setState 出去的内容会直接进第一帧。
+  useLayoutEffect(() => {
+    if (!userId) return
+    const cached = readTimelineSnapshot(userId)
+    if (!cached) return
+    setMoments((prev) => (prev.length > 0 ? prev : cached))
+    setLoading(false)
+  }, [userId])
 
   // 取单条动态的完整嵌套数据（实时事件只带原始行，没有 join 出来的昵称/头像）
   const fetchMoment = useCallback(async (id) => {
@@ -32,20 +48,30 @@ export default function Timeline() {
     let cancelled = false
 
     async function load() {
-      const { data, error: loadError } = await supabase
-        .from('moments')
-        .select(MOMENT_SELECT)
-        .order('created_at', { ascending: false })
-        .limit(PAGE_SIZE)
+      // ⚠️ 必须 try/catch：网络被拦断时 supabase-js 有可能是**抛异常**而不是
+      //    返回 { error }（实测：把 /rest/v1/moments 直接 abort 掉时，
+      //    不 catch 的话这里静默失败 —— 界面留着快照内容、却什么提示都没有）。
+      try {
+        const { data, error: loadError } = await supabase
+          .from('moments')
+          .select(MOMENT_SELECT)
+          .order('created_at', { ascending: false })
+          .limit(PAGE_SIZE)
 
-      if (cancelled) return
-      if (loadError) {
-        setError(loadError.message)
-      } else {
-        setMoments(data ?? [])
-        setHasMore((data?.length ?? 0) === PAGE_SIZE)
+        if (cancelled) return
+        if (loadError) {
+          // 有快照内容时不整屏报错（内容还在，用户至少能看）——错误挪到列表末尾一行
+          setError(loadError.message)
+        } else {
+          setMoments(data ?? [])
+          setHasMore((data?.length ?? 0) === PAGE_SIZE)
+          writeTimelineSnapshot(userId, data ?? [])
+        }
+      } catch (err) {
+        if (!cancelled) setError(err?.message || '网络请求失败')
+      } finally {
+        if (!cancelled) setLoading(false)
       }
-      setLoading(false)
     }
     load()
 
@@ -113,7 +139,7 @@ export default function Timeline() {
       cancelled = true
       supabase.removeChannel(channel)
     }
-  }, [fetchMoment])
+  }, [fetchMoment, userId])
 
   // 用 created_at 游标翻页，而不是 offset：
   // 翻页过程中别人发了新动态时，offset 会漏读或重复，游标不会。
@@ -225,7 +251,8 @@ export default function Timeline() {
   }, [])
 
   if (loading) return <MomentSkeleton count={3} />
-  if (error) return <p className="status-text">加载失败：{error}</p>
+  // 一条都没有 + 出错 → 整屏报错；有内容（来自快照或已加载）→ 错误只占末尾一行
+  if (error && moments.length === 0) return <p className="status-text">加载失败：{error}</p>
   if (moments.length === 0) return <p className="status-text">还没有动态。</p>
 
   return (
@@ -245,6 +272,7 @@ export default function Timeline() {
       ))}
       <div ref={setSentinelEl} className="timeline-sentinel" />
       {loadingMore && <p className="status-text">加载更多…</p>}
+      {error && <p className="status-text">刷新失败：{error}</p>}
       {!hasMore && <p className="status-text timeline-end">没有更多了</p>}
     </div>
   )
