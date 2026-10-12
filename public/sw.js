@@ -69,17 +69,23 @@ function imageCacheKey(url, bucket, path) {
   return new Request(`${url.origin}/storage/v1/object/sign/${bucket}/${encodeURI(path)}`)
 }
 
+// 计数器：给测试/排查看"图片这条链路到底走没走"（通过 img-cache-stats 消息取）
+// 通过 `{type:'img-cache-stats'}` 消息可以取到（测试与排查用）
+const imgStats = { handled: 0, hits: 0, stored: 0, queried: 0, queriedHit: 0, lastStatus: 0, lastError: '' }
+
 /** 动态图片：先按对象路径找缓存，没有再走网络（成功就存一份） */
 async function handleImageRequest(event, url, ref) {
   try {
     return await imageRequestInner(event, url, ref)
-  } catch {
+  } catch (e) {
     // 缓存这一层出任何问题都不能让图片挂掉：直接退回网络
+    imgStats.lastError = String(e && e.message ? e.message : e).slice(0, 120)
     return (await fetch(event.request).catch(() => null)) || Response.error()
   }
 }
 
 async function imageRequestInner(event, url, ref) {
+  imgStats.handled += 1
   const key = imageCacheKey(url, ref.bucket, ref.path)
   const cache = await caches.open(IMG_CACHE)
 
@@ -87,24 +93,67 @@ async function imageRequestInner(event, url, ref) {
   if (hit) {
     const cachedAt = Number(hit.headers.get('x-cached-at') || 0)
     // 没有时间戳（老条目）或没过期 → 直接用
-    if (!cachedAt || Date.now() - cachedAt < IMG_MAX_AGE_MS) return hit
+    if (!cachedAt || Date.now() - cachedAt < IMG_MAX_AGE_MS) { imgStats.hits += 1; return hit }
     await cache.delete(key).catch(() => {})
   }
 
   const fresh = await fetch(event.request).catch(() => null)
   // ⚠️ 只有 200 才存。签名过期时上游回 4xx —— 那种响应绝不能存进去，
   //    否则这张图会一直坏到缓存过期为止。
+  // ⚠️ 也正因如此，页面里的图片必须用 **CORS 请求**（`crossorigin="anonymous"`）：
+  //    普通 <img> 是 no-cors，SW 里 fetch 到的响应是 opaque（status = 0），
+  //    状态码读不到就只能全都不缓存（一开始就是这么白干了一版，实测 stored=0）。
+  imgStats.lastStatus = fresh ? fresh.status : -1
   if (fresh && fresh.status === 200) {
     try {
       const body = await fresh.clone().arrayBuffer()
       const headers = new Headers(fresh.headers)
       headers.set('x-cached-at', String(Date.now()))
       await cache.put(key, new Response(body, { status: 200, statusText: 'OK', headers }))
+      imgStats.stored += 1
       await pruneImageCache(cache)
     } catch { /* 存不下就算了：缓存永远不该影响功能 */ }
   }
   return fresh || Response.error()
 }
+
+/**
+ * 页面问"这些对象你手里有吗？"（`src/lib/signedUrls.js` 会问）。
+ *
+ * 为什么要问：签名要走一次网络（实测 300–950ms）。如果照片本来就在本地缓存里，
+ * 完全可以**跳过签名**、直接用缓存 —— 这样"隔了一小时再打开"也能立刻看到图。
+ * 应用侧拿到"有"的清单后会用 `?token=sw-cache` 这种占位地址请求，SW 按对象路径命中缓存，
+ * 根本不会真的去上游（也就不会因为假 token 被拒）。
+ * 拿不到回答（没有 controller / 超时）时应用会照常走签名，功能不受影响。
+ */
+async function answerCacheQuery(data, port) {
+  if (data && data.type === 'img-cache-stats') {
+    try { port.postMessage(imgStats) } catch { /* 忽略 */ }
+    return
+  }
+  if (!data || data.type !== 'img-cache-has' || data.bucket !== IMG_BUCKET) return
+  imgStats.queried += 1
+  const have = []
+  try {
+    const cache = await caches.open(IMG_CACHE)
+    for (const path of data.paths || []) {
+      const key = new Request(`${data.origin}/storage/v1/object/sign/${data.bucket}/${encodeURI(path)}`)
+      const hit = await cache.match(key)
+      if (!hit) continue
+      const cachedAt = Number(hit.headers.get('x-cached-at') || 0)
+      if (cachedAt && Date.now() - cachedAt >= IMG_MAX_AGE_MS) continue   // 过期的不算"有"
+      have.push(path)
+    }
+  } catch { /* 出问题就回空清单：应用会照常签名 */ }
+  imgStats.queriedHit += have.length
+  try { port.postMessage({ paths: have }) } catch { /* 端口关了就算了 */ }
+}
+
+self.addEventListener('message', (event) => {
+  const port = event.ports && event.ports[0]
+  if (!port) return
+  event.waitUntil(answerCacheQuery(event.data, port))
+})
 
 /** 条目太多时删掉最旧的一批（按 x-cached-at） */
 async function pruneImageCache(cache) {

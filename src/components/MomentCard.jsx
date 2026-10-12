@@ -291,7 +291,15 @@ export default function MomentCard({
               aria-label={`查看第 ${i + 1} 张图片`}
               onClick={() => setViewerIndex(i)}
             >
-              <img src={url ?? undefined} alt="" loading="lazy" data-signed={url ? '1' : '0'} data-stored={stored} />
+              <img
+                src={url ?? undefined}
+                alt=""
+                loading="lazy"
+                data-signed={url ? '1' : '0'}
+                data-stored={stored}
+                // 桶里的图用 CORS 请求：SW 才能读到 200 并缓存字节（外链不加，避免被 CORS 拦）
+                {...(storagePathFromUrl(stored) ? { crossOrigin: 'anonymous' } : {})}
+              />
               {moreCount > 0 && i === shownImages.length - 1 && (
                 <span className="moment-image-more">+{moreCount}</span>
               )}

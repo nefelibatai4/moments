@@ -123,6 +123,38 @@ export function peekSignedUrl(bucket, stored) {
   return hit.url
 }
 
+/**
+ * 问 Service Worker：这些对象它手里有没有缓存。
+ *
+ * 有的话就能**跳过签名**（省一次 300–950ms 的网络往返，见 sw.js 里的说明）。
+ * 拿不到回答就返回空集合 —— 调用方照常去签名，功能不受影响。
+ */
+async function askServiceWorkerCache(paths) {
+  const sw = typeof navigator !== 'undefined' ? navigator.serviceWorker?.controller : null
+  if (!sw || paths.length === 0) return new Set()
+  const origin = (() => {
+    try { return new URL(import.meta.env.VITE_SUPABASE_URL).origin } catch { return null }
+  })()
+  if (!origin) return new Set()
+  return new Promise((resolve) => {
+    const channel = new MessageChannel()
+    const done = (paths2) => { try { channel.port1.close() } catch { /* 忽略 */ } resolve(new Set(paths2 || [])) }
+    const timer = setTimeout(() => done([]), 250)   // ⚠️ 必须有超时：SW 没响应时不能拖慢加载
+    channel.port1.onmessage = (e) => { clearTimeout(timer); done(e.data?.paths) }
+    try {
+      sw.postMessage({ type: 'img-cache-has', bucket: 'moment-images', origin, paths }, [channel.port2])
+    } catch {
+      clearTimeout(timer)
+      done([])
+    }
+  })
+}
+
+/** 本地缓存里的图片用的占位地址：SW 按对象路径命中缓存，不会真的去上游 */
+function cachedImageUrl(origin, bucket, path) {
+  return `${origin}/storage/v1/object/sign/${bucket}/${encodeURI(path)}?token=sw-cache`
+}
+
 /** 申请一个签名地址（同 tick 的多个申请会被合并） */
 export function requestSignedUrl(bucket, stored) {
   const path = storagePathFromUrl(stored)
@@ -151,7 +183,28 @@ async function flushQueue() {
   //    以前是 for-await 串行，实测两个桶各 300–950ms → 白白多等一倍
   //    （线上实测：签名 +319ms(950ms) 与 +1271ms(942ms)，合计 1.9s）。
   await Promise.all(batches.map(async ([bucket, item]) => {
-    const paths = Array.from(item.paths)
+    const allPaths = Array.from(item.paths)
+
+    // ── 先问 SW：本地已经有字节的，直接给"缓存占位地址"，**跳过签名** ──
+    // 这是"隔了一小时再打开也能秒出图"的关键：省掉一次 300–950ms 的签名往返。
+    let fromCache = new Set()
+    if (bucket === 'moment-images') {
+      fromCache = await askServiceWorkerCache(allPaths)
+      if (fromCache.size > 0) {
+        const origin = new URL(import.meta.env.VITE_SUPABASE_URL).origin
+        const expiresAt = Date.now() + 30 * 60 * 1000   // 30 分钟后重新问一次 SW
+        for (const waiter of item.waiters) {
+          if (!fromCache.has(waiter.path)) continue
+          const url = cachedImageUrl(origin, bucket, waiter.path)
+          cache.set(keyOf(bucket, waiter.path), { url, expiresAt, local: true })
+          waiter.resolve(url)
+        }
+        persistSoon()
+      }
+    }
+
+    const paths = allPaths.filter((p) => !fromCache.has(p))
+    if (paths.length === 0) return      // 全都在本地：一个网络请求都不用发
     let rows = []
     try {
       const { data, error } = await supabase.storage

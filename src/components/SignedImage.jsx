@@ -1,4 +1,4 @@
-import { useSignedUrl } from '../lib/signedUrls'
+import { storagePathFromUrl, useSignedUrl } from '../lib/signedUrls'
 
 /**
  * 私有桶里的图片（见 lib/signedUrls.js）。
@@ -13,5 +13,20 @@ import { useSignedUrl } from '../lib/signedUrls'
  */
 export default function SignedImage({ bucket, stored, alt = '', ...rest }) {
   const url = useSignedUrl(stored, bucket)
-  return <img src={url ?? undefined} alt={alt} data-signed={url ? '1' : '0'} {...rest} />
+  // ⚠️ 桶里的图片要用 **CORS 请求**（crossorigin="anonymous"）：
+  //    ① 这样 Service Worker 里 fetch 到的响应不是 opaque（能读到 200 状态码），
+  //       才能安全地按对象路径缓存字节 —— 否则响应状态是 0，只能全部放弃缓存；
+  //    ② 跨域图片的传输字节也能被性能面板/测试量到。
+  //    外链（测试里的 favicon 等）不加 crossorigin：那些服务器不一定回 CORS 头，
+  //    加了反而会加载失败。
+  const isStorage = !!storagePathFromUrl(stored)
+  return (
+    <img
+      src={url ?? undefined}
+      alt={alt}
+      data-signed={url ? '1' : '0'}
+      {...(isStorage ? { crossOrigin: 'anonymous' } : {})}
+      {...rest}
+    />
+  )
 }
