@@ -103,7 +103,7 @@ export function writeCachedThread(me, peer, data) {
 /** 会话详情的两段查询（load 和 prefetch 共用，保证两边拿到的形状一致） */
 export async function fetchThreadData(me, peer, pageSize = 50) {
   const [profileRes, messagesRes] = await Promise.all([
-    supabase.from('profiles').select('id, nickname, avatar_url').eq('id', peer).single(),
+    supabase.from('profiles').select('id, nickname, avatar_url, public_key').eq('id', peer).single(),
     supabase
       .from('messages')
       .select('*')

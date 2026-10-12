@@ -8,6 +8,9 @@ import ImageLightbox from '../components/ImageLightbox'
 import SignedImage from '../components/SignedImage'
 import { objectLocator, resolveSignedUrl, storagePathFromUrl, useSignedUrls } from '../lib/signedUrls'
 import { fetchThreadData, readCachedThread, writeCachedThread } from '../lib/chatCache'
+import {
+  cachedConversationKey, decryptMessages, encryptText, ensureConversationKey,
+} from '../lib/e2e'
 
 // 撤回 / 编辑窗口：2 分钟内（与微信一致）。
 // 两个窗口一致，但**服务端各有一份强制**，前端这里只是控制按钮出不出来。
@@ -36,7 +39,12 @@ export default function ChatThread() {
   const session = useAuth()
   const { userId } = useParams()
   const [otherProfile, setOtherProfile] = useState(null)
+  // ⚠️ 两层：`rawMessages` 是数据库里那一行（密文），`messages` 是解密后给界面用的。
+  //    落盘缓存、实时补丁、撤回/编辑都只碰 raw，明文永远不出内存。
+  const [rawMessages, setRawMessages] = useState([])
   const [messages, setMessages] = useState([])
+  // ⚠️ 这里只能用 session（me 在后面才定义），否则会 "Cannot access 'me' before initialization"
+  const [ck, setCk] = useState(() => cachedConversationKey(session?.user?.id, userId))
   const [content, setContent] = useState('')
   const [loading, setLoading] = useState(true)
   const [hasMore, setHasMore] = useState(false)
@@ -103,7 +111,7 @@ export default function ChatThread() {
       const cached = readCachedThread(me, userId)
       if (cached) {
         setOtherProfile((prev) => prev ?? cached.profile)
-        setMessages((prev) => (prev.length > 0 ? prev : cached.messages))
+        setRawMessages((prev) => (prev.length > 0 ? prev : cached.messages))
         setHasMore((prev) => (messages.length > 0 ? prev : cached.messages.length >= PAGE_SIZE))
         setLoading(false)
       }
@@ -118,7 +126,7 @@ export default function ChatThread() {
         return
       }
       setOtherProfile(data.profile)
-      setMessages(data.messages)
+      setRawMessages(data.messages)
       setHasMore(data.pageLength === PAGE_SIZE)
       writeCachedThread(me, userId, { profile: data.profile, messages: data.messages })
       setLoading(false)
@@ -142,7 +150,7 @@ export default function ChatThread() {
           (m.sender_id === me && m.recipient_id === userId) ||
           (m.sender_id === userId && m.recipient_id === me)
         ) {
-          setMessages((prev) => [...prev, m])
+          setRawMessages((prev) => [...prev, m])
           // If it's from the other person and the page is in front, mark read immediately
           if (m.sender_id === userId && isPageActive()) {
             supabase
@@ -300,7 +308,7 @@ export default function ChatThread() {
       setError(olderError.message)
     } else {
       const older = (data ?? []).slice().reverse()
-      setMessages((prev) => [...older, ...prev])
+      setRawMessages((prev) => [...older, ...prev])
       setHasMore((data?.length ?? 0) === PAGE_SIZE)
     }
     setLoadingOlder(false)
@@ -328,14 +336,28 @@ export default function ChatThread() {
         // 桶已私有：存的是**定位串**（本身不可访问），渲染时统一换签名地址
         imageUrl = objectLocator('moment-images', path)
       }
+      // 端到端加密：有会话密钥就只发密文（明文永远不出这台设备）。
+      // ⚠️ 密钥是异步准备的（要读 dm_keys / 公钥），第一条消息很容易在它就绪之前发出去 ——
+      //    所以这里**再等一次**：能加密就绝不发明文。
+      const text = content.trim()
+      let key = ck
+      if (!key && text) {
+        key = await ensureConversationKey(me, userId, { publicKeyOfPeer: otherProfile?.public_key ?? null })
+        if (key) setCk(key)
+      }
+      let body = { content: text || null }
+      if (key && text) {
+        const enc = await encryptText(key, text)
+        body = { content: null, ciphertext: enc.ciphertext, iv: enc.iv, scheme: enc.scheme }
+      }
       const { error } = await supabase
         .from('messages')
         .insert({
           sender_id: me,
           recipient_id: userId,
-          content: content.trim() || null,
           image_url: imageUrl,
           reply_to_id: replyTarget?.id ?? null,
+          ...body,
         })
       if (error) throw error
       setContent('')
@@ -362,15 +384,15 @@ export default function ChatThread() {
       // （PITFALLS #32 记的就是这个坑）
       const { data, error } = await supabase
         .from('messages')
-        .update({ recalled_at: stamp, content: null, image_url: null })
+        .update({ recalled_at: stamp, content: null, image_url: null, ciphertext: null, iv: null })
         .eq('id', message.id)
         .select('id')
       if (error) throw error
       if (!data || data.length === 0) throw new Error('撤回没有生效（可能已超过 2 分钟窗口）')
-      setMessages((prev) =>
+      setRawMessages((prev) =>
         prev.map((x) =>
           x.id === message.id
-            ? { ...x, recalled_at: stamp, content: null, image_url: null }
+            ? { ...x, recalled_at: stamp, content: null, image_url: null, ciphertext: null, iv: null }
             : x
         )
       )
@@ -389,16 +411,27 @@ export default function ChatThread() {
     setError(null)
     try {
       // edited_at 由服务端触发器写，这里不传（传了也会被覆盖）
+      // 加密消息的编辑：同样只发密文（明文不出设备）
+      const target = rawMessages.find((x) => x.id === editing.id)
+      let sentEncrypted = null
+      let patchBody = { content: next }
+      if (ck && (target?.ciphertext || !target?.content)) {
+        const enc = await encryptText(ck, next)
+        sentEncrypted = enc
+        patchBody = { content: null, ciphertext: enc.ciphertext, iv: enc.iv, scheme: enc.scheme }
+      }
       const { data, error } = await supabase
         .from('messages')
-        .update({ content: next })
+        .update(patchBody)
         .eq('id', editing.id)
         .select('id')
       if (error) throw error
       if (!data || data.length === 0) throw new Error('编辑没有生效（可能已超过 2 分钟窗口）')
       const stamp = new Date().toISOString()
-      setMessages((prev) =>
-        prev.map((x) => (x.id === editing.id ? { ...x, content: next, edited_at: stamp } : x))
+      setRawMessages((prev) =>
+        prev.map((x) => (x.id === editing.id
+          ? { ...x, content: sentEncrypted ? null : next, ciphertext: sentEncrypted?.ciphertext ?? null, iv: sentEncrypted?.iv ?? null, edited_at: stamp }
+          : x))
       )
       setEditing(null)
     } catch (err) {
@@ -430,12 +463,37 @@ export default function ChatThread() {
     else loadOlder()
   }
 
+  // 拿到会话密钥后（或原始消息变了）解密一次，写进渲染用的 `messages`
+  useEffect(() => {
+    let cancelled = false
+    if (!ck) {
+      setMessages(rawMessages)          // 还没有密钥：照旧显示（老明文历史 / 未开启加密）
+      return undefined
+    }
+    ;(async () => {
+      const out = await decryptMessages(ck, rawMessages)
+      if (!cancelled) setMessages(out)
+    })()
+    return () => { cancelled = true }
+  }, [ck, rawMessages])
+
+  // 会话密钥：对方已经有公钥时创建/取出（一段会话一把，缓存在内存）
+  useEffect(() => {
+    let cancelled = false
+    if (!me || !userId) return undefined
+    ;(async () => {
+      const key = await ensureConversationKey(me, userId, { publicKeyOfPeer: otherProfile?.public_key ?? null })
+      if (!cancelled && key) setCk(key)
+    })()
+    return () => { cancelled = true }
+  }, [me, userId, otherProfile?.public_key])
+
   // 消息有任何变化（自己发的、对方发的、撤回/编辑）都同步进内存缓存，
   // 这样"返回列表再进来"看到的就是最新状态，而不是缓存那一刻的旧快照。
   useEffect(() => {
     if (loading || !otherProfile) return
-    writeCachedThread(me, userId, { profile: otherProfile, messages })
-  }, [loading, otherProfile, messages, me, userId])
+    writeCachedThread(me, userId, { profile: otherProfile, messages: rawMessages })
+  }, [loading, otherProfile, rawMessages, me, userId])
 
   if (loading) return <p className="status-text">加载中…</p>
 
@@ -634,6 +692,10 @@ export default function ChatThread() {
                     ) : (
                       <>
                         {m.content}
+                        {/* 加密消息但本机没有钥匙（例如新设备还没输入恢复码）→ 别显示空气泡 */}
+                        {!m.content && m.ciphertext && (
+                          <span className="chat-encrypted-hint">🔒 加密消息（这台设备还没有钥匙，去【我】里用恢复码恢复）</span>
+                        )}
                         {m.edited_at && <span className="chat-edited-tag">已编辑</span>}
                       </>
                     )}

@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient'
 import { useAuth } from '../lib/AuthContext'
 import SignedImage from '../components/SignedImage'
 import { prefetchThread, readChatListSnapshot, writeChatListSnapshot } from '../lib/chatCache'
+import { decryptText, ensureConversationKey } from '../lib/e2e'
 
 function formatChatTime(iso) {
   if (!iso) return ''
@@ -49,7 +50,7 @@ export default function ChatList() {
         supabase.from('profiles').select('id, nickname, avatar_url').neq('id', me),
         supabase
           .from('messages')
-          .select('sender_id, recipient_id, content, created_at, read_at, image_url, recalled_at')
+          .select('sender_id, recipient_id, content, ciphertext, iv, created_at, read_at, image_url, recalled_at')
           .or(`sender_id.eq.${me},recipient_id.eq.${me}`)
           .order('created_at', { ascending: false })
           .limit(500),
@@ -73,6 +74,8 @@ export default function ChatList() {
           if (!latestByPartner[partnerId]) {
             latestByPartner[partnerId] = {
               content: m.content,
+              ciphertext: m.ciphertext,
+              iv: m.iv,
               created_at: m.created_at,
               image_url: m.image_url,
               recalled_at: m.recalled_at,
@@ -80,9 +83,23 @@ export default function ChatList() {
           }
         }
 
+        // 端到端加密：最后一条是密文时，解密出预览（解不开就显示"加密消息"）
+        const decryptedLast = {}
+        await Promise.all(Object.entries(latestByPartner).map(async ([partnerId, last]) => {
+          if (!last.ciphertext || !last.iv) return
+          try {
+            const ck = await ensureConversationKey(me, partnerId)
+            decryptedLast[partnerId] = ck ? await decryptText(ck, last.ciphertext, last.iv) : null
+          } catch {
+            decryptedLast[partnerId] = null
+          }
+        }))
+
         const merged = profileRes.data.map((p) => ({
           ...p,
-          lastMsg: latestByPartner[p.id]?.content ?? null,
+          lastMsg: (p.id in decryptedLast)
+            ? (decryptedLast[p.id] ?? '🔒 加密消息')
+            : (latestByPartner[p.id]?.content ?? null),
           lastImage: latestByPartner[p.id]?.image_url ?? null,
           lastRecalled: !!latestByPartner[p.id]?.recalled_at,
           lastTime: latestByPartner[p.id]?.created_at ?? null,
