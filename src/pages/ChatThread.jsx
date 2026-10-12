@@ -5,6 +5,8 @@ import { useAuth } from '../lib/AuthContext'
 import { safeStorageKey } from '../lib/sanitizeFilename'
 import { compressImage } from '../lib/compressImage'
 import ImageLightbox from '../components/ImageLightbox'
+import SignedImage from '../components/SignedImage'
+import { objectLocator, storagePathFromUrl, useSignedUrls } from '../lib/signedUrls'
 
 // 撤回 / 编辑窗口：2 分钟内（与微信一致）。
 // 两个窗口一致，但**服务端各有一份强制**，前端这里只是控制按钮出不出来。
@@ -16,12 +18,6 @@ const PAGE_SIZE = 50
 // 用户就永远打不出换行——所以触屏让 Enter 保持默认（换行），发送交给右边的按钮。
 const isTouchPrimary =
   typeof window !== 'undefined' && !!window.matchMedia?.('(hover: none)').matches
-
-function storagePathFromUrl(url) {
-  const marker = '/moment-images/'
-  const idx = url.indexOf(marker)
-  return idx === -1 ? null : url.slice(idx + marker.length)
-}
 
 function msgTimeLabel(iso) {
   const d = new Date(iso)
@@ -59,6 +55,15 @@ export default function ChatThread() {
   const [quotedCache, setQuotedCache] = useState({})
   // 点开看的图片地址（灯箱）。null = 没打开
   const [lightboxSrc, setLightboxSrc] = useState(null)
+  // 私有桶：聊天里的图片也要换成签名地址（批量签，见 lib/signedUrls.js）。
+  // 灯箱/新标签页都直接用**签名地址**，不能再用库里存的那个老公开地址。
+  const [signedAvatar, setSignedAvatar] = useState(null)
+  // 一次把当前所有消息图片签出来（点灯箱、开新标签页都用它）
+  const chatImageUrls = useMemo(
+    () => messages.map((m) => m.image_url).filter(Boolean),
+    [messages],
+  )
+  const signedImages = useSignedUrls(chatImageUrls, 'moment-images')
   // 操作按钮只在 2 分钟窗口内出现。用低频计时器驱动，让按钮在窗口过期后自行消失。
   // （不在 render 里直接调 Date.now()，那会让渲染变成非纯函数）
   const [now, setNow] = useState(() => Date.now())
@@ -320,10 +325,8 @@ export default function ChatThread() {
           .from('moment-images')
           .upload(path, prepared, { contentType: prepared.type })
         if (uploadError) throw uploadError
-        const { data: publicUrlData } = supabase.storage
-          .from('moment-images')
-          .getPublicUrl(path)
-        imageUrl = publicUrlData.publicUrl
+        // 桶已私有：存的是**定位串**（本身不可访问），渲染时统一换签名地址
+        imageUrl = objectLocator('moment-images', path)
       }
       const { error } = await supabase
         .from('messages')
@@ -459,11 +462,11 @@ export default function ChatThread() {
         <button
           type="button"
           className="chat-header-avatar"
-          onClick={() => otherProfile?.avatar_url && setLightboxSrc(otherProfile.avatar_url)}
+          onClick={() => signedAvatar && setLightboxSrc(signedAvatar)}
           aria-label={otherProfile?.avatar_url ? '查看头像大图' : '没有头像'}
         >
           {otherProfile?.avatar_url ? (
-            <img src={otherProfile.avatar_url} alt="" />
+            <SignedImage bucket="avatars" stored={otherProfile.avatar_url} alt="" onResolved={setSignedAvatar} />
           ) : (
             (otherProfile?.nickname ?? '').slice(0, 1)
           )}
@@ -578,22 +581,26 @@ export default function ChatThread() {
                       </button>
                     )}
 
-                    {m.image_url && (
-                      <a
-                        href={m.image_url}
-                        className="chat-bubble-image"
-                        title="点开查看大图"
-                        onClick={(e) => {
-                          // Cmd / Ctrl / Shift + 点击照旧开新标签页，右键菜单也没被吃掉；
-                          // 只接管普通左键，改成在当前页面里放大看
-                          if (e.metaKey || e.ctrlKey || e.shiftKey) return
-                          e.preventDefault()
-                          setLightboxSrc(m.image_url)
-                        }}
-                      >
-                        <img src={m.image_url} alt="" />
-                      </a>
-                    )}
+                    {m.image_url && (() => {
+                      const imageUrl = signedImages.get(m.image_url) ?? null
+                      return (
+                        <a
+                          href={imageUrl ?? undefined}
+                          className="chat-bubble-image"
+                          title="点开查看大图"
+                          data-signed={imageUrl ? '1' : '0'}
+                          onClick={(e) => {
+                            // Cmd / Ctrl / Shift + 点击照旧开新标签页，右键菜单也没被吃掉；
+                            // 只接管普通左键，改成在当前页面里放大看
+                            if (e.metaKey || e.ctrlKey || e.shiftKey) return
+                            e.preventDefault()
+                            if (imageUrl) setLightboxSrc(imageUrl)
+                          }}
+                        >
+                          <img src={imageUrl ?? undefined} alt="" />
+                        </a>
+                      )
+                    })()}
 
                     {isEditing ? (
                       <div className="chat-edit">

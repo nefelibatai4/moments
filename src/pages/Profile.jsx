@@ -7,6 +7,8 @@ import { compressImage } from '../lib/compressImage'
 import ImageLightbox from '../components/ImageLightbox'
 import PanelBackgroundSettings from '../components/PanelBackgroundSettings'
 import AdminPanel from '../components/AdminPanel'
+import SignedImage from '../components/SignedImage'
+import { objectLocator, invalidateSignedUrl } from '../lib/signedUrls'
 
 // 扩展只能在桌面版 Chrome 里安装：iOS 壳里没有「解压 + 装扩展」这个概念。
 // 原生端不显示下载按钮，但也不让它静默消失（那样会被当成 bug），改显示一句该去哪做。
@@ -22,6 +24,8 @@ export default function Profile() {
   const navigate = useNavigate()
   const [nickname, setNickname] = useState('')
   const [avatarUrl, setAvatarUrl] = useState(null)
+  // 灯箱要用签名地址（桶已私有），由 SignedImage 解析后回传
+  const [signedAvatar, setSignedAvatar] = useState(null)
   const [loading, setLoading] = useState(true)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [savingNickname, setSavingNickname] = useState(false)
@@ -67,8 +71,10 @@ export default function Profile() {
         .upload(path, prepared, { upsert: true, contentType: prepared.type })
       if (uploadError) throw uploadError
 
-      const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(path)
-      const freshUrl = `${publicUrlData.publicUrl}?t=${Date.now()}`
+      // ⚠️ 桶已私有：这里存的只是**定位串**（不能直接访问），渲染时统一换成签名地址。
+      //    同一个路径（<uid>/avatar）内容变了 → 必须让签名缓存失效，否则会显示老头像。
+      const freshUrl = `${objectLocator('avatars', path)}?t=${Date.now()}`
+      invalidateSignedUrl('avatars', freshUrl)
 
       const { error: updateError } = await supabase
         .from('profiles')
@@ -160,10 +166,12 @@ export default function Profile() {
         <button
           type="button"
           className="profile-avatar"
-          onClick={() => avatarUrl && setLightboxSrc(avatarUrl)}
+          onClick={() => signedAvatar && setLightboxSrc(signedAvatar)}
           aria-label={avatarUrl ? '查看头像大图' : '还没有头像'}
         >
-          {avatarUrl ? <img src={avatarUrl} alt="" /> : nickname.slice(0, 1)}
+          {avatarUrl
+            ? <SignedImage bucket="avatars" stored={avatarUrl} alt="" onResolved={setSignedAvatar} />
+            : nickname.slice(0, 1)}
         </button>
         <label className="avatar-upload-label">
           {uploadingAvatar ? '上传中…' : '更换头像'}

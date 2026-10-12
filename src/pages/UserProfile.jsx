@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import ImageLightbox from '../components/ImageLightbox'
+import SignedImage from '../components/SignedImage'
 
 /**
  * 个人名片页（/user/:userId）。
@@ -21,6 +22,9 @@ export default function UserProfile() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [lightboxSrc, setLightboxSrc] = useState(null)
+  // 灯箱要用**签名地址**（桶已私有），由 SignedImage 解析后回传。
+  // ⚠️ 必须和上面几个 hook 放在一起：下面有提前 return，hook 不能写在它们之后。
+  const [signedAvatar, setSignedAvatar] = useState(null)
 
   useEffect(() => {
     let cancelled = false
@@ -55,9 +59,11 @@ export default function UserProfile() {
 
   return (
     <div className="user-card-page">
-      <button type="button" className="user-card-avatar" onClick={() => profile.avatar_url && setLightboxSrc(profile.avatar_url)}
+      <button type="button" className="user-card-avatar" onClick={() => signedAvatar && setLightboxSrc(signedAvatar)}
         aria-label={profile.avatar_url ? '查看头像大图' : '没有头像'}>
-        {profile.avatar_url ? <img src={profile.avatar_url} alt="" /> : initial}
+        {profile.avatar_url
+          ? <SignedImage bucket="avatars" stored={profile.avatar_url} alt="" onResolved={setSignedAvatar} />
+          : initial}
       </button>
 
       <h2 className="user-card-name">{profile.nickname}</h2>

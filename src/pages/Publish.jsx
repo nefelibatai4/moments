@@ -5,6 +5,7 @@ import { useAuth } from '../lib/AuthContext'
 import { safeStorageKey } from '../lib/sanitizeFilename'
 import { compressImage } from '../lib/compressImage'
 import { CARD_COLORS } from '../lib/cardColors'
+import { objectLocator } from '../lib/signedUrls'
 
 export default function Publish() {
   const session = useAuth()
@@ -61,10 +62,8 @@ export default function Publish() {
           .upload(path, prepared, { contentType: prepared.type })
         if (uploadError) throw uploadError
 
-        const { data: publicUrlData } = supabase.storage
-          .from('moment-images')
-          .getPublicUrl(path)
-        imageUrls.push(publicUrlData.publicUrl)
+        // 桶已私有：存**定位串**（本身不可访问），渲染时统一换签名地址（见 lib/signedUrls.js）
+        imageUrls.push(objectLocator('moment-images', path))
       }
       setUploadHint(null)
 

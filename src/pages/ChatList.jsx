@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../lib/AuthContext'
+import SignedImage from '../components/SignedImage'
 
 function formatChatTime(iso) {
   if (!iso) return ''
@@ -116,7 +117,7 @@ export default function ChatList() {
             <li key={c.id}>
               <Link to={`/chat/${c.id}`} className="chat-list-item">
                 <span className="chat-list-avatar">
-                  {c.avatar_url ? <img src={c.avatar_url} alt="" /> : c.nickname.slice(0, 1)}
+                  {c.avatar_url ? <SignedImage bucket="avatars" stored={c.avatar_url} alt="" /> : c.nickname.slice(0, 1)}
                 </span>
                 <span className="chat-list-info">
                   <span className="chat-list-name">

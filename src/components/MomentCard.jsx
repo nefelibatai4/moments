@@ -7,12 +7,8 @@ import { relativeTime } from '../lib/relativeTime'
 import { CARD_COLORS, normalizeCardColor } from '../lib/cardColors'
 import { useAuth } from '../lib/AuthContext'
 import { supabase } from '../supabaseClient'
-
-function storagePathFromUrl(url) {
-  const marker = '/moment-images/'
-  const idx = url.indexOf(marker)
-  return idx === -1 ? null : url.slice(idx + marker.length)
-}
+import { storagePathFromUrl, useSignedUrls } from '../lib/signedUrls'
+import SignedImage from './SignedImage'
 
 /**
  * 评论和点赞的数据源在 Timeline（单一数据源），这样实时订阅拿到新数据后
@@ -54,7 +50,11 @@ export default function MomentCard({
   // 信息流里最多铺 9 张（微博那样），更多的用第 9 格盖「+N」；
   // 灯箱拿到的仍是**全部**图片，点开后能一直往后翻。
   const allImages = moment.images ?? []
-  const shownImages = allImages.length > 9 ? allImages.slice(0, 9) : allImages
+  // 桶已私有：渲染前要换成签名地址（一次批量签，见 lib/signedUrls.js）。
+  // 没签出来的先不渲染 src（占位），拿到后同一个元素自动换成真图。
+  const signedImages = useSignedUrls(allImages, 'moment-images')
+  const shownImages = (allImages.length > 9 ? allImages.slice(0, 9) : allImages)
+    .map((url) => ({ stored: url, url: signedImages.get(url) ?? null }))
   const moreCount = allImages.length - shownImages.length
   const likes = moment.likes ?? []
 
@@ -211,7 +211,7 @@ export default function MomentCard({
       <div className="moment-header">
         <span className="moment-avatar">
           {!isAnon && profile?.avatar_url ? (
-            <img src={profile.avatar_url} alt="" />
+            <SignedImage bucket="avatars" stored={profile.avatar_url} alt="" />
           ) : (
             displayName.slice(0, 1)
           )}
@@ -280,7 +280,7 @@ export default function MomentCard({
 
       {allImages.length > 0 && (
         <div className={`moment-images ${allImages.length === 1 ? 'single' : 'grid'}`}>
-          {shownImages.map((url, i) => (
+          {shownImages.map(({ stored, url }, i) => (
             // 包一层 button：鼠标能点、键盘能 Tab 到再回车，屏幕阅读器也知道这是能按的。
             // ⚠️ 点第几张就要开第几张 —— 只传 url 不传下标的话，多图动态里点第 3 张
             //    打开的是第 1 张，图长得像的时候根本看不出来（回归用例 verify-moment-gallery）。
@@ -291,7 +291,7 @@ export default function MomentCard({
               aria-label={`查看第 ${i + 1} 张图片`}
               onClick={() => setViewerIndex(i)}
             >
-              <img src={url} alt="" loading="lazy" />
+              <img src={url ?? undefined} alt="" loading="lazy" data-signed={url ? '1' : '0'} data-stored={stored} />
               {moreCount > 0 && i === shownImages.length - 1 && (
                 <span className="moment-image-more">+{moreCount}</span>
               )}
@@ -397,7 +397,7 @@ export default function MomentCard({
       )}
       {viewerIndex != null && (
         <ImageLightbox
-          images={allImages}
+          images={allImages.map((u) => signedImages.get(u) ?? u)}
           index={viewerIndex}
           alt={`${displayName} 发布的图片`}
           onClose={() => setViewerIndex(null)}

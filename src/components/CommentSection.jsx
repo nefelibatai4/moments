@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
+import SignedImage from './SignedImage'
 
 // 评论的显示名：nickname 有值说明是匿名评论，优先用它
 function commentName(c) {
@@ -300,7 +301,7 @@ export default function CommentSection({
     return (
       <li key={comment.id} className={parentComment ? 'comment-item comment-item-reply' : 'comment-item'}>
         <span className="comment-avatar">
-          {avatarUrl ? <img src={avatarUrl} alt="" /> : nickname.slice(0, 1)}
+          {avatarUrl ? <SignedImage bucket="avatars" stored={avatarUrl} alt="" /> : nickname.slice(0, 1)}
         </span>
         <div className="comment-body">
           <span className="comment-nickname">{nickname}</span>
