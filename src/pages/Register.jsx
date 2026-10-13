@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
+import { cacheDekOnDevice, deriveAuthPassword, unlockWithPassword } from '../lib/crypto'
 import { useAccess } from '../lib/AuthContext'
 
 /**
@@ -38,9 +39,11 @@ export default function Register() {
       if (!gate) throw new Error('请输入注册口令')
 
       // 1. 建号（口令一并送上去，交给服务端 Auth Hook 判定）
+      // 注册时就用**派生值**当密码：服务器永远看不到真实密码（老账号由登录时的静默迁移处理）
+      const authPassword = await deriveAuthPassword(password, email)
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email,
-        password,
+        password: authPassword,
         options: { data: { gate_passphrase: gate } },
       })
       if (signUpError) throw signUpError
@@ -57,6 +60,14 @@ export default function Register() {
         // 账号已建好但口令没对上（例如 Hook 没开、或刚好被换掉）：去激活页重新输，不要重复建号
         navigate('/activate', { replace: true, state: { reason: '注册口令不正确' } })
         return
+      }
+
+      // 2.6 无感解锁：用同一个密码派生主密钥并生成数据密钥（服务器上只存被包住的密文）
+      try {
+        const res = await unlockWithPassword(signUpData.user.id, password, email)
+        if (res.ok) await cacheDekOnDevice(signUpData.user.id)
+      } catch (err) {
+        console.warn('[crypto] 初始化密钥失败（不影响注册）:', err?.message)
       }
 
       // 3. 把口令从本地会话/user_metadata 里清掉。数据库那边有 BEFORE 触发器兜底

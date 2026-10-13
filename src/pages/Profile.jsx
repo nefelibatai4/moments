@@ -133,7 +133,20 @@ export default function Profile() {
       return
     }
     setChangingPassword(true)
-    const { error } = await supabase.auth.updateUser({ password: newPassword })
+    // 登录密码同样存派生值；同时把数据密钥用新密码重包一份（**无需旧密码**：
+    // 内存里已经解锁着 DEK）→ 历史照旧可读，用户无感
+    const { deriveAuthPassword, rekeyWithUnlockedKeys, cacheDekOnDevice } = await import('../lib/crypto')
+    const authPassword = await deriveAuthPassword(newPassword, session.user.email)
+    const { error } = await supabase.auth.updateUser({ password: authPassword })
+    if (!error) {
+      try {
+        const rk = await rekeyWithUnlockedKeys(session.user.id, newPassword, session.user.email)
+        if (!rk.ok) console.warn('[crypto] 重包密钥失败:', rk.reason)
+        else await cacheDekOnDevice(session.user.id)
+      } catch (err) {
+        console.warn('[crypto] 重包密钥异常:', err?.message)
+      }
+    }
     if (error) {
       setError(error.message)
     } else {
