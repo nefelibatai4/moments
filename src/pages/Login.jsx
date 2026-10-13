@@ -45,9 +45,9 @@ export default function Login() {
       const uid = data?.user?.id
       const res = await unlockWithPassword(uid, password, email)
       if (res.ok) await cacheDekOnDevice(uid)
-      else if (res.reason) console.warn('[crypto] 解锁失败:', res.reason)
+      else if (res.reason) console.warn('[crypto] unlock failed:', res.reason)
     } catch (err) {
-      console.warn('[crypto] 解锁异常:', err?.message)
+      console.warn('[crypto] unlock error:', err?.message)
     }
     navigate(location.state?.from?.pathname ?? '/', { replace: true })
   }

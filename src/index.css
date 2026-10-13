@@ -1080,67 +1080,7 @@ button:disabled {
 }
 
 /* 私聊端到端加密（【我】里的密钥区） */
-.e2e-section {
-  border-top: 1px solid var(--border-subtle);
-  padding-top: 16px;
-  margin-top: 8px;
-}
 
-.e2e-section h3 {
-  margin: 0 0 8px;
-  font-size: 0.95rem;
-}
-
-.e2e-hint {
-  margin: 0 0 8px;
-  font-size: 0.85rem;
-  line-height: 1.5;
-  color: var(--text-secondary);
-}
-
-.e2e-small { font-size: 0.78rem; }
-
-.e2e-recovery {
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  padding: 10px 12px;
-  margin: 10px 0;
-}
-
-.e2e-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 1rem;
-  letter-spacing: 1px;
-  color: var(--text-primary);
-  word-break: break-all;
-  margin: 6px 0 10px;
-}
-
-.e2e-code-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.e2e-code-actions button,
-.e2e-section button[type='submit'] {
-  border: none;
-  background: var(--btn-primary-bg);
-  color: var(--btn-primary-text);
-  border-radius: 86px;
-  padding: 8px 18px;
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.e2e-link {
-  border: none;
-  background: none;
-  color: var(--text-secondary);
-  text-decoration: underline;
-  cursor: pointer;
-  font-size: 0.78rem;
-  padding: 0;
-}
 
 /* 注册口令区域（管理员，在成员管理里） */
 .admin-passphrase {

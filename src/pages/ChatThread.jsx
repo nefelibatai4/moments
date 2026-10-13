@@ -8,8 +8,8 @@ import ImageLightbox from '../components/ImageLightbox'
 import SignedImage from '../components/SignedImage'
 import { objectLocator, resolveSignedUrl, storagePathFromUrl, useSignedUrls } from '../lib/signedUrls'
 import { fetchThreadData, readCachedThread, writeCachedThread } from '../lib/chatCache'
-// 加密已下线（2026-10-12）：只保留"读旧密文"用的解密能力，不再加密新消息
-import { cachedConversationKey, decryptMessages, ensureConversationKey } from '../lib/e2e'
+// 阶段 1：私聊文本端到端加密（会话密钥由双方身份密钥 ECDH 得到，见 lib/crypto.js）
+import { decryptPeerMessages, encryptForPeer, onUnlockChange, unlockStateVersion } from '../lib/crypto'
 
 // 撤回 / 编辑窗口：2 分钟内（与微信一致）。
 // 两个窗口一致，但**服务端各有一份强制**，前端这里只是控制按钮出不出来。
@@ -22,8 +22,78 @@ const PAGE_SIZE = 50
 const isTouchPrimary =
   typeof window !== 'undefined' && !!window.matchMedia?.('(hover: none)').matches
 
-// 已经尝试过"明文回填"的消息 id（避免每次渲染都重复请求）
-const backfilled = new Set()
+// 已经尝试过"补加密"的消息 id（避免每次渲染都重复请求；失败的下次还能再试）
+const backfillTried = new Set()
+// 后台扫尾是否已经在本页面跑过（一次进程只跑一条，避免来回切会话时并发扫同一批）
+let sweepRunning = false
+
+/**
+ * 把本会话里**我发的历史明文**逐批换成密文（后台、串行、静默、可中断）。
+ * 为什么需要它：会话一次只加载 50 条，靠"看到才补"根本补不完 1700+ 条历史。
+ * 为什么放在这里而不是服务端：加密用的私钥只存在于使用者自己的设备上，服务端做不了这件事。
+ * 预算：一次最多 300 条、每批 50 条、批间 150ms —— 对使用者完全无感，下次打开接着扫
+ * （实测每条约 150ms 的往返，300 条约一分钟；1700 条历史几次打开就扫完了）。
+ */
+async function sweepPlaintextOnce(me, peerId) {
+  if (sweepRunning || !me || !peerId) return
+  sweepRunning = true
+  let budget = 300
+  let oldest = null
+  let queryFails = 0
+  let rowFails = 0
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  try {
+    while (budget > 0 && queryFails < 3) {
+      let q = supabase
+        .from('messages')
+        .select('id, content, created_at')
+        .eq('sender_id', me)
+        .eq('recipient_id', peerId)
+        .is('ciphertext', null)
+        .is('recalled_at', null)
+        .not('content', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(50)
+      if (oldest) q = q.lt('created_at', oldest)
+      const { data, error } = await q
+      if (error) {
+        // 网络/后端的偶发抖动不该让整个扫尾停摆（实测：一次抖动就让剩下几十条再也不补了）
+        queryFails += 1
+        console.warn('[chat] 扫尾查询失败，1 秒后重试:', error.message)
+        await sleep(1000)
+        continue
+      }
+      queryFails = 0
+      if (!data || data.length === 0) break
+      oldest = data[data.length - 1].created_at
+      for (const row of data) {
+        if (rowFails >= 5) break          // 连续失败太多次：这一轮先收工，下次打开接着扫
+        try {
+          const sealed = await encryptForPeer(peerId, row.content)
+          // 拿不到钥匙（本机没解锁 / 对方还没公钥）：这不是"抖动"，别再白试
+          if (!sealed) { console.warn('[chat] 扫尾：本机没解锁或对方还没有公钥，先停'); return }
+          const { data: ok, error: rpcErr } = await supabase.rpc('encrypt_message_payload', {
+            p_id: row.id, p_ciphertext: sealed.ciphertext, p_iv: sealed.iv, p_scheme: sealed.scheme,
+          })
+          // ok !== true 通常是"这一条刚被前台的补加密做掉了"，属正常竞态，不算失败
+          if (rpcErr) { rowFails += 1; await sleep(500); continue }
+          rowFails = 0
+          if (ok === true) budget -= 1
+        } catch (err) {
+          rowFails += 1
+          console.warn('[chat] 扫尾单条失败:', err?.message)
+          await sleep(500)
+        }
+      }
+      await sleep(150)
+    }
+  } catch (err) {
+    // 尽力而为：退登等极端情况走到这里，静默收工（下次打开接着扫）
+    console.warn('[chat] 扫尾中断:', err?.message)
+  } finally {
+    console.info('[chat] 扫尾结束，本次补加密', 300 - budget, '条')
+  }
+}
 
 function msgTimeLabel(iso) {
   const d = new Date(iso)
@@ -45,8 +115,10 @@ export default function ChatThread() {
   //    落盘缓存、实时补丁、撤回/编辑都只碰 raw，明文永远不出内存。
   const [rawMessages, setRawMessages] = useState([])
   const [messages, setMessages] = useState([])
-  // ⚠️ 这里只能用 session（me 在后面才定义），否则会 "Cannot access 'me' before initialization"
-  const [ck, setCk] = useState(() => cachedConversationKey(session?.user?.id, userId))
+  // 密钥进内存是"晚一点才发生"的事（登录解锁 / 设备缓存解锁）。订阅它的版本号，
+  // 解锁后自动重算一次解密；否则先渲染的界面会永远停在"读不到"（实测踩到过）。
+  const [unlockV, setUnlockV] = useState(() => unlockStateVersion())
+  useEffect(() => onUnlockChange(setUnlockV), [])
   const [content, setContent] = useState('')
   const [loading, setLoading] = useState(true)
   const [hasMore, setHasMore] = useState(false)
@@ -171,22 +243,12 @@ export default function ChatThread() {
         if (!belongsToThread) return
 
         // UPDATE 有三个来源：对方标记已读、发送方撤回、发送方编辑。
-        // 整行合并即可同时覆盖，且不限定只有自己发的消息才处理。
-        setMessages((prev) =>
-          prev.map((x) =>
-            x.id === m.id
-              ? {
-                  ...x,
-                  read_at: m.read_at,
-                  recalled_at: m.recalled_at,
-                  content: m.content,
-                  image_url: m.image_url,
-                  edited_at: m.edited_at,
-                  reply_to_id: m.reply_to_id,
-                }
-              : x
-          )
-        )
+        // ⚠️ 只合并进 `rawMessages`（数据库那一行），**绝不直接改 `messages`**：
+        //    密文行的 content 就是 null，直接合并会把刚解出来的明文擦掉，
+        //    而且解密 effect 不会再跑一次 —— 界面就永久停在"读不到"（实测踩到过：
+        //    自己发出的消息在对方标记已读的那一瞬间变成 🔒）。
+        //    改 raw 之后由解密 effect 重算，明文/撤回/编辑三种情况都对。
+        setRawMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, ...m } : x)))
       })
       .subscribe()
 
@@ -242,15 +304,18 @@ export default function ChatThread() {
     let cancelled = false
     supabase
       .from('messages')
-      .select('id, content, image_url, recalled_at, sender_id')
+      .select('id, content, ciphertext, iv, scheme, image_url, recalled_at, sender_id')
       .in('id', missingQuoteIds)
-      .then(({ data }) => {
+      .then(async ({ data }) => {
         if (cancelled || !data || data.length === 0) return
+        // 引用块也要显示明文：这里同样过一遍解密（密钥有缓存，不会多请求）
+        const rows = await decryptPeerMessages(userId, data)
+        if (cancelled) return
         setQuotedCache((prev) => {
           // 只有真的有新增才换引用，否则这个 effect 会自己触发自己，变成死循环
           let changed = false
           const next = { ...prev }
-          for (const row of data) {
+          for (const row of rows) {
             if (!next[row.id]) { next[row.id] = row; changed = true }
           }
           return changed ? next : prev
@@ -338,10 +403,15 @@ export default function ChatThread() {
         // 桶已私有：存的是**定位串**（本身不可访问），渲染时统一换签名地址
         imageUrl = objectLocator('moment-images', path)
       }
-      // ⚠️ 端到端加密已于 2026-10-12 下线（使用者：用户不知道怎么操作、情绪较大）——
-      //    现在私聊一律发**明文**，跟加密之前一样。旧的密文消息仍然能读（下面的解密逻辑保留）。
+      // 文本加密后再入库（库里只留密文）。拿不到密钥时（本机没解锁 / 对方还没公钥）
+      // 退回明文发送：宁可这一刻漏加密，也不能让使用者发不出消息；控制台留一行便于排查。
       const text = content.trim()
-      const body = { content: text || null }
+      let body = { content: text || null }
+      if (text) {
+        const sealed = await encryptForPeer(userId, text)
+        if (sealed) body = { ...sealed, content: null }
+        else console.warn('[chat] 这条消息没能加密（本机未解锁或对方缺少公钥）')
+      }
       const { error } = await supabase
         .from('messages')
         .insert({
@@ -403,17 +473,18 @@ export default function ChatThread() {
     setError(null)
     try {
       // edited_at 由服务端触发器写，这里不传（传了也会被覆盖）
-      // （加密已下线：编辑一律按明文处理；如果这条是旧的密文消息，编辑会把明文写进 content）
+      const sealed = await encryptForPeer(userId, next)
+      const patch = sealed ? { ...sealed, content: null } : { content: next }
       const { data, error } = await supabase
         .from('messages')
-        .update({ content: next })
+        .update(patch)
         .eq('id', editing.id)
         .select('id')
       if (error) throw error
       if (!data || data.length === 0) throw new Error('编辑没有生效（可能已超过 2 分钟窗口）')
       const stamp = new Date().toISOString()
       setRawMessages((prev) =>
-        prev.map((x) => (x.id === editing.id ? { ...x, content: next, edited_at: stamp } : x))
+        prev.map((x) => (x.id === editing.id ? { ...x, ...patch, edited_at: stamp } : x))
       )
       setEditing(null)
     } catch (err) {
@@ -445,44 +516,63 @@ export default function ChatThread() {
     else loadOlder()
   }
 
-  // 拿到会话密钥后（或原始消息变了）解密一次，写进渲染用的 `messages`
+  // 原始行（可能是密文）→ 渲染用的 `messages`（明文）。
+  // 密钥还没进内存时拿不到钥匙，密文行会显示成"读不到"；解锁后 unlockV 变化会自动重跑。
   useEffect(() => {
     let cancelled = false
-    if (!ck) {
-      setMessages(rawMessages)          // 还没有密钥：照旧显示（老明文历史 / 未开启加密）
-      return undefined
-    }
+    // 第一帧先按"库里的行"画出来：明文行立刻可见、密文行沿用本地缓存里的明文。
+    // 不这么做的话，缓存本来"立刻出画面"的效果会被一行 `await`（取对方公钥 + ECDH）吃掉 ——
+    // 实测：返回再进会话从 ~800ms 退化到 818ms（`verify-chat-cache` 直接红）。
+    setMessages(rawMessages)
     ;(async () => {
-      const out = await decryptMessages(ck, rawMessages)
+      const out = await decryptPeerMessages(userId, rawMessages)
       if (!cancelled) setMessages(out)
-      // 加密下线后的一次性回填（2026-10-12）：能解密出来的旧密文，顺手把明文写回库里，
-      // 这样以后换设备/清缓存也不会再读不到。逐条尽力而为、失败静默、不重复尝试。
-      for (const m of out) {
-        if (!m?.ciphertext || !m.content || backfilled.has(m.id)) continue
-        backfilled.add(m.id)
-        supabase.rpc('backfill_encrypted_message', { p_id: m.id, p_text: m.content })
-          .then(({ error }) => { if (error) backfilled.delete(m.id) })
+      // 顺手把**自己**的历史明文消息补加密（每次最多 25 条、逐条串行、失败静默）。
+      // 为什么值得做：不然库里会一直躺着历史明文，"服务器看不到内容"就只对新消息成立。
+      // 只能改自己发的（RPC 里也这么卡），所以两边都打开过对话才算补完。
+      if (cancelled) return
+      const todo = out
+        .filter((row) => row.sender_id === me && row.content && !row.ciphertext && !backfillTried.has(row.id))
+        .slice(0, 25)
+      for (const row of todo) {
+        if (cancelled) return
+        backfillTried.add(row.id)
+        try {
+          const sealed = await encryptForPeer(userId, row.content)
+          if (!sealed) { backfillTried.delete(row.id); break }
+          const { data, error } = await supabase.rpc('encrypt_message_payload', {
+            p_id: row.id, p_ciphertext: sealed.ciphertext, p_iv: sealed.iv, p_scheme: sealed.scheme,
+          })
+          if (error || data !== true) { backfillTried.delete(row.id); continue }
+          if (cancelled) return
+          setRawMessages((prev) => prev.map((x) => (
+            x.id === row.id ? { ...x, content: null, ...sealed } : x
+          )))
+        } catch {
+          backfillTried.delete(row.id)
+        }
       }
+      // 一屏只有 50 条，光靠"看到哪条补哪条"要翻很久才补完历史。所以再开一条**后台扫尾**：
+      // 从最新的明文开始往前翻，每次进程最多 200 条、每批之间歇 250ms，翻完或本条会话结束就停。
+      // 它不碰界面状态（那些行根本没渲染），只是把库里的历史明文换成密文；下次进来接着扫（幂等）。
+      if (!cancelled && todo.length === 0) sweepPlaintextOnce(me, userId)
     })()
     return () => { cancelled = true }
-  }, [ck, rawMessages])
-
-  // 会话密钥：对方已经有公钥时创建/取出（一段会话一把，缓存在内存）
-  useEffect(() => {
-    let cancelled = false
-    if (!me || !userId) return undefined
-    ;(async () => {
-      const key = await ensureConversationKey(me, userId, { publicKeyOfPeer: otherProfile?.public_key ?? null })
-      if (!cancelled && key) setCk(key)
-    })()
-    return () => { cancelled = true }
-  }, [me, userId, otherProfile?.public_key])
+  }, [userId, rawMessages, me, unlockV])
 
   // 消息有任何变化（自己发的、对方发的、撤回/编辑）都同步进内存缓存，
   // 这样"返回列表再进来"看到的就是最新状态，而不是缓存那一刻的旧快照。
   useEffect(() => {
     if (loading || !otherProfile) return
-    writeCachedThread(me, userId, { profile: otherProfile, messages: rawMessages })
+    // 缓存里**带上已解出来的明文**：下次进来第一帧就显示内容，而不是先闪一下"读不到"。
+    // 这不是新增信任面 —— 会话列表预览本来就已经明文落在同一个 localStorage 里
+    // （防的是云，不防"拿到你解锁设备的人"，与设备缓存同一取舍，已写进 SECURITY.md）。
+    const decrypted = new Map(messages.map((m) => [m.id, m.content]))
+    const rows = rawMessages.map((r) => {
+      const text = decrypted.get(r.id)
+      return r.ciphertext && text ? { ...r, content: text } : r
+    })
+    writeCachedThread(me, userId, { profile: otherProfile, messages: rows })
   }, [loading, otherProfile, rawMessages, me, userId])
 
   if (loading) return <p className="status-text">加载中…</p>
@@ -682,10 +772,9 @@ export default function ChatThread() {
                     ) : (
                       <>
                         {m.content}
-                        {/* 加密消息但本机没有钥匙（例如新设备还没输入恢复码）→ 别显示空气泡 */}
-                        {/* 旧的加密消息：本机没有钥匙时只能提示一句（加密功能已下线，不再提供恢复入口） */}
+                        {/* 密文行但本机解不开（极少数：还没解锁 / 换了账号）→ 别显示空气泡 */}
                         {!m.content && m.ciphertext && (
-                          <span className="chat-encrypted-hint">🔒 这条是加密版本时期的消息，这台设备上读不到</span>
+                          <span className="chat-encrypted-hint">🔒 这条消息在这台设备上读不到</span>
                         )}
                         {m.edited_at && <span className="chat-edited-tag">已编辑</span>}
                       </>

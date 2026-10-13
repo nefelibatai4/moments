@@ -67,7 +67,7 @@ export default function Register() {
         const res = await unlockWithPassword(signUpData.user.id, password, email)
         if (res.ok) await cacheDekOnDevice(signUpData.user.id)
       } catch (err) {
-        console.warn('[crypto] 初始化密钥失败（不影响注册）:', err?.message)
+        console.warn('[crypto] init failed (non-blocking):', err?.message)
       }
 
       // 3. 把口令从本地会话/user_metadata 里清掉。数据库那边有 BEFORE 触发器兜底

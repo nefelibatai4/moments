@@ -4,8 +4,7 @@ import { clearTimelineSnapshots } from './timelineSnapshot.js'
 import { clearChatListSnapshots } from './chatCache.js'
 // 端到端加密已于 2026-10-12 下线（使用者：用户不知道怎么操作、情绪较大）。
 // 这里只保留"登出时清掉内存里的会话密钥"，保证旧密文不会跨账号残留。
-import { clearConversationKeys } from './e2e.js'
-import { clearCachedDek, loadCachedDek, lockCrypto } from './crypto.js'
+import { clearCachedDek, clearConversationKeys, loadCachedDek, lockCrypto } from './crypto.js'
 
 // session:   undefined = 还在加载 / null = 未登录 / object = 已登录
 // approved:  undefined = 还在查询 / null = 未登录 / false = 已登录但未激活 / true = 已激活

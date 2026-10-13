@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient'
 import { useAuth } from '../lib/AuthContext'
 import SignedImage from '../components/SignedImage'
 import { prefetchThread, readChatListSnapshot, writeChatListSnapshot } from '../lib/chatCache'
-import { decryptText, ensureConversationKey } from '../lib/e2e'
+import { decryptForPeer } from '../lib/crypto'
 
 function formatChatTime(iso) {
   if (!iso) return ''
@@ -83,13 +83,12 @@ export default function ChatList() {
           }
         }
 
-        // 端到端加密：最后一条是密文时，解密出预览（解不开就显示"加密消息"）
+        // 最后一条是密文时，解出预览（解不开就不显示预览，绝不显示乱码）
         const decryptedLast = {}
         await Promise.all(Object.entries(latestByPartner).map(async ([partnerId, last]) => {
           if (!last.ciphertext || !last.iv) return
           try {
-            const ck = await ensureConversationKey(me, partnerId)
-            decryptedLast[partnerId] = ck ? await decryptText(ck, last.ciphertext, last.iv) : null
+            decryptedLast[partnerId] = await decryptForPeer(partnerId, last)
           } catch {
             decryptedLast[partnerId] = null
           }
@@ -98,7 +97,7 @@ export default function ChatList() {
         const merged = profileRes.data.map((p) => ({
           ...p,
           lastMsg: (p.id in decryptedLast)
-            ? (decryptedLast[p.id] ?? '🔒 加密消息')
+            ? (decryptedLast[p.id] ?? '🔒 消息')
             : (latestByPartner[p.id]?.content ?? null),
           lastImage: latestByPartner[p.id]?.image_url ?? null,
           lastRecalled: !!latestByPartner[p.id]?.recalled_at,

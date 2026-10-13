@@ -36,6 +36,25 @@ let currentDek = null          // CryptoKey（AES-GCM 256）
 let currentIdentity = null     // { privateKey: CryptoKey, publicJwk }
 let currentUserId = null
 
+// "解锁状态变了"的订阅：界面靠它重算（比如登录前先渲染、解锁后补解密的私聊）。
+// 不加这个就会卡在"密钥还没进内存 → 解不出来 → 界面永远停在读不到"（实测踩到过）。
+let unlockVersion = 0
+const unlockListeners = new Set()
+function bumpUnlock() {
+  unlockVersion += 1
+  for (const cb of unlockListeners) {
+    try { cb(unlockVersion) } catch { /* 订阅方自己的错，不影响别人 */ }
+  }
+}
+/** 订阅解锁状态变化，返回退订函数 */
+export function onUnlockChange(cb) {
+  unlockListeners.add(cb)
+  return () => unlockListeners.delete(cb)
+}
+export function unlockStateVersion() {
+  return unlockVersion
+}
+
 export function isUnlocked() {
   return !!currentDek && currentUserId != null
 }
@@ -46,6 +65,9 @@ export function lockCrypto() {
   currentDek = null
   currentIdentity = null
   currentUserId = null
+  conversationKeys.clear()
+  noPeerKeyUntil.clear()
+  bumpUnlock()
 }
 export function unlockedDek() {
   return currentDek
@@ -153,8 +175,8 @@ async function createAndUploadKeys(userId, password, email) {
   const { error } = await supabase.from('user_keys').upsert(row, { onConflict: 'user_id' })
   if (error) throw new Error(error.message)
 
-  // 顺便把公钥放到 profiles（别人要拿它给你包恢复包裹）
-  await supabase.from('profiles').update({ public_key: jwks.publicKey }).eq('id', userId)
+  // 顺便把公钥 + **世代标记**放到 profiles：别人只有看到世代对得上，才敢给你加密
+  await supabase.from('profiles').update({ public_key: jwks.publicKey, key_scheme: KEY_SCHEME }).eq('id', userId)
 
   // 可导出：设备缓存与"换密码重包"都要用它（只在内存里，不落盘明文）
   const identityPriv = await crypto.subtle.importKey('jwk', jwks.privateKey, IDENTITY_ALGO, true, ['deriveBits'])
@@ -184,6 +206,7 @@ export async function unlockWithPassword(userId, password, email) {
       currentDek = created.dek
       currentIdentity = created.identity
       currentUserId = userId
+      bumpUnlock()
       return { ok: true, created: true }
     } catch (err) {
       return { ok: false, reason: err?.message }
@@ -216,6 +239,7 @@ export async function unlockWithPassword(userId, password, email) {
   currentDek = dekKey
   currentIdentity = identityPriv ? { privateKey: identityPriv, publicJwk: data.identity_public } : null
   currentUserId = userId
+  bumpUnlock()
   return { ok: true }
 }
 
@@ -311,6 +335,150 @@ export async function decryptText(ciphertextB64, ivB64) {
   return td.decode(plain)
 }
 
+// ── 会话密钥（阶段 1：私聊文本）─────────────────────────────────
+/**
+ * 一对一会话的密钥由**双方各自的身份私钥 × 对方公钥**做 ECDH 得到：
+ *   CK(A,B) = HKDF( ECDH(A_priv, B_pub) ) == HKDF( ECDH(B_priv, A_pub) )
+ * 好处是**不需要分发密钥**：谁都不用把钥匙交给谁，服务器上也没有任何能解开消息的东西。
+ *
+ * ⚠️ 已知边界（诚实记录）：双方公钥是从 `profiles` 里取的，等于**信任服务器分发公钥**。
+ *    服务器若掉包公钥就能中间人。彻底解决要人工核对指纹，那就不"无感"了 —— 取舍已告知使用者。
+ */
+const DM_INFO = 'moments-dm-v1'
+/** 密文行里的算法标记：换算法时老消息仍能按老标记解 */
+export const DM_SCHEME = 'v2-dm'
+/**
+ * 公钥"世代"标记：只有**由这一代代码上传过密钥**的人，`profiles.key_scheme` 才是这个值。
+ * 为什么需要：真实数据里躺着上一版加密（2026-10-12 已下线）留下的公钥，对方的私钥早没了——
+ * 照旧加密就会产出**永远解不开**的消息。所以"公钥存在"还不够，必须**世代对得上**才加密；
+ * 对不上就退回明文（宁可暂时不加密，也不制造读不回来的历史）。
+ */
+export const KEY_SCHEME = 'v2'
+const conversationKeys = new Map()   // "小id|大id" → CryptoKey
+const noPeerKeyUntil = new Map()     // "小id|大id" → 时间戳：对方还没有可用公钥（短时负缓存）
+
+function pairTag(a, b) {
+  return [String(a), String(b)].sort().join('|')
+}
+
+async function peerKeyInfo(peerId) {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('public_key, key_scheme')
+    .eq('id', peerId)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data?.public_key || data.key_scheme !== KEY_SCHEME) return null
+  return data.public_key
+}
+
+/** 会话密钥的原始 ECDH 位（测试要对指纹用；业务代码用下面的 conversationKey） */
+async function pairBits(peerId) {
+  if (!currentUserId || !currentIdentity?.privateKey) return null
+  if (!peerId || peerId === currentUserId) return null
+  const tag = pairTag(currentUserId, peerId)
+  // 对方还没有可用公钥时别反复打网络（列表/会话每次渲染都会问一遍）。
+  // 只负缓存 30 秒：对方登录一次之后就会带上世代标记，不该让人等太久。
+  if ((noPeerKeyUntil.get(tag) ?? 0) > Date.now()) return null
+  const jwk = await peerKeyInfo(peerId)
+  if (!jwk) {
+    noPeerKeyUntil.set(tag, Date.now() + 30000)
+    return null
+  }
+  noPeerKeyUntil.delete(tag)
+  const pub = await crypto.subtle.importKey('jwk', jwk, IDENTITY_ALGO, false, [])
+  return crypto.subtle.deriveBits({ name: 'ECDH', public: pub }, currentIdentity.privateKey, 256)
+}
+
+async function deriveConversationKey(peerId) {
+  const bits = await pairBits(peerId)
+  if (!bits) return null
+  const base = await crypto.subtle.importKey('raw', bits, 'HKDF', false, ['deriveKey'])
+  return crypto.subtle.deriveKey(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: te.encode(`moments-pair-v1:${pairTag(currentUserId, peerId)}`),
+      info: te.encode(DM_INFO),
+    },
+    base,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  )
+}
+
+/** 取会话密钥（内存缓存；拿不到返回 null：对方还没公钥 / 本机还没解锁） */
+export async function conversationKey(peerId) {
+  const tag = pairTag(currentUserId, peerId)
+  if (conversationKeys.has(tag)) return conversationKeys.get(tag)
+  const ck = await deriveConversationKey(peerId)
+  if (ck) conversationKeys.set(tag, ck)
+  return ck
+}
+
+/** 测试/排障：会话密钥指纹（证明两台设备派生出同一把钥匙，且不泄露钥匙本身） */
+export async function conversationFingerprint(peerId) {
+  const bits = await pairBits(peerId)
+  if (!bits) return null
+  const digest = await crypto.subtle.digest('SHA-256', bits)
+  return toB64(digest).slice(0, 12)
+}
+
+/**
+ * 加密一条私聊文本。**拿不到密钥就返回 null**，由调用方决定怎么办
+ * （本轮的做法：照旧发明文 + 控制台留一行 —— 宁可漏加密，也不让使用者发不出消息）。
+ */
+export async function encryptForPeer(peerId, text) {
+  const ck = await conversationKey(peerId)
+  if (!ck) return null
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, ck, te.encode(String(text)))
+  return { ciphertext: toB64(ct), iv: toB64(iv), scheme: DM_SCHEME }
+}
+
+/** 解一条私聊行：密文行解不开返回 null；明文老行原样返回 content */
+export async function decryptForPeer(peerId, row) {
+  if (!row) return null
+  if (!row.ciphertext) return row.content ?? null
+  const ck = await conversationKey(peerId)
+  if (!ck) return null
+  try {
+    const plain = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: fromB64(row.iv) },
+      ck,
+      fromB64(row.ciphertext),
+    )
+    return td.decode(plain)
+  } catch {
+    return null
+  }
+}
+
+/** 批量解一屏私聊行（密钥只取一次；返回的新数组把 content 填成明文） */
+export async function decryptPeerMessages(peerId, rows) {
+  const ck = await conversationKey(peerId)
+  if (!ck) return rows
+  const out = []
+  for (const row of rows) {
+    if (!row.ciphertext) { out.push(row); continue }
+    let content = row.content ?? null
+    try {
+      content = td.decode(await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: fromB64(row.iv) }, ck, fromB64(row.ciphertext),
+      ))
+    } catch { /* 解不开就沿用行里已有的（本地缓存里的明文） */ }
+    out.push({ ...row, content })
+  }
+  return out
+}
+
+/** 登出时清掉内存里的会话密钥（换账号不能残留） */
+export function clearConversationKeys() {
+  conversationKeys.clear()
+  noPeerKeyUntil.clear()
+}
+
 /**
  * 换密码（无感版）：**不需要旧密码** —— 直接用内存里已解锁的 DEK / 身份私钥重包。
  * 旧密码留给"设备锁着时"的场景（`rekeyForNewPassword`）。
@@ -402,6 +570,7 @@ export async function loadCachedDek(userId) {
       ? { privateKey: await crypto.subtle.importKey('jwk', parsed.identity, IDENTITY_ALGO, true, ['deriveBits']), publicJwk: null }
       : null
     currentUserId = userId
+    bumpUnlock()
     return true
   } catch {
     return false
@@ -425,6 +594,11 @@ if (typeof window !== 'undefined') {
     dekFingerprint,
     encryptText,
     decryptText,
+    user: () => currentUserId,
+    unlockVersion: unlockStateVersion,
+    conversationFingerprint,
+    encryptForPeer,
+    decryptForPeer,
     cacheState: () => {
       try { return !!localStorage.getItem('moments_dek_cache_v1') } catch { return false }
     },

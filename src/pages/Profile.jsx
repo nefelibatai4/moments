@@ -141,10 +141,10 @@ export default function Profile() {
     if (!error) {
       try {
         const rk = await rekeyWithUnlockedKeys(session.user.id, newPassword, session.user.email)
-        if (!rk.ok) console.warn('[crypto] 重包密钥失败:', rk.reason)
+        if (!rk.ok) console.warn('[crypto] rewrap failed:', rk.reason)
         else await cacheDekOnDevice(session.user.id)
       } catch (err) {
-        console.warn('[crypto] 重包密钥异常:', err?.message)
+        console.warn('[crypto] rewrap error:', err?.message)
       }
     }
     if (error) {
