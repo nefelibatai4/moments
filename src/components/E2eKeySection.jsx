@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../lib/AuthContext'
 import {
-  acknowledgeRecoveryCode, ensureIdentity, generateRecoveryCode, hasLocalIdentity,
-  identityMatches, localPublicKey, pendingRecoveryCode, restoreIdentityWithCode,
+  CRYPTO_PASSWORD_MIN, acknowledgeRecoveryCode, ensureIdentity, generateRecoveryCode,
+  hasLocalIdentity, identityMatches, localPublicKey, pendingRecoveryCode,
+  restoreIdentityByPasswordOrCode, restoreIdentityWithCode, syncIdentityWithPassword,
   wrapPrivateWithRecovery,
 } from '../lib/e2e'
 
@@ -23,15 +24,22 @@ export default function E2eKeySection() {
   const [recoveryCode, setRecoveryCode] = useState(null)
   const [acknowledged, setAcknowledged] = useState(true)
   const [inputCode, setInputCode] = useState('')
+  const [inputPassword, setInputPassword] = useState('')
+  const [useCode, setUseCode] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
+  const [hasPasswordBackup, setHasPasswordBackup] = useState(null)
 
   const refresh = useCallback(async () => {
     if (!uid) return
     if (typeof crypto === 'undefined' || !crypto.subtle) { setStatus('unsupported'); return }
     const pending = pendingRecoveryCode()
     if (pending) { setRecoveryCode(pending); setAcknowledged(false) }
+
+    // 服务器上有没有"用密码保存的钥匙"（决定换设备时是不是真的能零操作接上）
+    const { data: kb } = await supabase.from('key_backups').select('pw_wrapped').eq('user_id', uid).maybeSingle()
+    setHasPasswordBackup(!!kb?.pw_wrapped)
 
     const local = hasLocalIdentity()
     if (local) {
@@ -106,8 +114,10 @@ export default function E2eKeySection() {
     e.preventDefault()
     setBusy(true); setError(null); setNotice(null)
     try {
-      await restoreIdentityWithCode(uid, inputCode)
+      if (useCode) await restoreIdentityWithCode(uid, inputCode)
+      else await restoreIdentityByPasswordOrCode(uid, inputPassword)
       setInputCode('')
+      setInputPassword('')
       setNotice('恢复成功：这台设备现在能读加密消息了')
       await refresh()
     } catch (err) {
@@ -133,8 +143,11 @@ export default function E2eKeySection() {
 
       {status === 'active' && (
         <p className="e2e-hint">
-          ✅ <strong>已开启</strong>：私聊正文在这台设备上加密后才发出去，服务器只存密文
-          （我和云厂商都读不到）。换手机或清浏览器数据前，请先用下面的「恢复码」。
+          ✅ <strong>已开启</strong>：私聊正文在这台设备上加密后才发出去，服务器只存密文（我和云厂商都读不到）。
+          {hasPasswordBackup
+            ? <>钥匙已用你的<strong>登录密码</strong>存了一份 —— 换设备时登录输入密码就自动接上，不用抄恢复码。下面的<strong>恢复码</strong>是强兜底，建议仍然保管好。</>
+            : <><strong>注意</strong>：你这台设备的钥匙还没有用登录密码保存（通常是密码短于 {CRYPTO_PASSWORD_MIN} 位）。
+                换设备时得用恢复码，或者先把登录密码改成 {CRYPTO_PASSWORD_MIN} 位以上（改完会自动重新保存）。</>}
         </p>
       )}
 
@@ -148,21 +161,47 @@ export default function E2eKeySection() {
       {status === 'needs-restore' && (
         <form className="profile-form" onSubmit={handleRestore}>
           <label>这台设备还没有钥匙</label>
-          <p className="e2e-hint">
-            你之前在别的设备上开过加密。要读那些加密消息，请输入当时的<strong>恢复码</strong>
-            （形如 <code>XXXXX-XXXXX-XXXXX-XXXXX</code>）。
-          </p>
-          <input
-            type="text"
-            placeholder="恢复码"
-            value={inputCode}
-            onChange={(e) => setInputCode(e.target.value)}
-            autoComplete="off"
-            spellCheck={false}
-          />
-          <button type="submit" disabled={busy || !inputCode.trim()}>
-            {busy ? '恢复中…' : '用恢复码恢复'}
-          </button>
+          {!useCode ? (
+            <>
+              <p className="e2e-hint">
+                你之前在别的设备上开过加密。现在只要输入<strong>登录密码</strong>就能把这台设备接上
+                （钥匙跟着账号走，不用再抄恢复码）。
+              </p>
+              <input
+                type="password"
+                placeholder="登录密码"
+                value={inputPassword}
+                onChange={(e) => setInputPassword(e.target.value)}
+                autoComplete="current-password"
+              />
+              <button type="submit" disabled={busy || !inputPassword}>
+                {busy ? '恢复中…' : '用密码恢复'}
+              </button>
+              <button type="button" className="e2e-link" onClick={() => setUseCode(true)}>
+                密码不行？改用恢复码
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="e2e-hint">
+                请输入当时的<strong>恢复码</strong>（形如 <code>XXXXX-XXXXX-XXXXX-XXXXX</code>）。
+              </p>
+              <input
+                type="text"
+                placeholder="恢复码"
+                value={inputCode}
+                onChange={(e) => setInputCode(e.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <button type="submit" disabled={busy || !inputCode.trim()}>
+                {busy ? '恢复中…' : '用恢复码恢复'}
+              </button>
+              <button type="button" className="e2e-link" onClick={() => setUseCode(false)}>
+                改回用密码
+              </button>
+            </>
+          )}
         </form>
       )}
 

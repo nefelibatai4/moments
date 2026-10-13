@@ -125,8 +125,10 @@ export default function Profile() {
     e.preventDefault()
     setError(null)
     setMessage(null)
-    if (newPassword.length < 6) {
-      setError('密码至少 6 位')
+    // 加密功能要求 ≥10 位（2026-10-12 使用者选定）：密码同时用来包住加密钥匙，
+    // 太短的话"拿到数据库的人离线爆破"这条路就太便宜了
+    if (newPassword.length < 10) {
+      setError('密码至少 10 位（它同时用来保护加密钥匙）')
       return
     }
     if (newPassword !== confirmPassword) {
@@ -135,8 +137,16 @@ export default function Profile() {
     }
     setChangingPassword(true)
     const { error } = await supabase.auth.updateUser({ password: newPassword })
-    if (error) setError(error.message)
-    else {
+    if (error) {
+      setError(error.message)
+    } else {
+      // 换了密码：立刻用新密码把加密钥匙重包一份（否则新设备用新密码解不开）
+      try {
+        const { syncIdentityWithPassword } = await import('../lib/e2e')
+        await syncIdentityWithPassword(session.user.id, newPassword)
+      } catch (err) {
+        console.warn('[e2e] 重包钥匙失败:', err?.message)
+      }
       setMessage('密码已修改')
       setNewPassword('')
       setConfirmPassword('')
@@ -212,17 +222,17 @@ export default function Profile() {
         <label>修改密码</label>
         <input
           type="password"
-          placeholder="新密码"
+          placeholder="新密码（至少 10 位）"
           value={newPassword}
           onChange={(e) => setNewPassword(e.target.value)}
-          minLength={6}
+          minLength={10}
         />
         <input
           type="password"
           placeholder="确认新密码"
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
-          minLength={6}
+          minLength={10}
         />
         <button type="submit" disabled={changingPassword}>
           {changingPassword ? '修改中…' : '修改密码'}

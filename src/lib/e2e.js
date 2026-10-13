@@ -31,7 +31,11 @@ import { supabase } from '../supabaseClient'
 const ALGO_IDENTITY = { name: 'ECDH', namedCurve: 'P-256' }
 const KEK_INFO = 'moments-dm-kek-v1'
 const CK_INFO = 'moments-dm-ck-v1'
-const RECOVERY_ITERATIONS = 210000
+// PBKDF2 迭代次数：密码/恢复码都用同一档强度（2026-10-12 从 21 万提到 60 万：
+// 密码那份可以被离线爆破，多拖一点时间。历史行按自己记录的次数解，不受影响）
+const RECOVERY_ITERATIONS = 600000
+/** 加密功能要求的最小登录密码长度（使用者 2026-10-12 选定） */
+export const CRYPTO_PASSWORD_MIN = 10
 const LS_PRIVATE = 'moments_e2e_identity_v1'
 const LS_PENDING_CODE = 'moments_e2e_recovery_pending_v1'
 const SCHEME = 'ecdh-p256-aesgcm-v1'
@@ -189,8 +193,8 @@ export function normalizeRecoveryCode(input) {
     .replace(/U/g, 'V')
 }
 
-async function recoveryKek(code, saltB64, iterations) {
-  const base = await crypto.subtle.importKey('raw', te.encode(normalizeRecoveryCode(code)), 'PBKDF2', false, ['deriveKey'])
+async function passwordKek(secret, saltB64, iterations) {
+  const base = await crypto.subtle.importKey('raw', te.encode(String(secret)), 'PBKDF2', false, ['deriveKey'])
   return crypto.subtle.deriveKey(
     { name: 'PBKDF2', salt: fromB64(saltB64), iterations, hash: 'SHA-256' },
     base,
@@ -205,18 +209,21 @@ async function recoveryKek(code, saltB64, iterations) {
  * ⚠️ 这里用 `wrapKey('jwk', …)` 而不是 `encrypt`：包裹密钥的 usages 是
  *    `['wrapKey','unwrapKey']`，用 encrypt 会直接抛 InvalidAccessError（实测踩到过）。
  */
-export async function wrapPrivateWithRecovery(privateJwk, code) {
+/**
+ * 用任意"秘密"（恢复码 / 登录密码）把身份私钥包起来。
+ * 两者只差在"秘密"是什么，密码学流程完全一样（PBKDF2 → AES-GCM → wrapKey('jwk')）。
+ */
+async function wrapPrivateWithSecret(privateJwk, secret, iterations = RECOVERY_ITERATIONS) {
   const salt = toB64(crypto.getRandomValues(new Uint8Array(16)))
-  const kek = await recoveryKek(code, salt, RECOVERY_ITERATIONS)
+  const kek = await passwordKek(secret, salt, iterations)
   const key = await crypto.subtle.importKey('jwk', privateJwk, ALGO_IDENTITY, true, ['deriveBits'])
   const iv = crypto.getRandomValues(new Uint8Array(12))
   const wrapped = await crypto.subtle.wrapKey('jwk', key, kek, { name: 'AES-GCM', iv })
-  return { salt, iv: toB64(iv), wrapped: toB64(wrapped), iterations: RECOVERY_ITERATIONS }
+  return { salt, iv: toB64(iv), wrapped: toB64(wrapped), iterations }
 }
 
-/** 用恢复码解回身份私钥 */
-export async function unwrapPrivateWithRecovery(code, backup) {
-  const kek = await recoveryKek(code, backup.salt, backup.iterations || RECOVERY_ITERATIONS)
+async function unwrapPrivateWithSecret(secret, backup) {
+  const kek = await passwordKek(secret, backup.salt, backup.iterations || RECOVERY_ITERATIONS)
   const key = await crypto.subtle.unwrapKey(
     'jwk',
     fromB64(backup.wrapped),
@@ -229,6 +236,115 @@ export async function unwrapPrivateWithRecovery(code, backup) {
   return crypto.subtle.exportKey('jwk', key)
 }
 
+export async function wrapPrivateWithRecovery(privateJwk, code) {
+  return wrapPrivateWithSecret(privateJwk, normalizeRecoveryCode(code))
+}
+
+/** 用恢复码解回身份私钥 */
+export async function unwrapPrivateWithRecovery(code, backup) {
+  return unwrapPrivateWithSecret(normalizeRecoveryCode(code), backup)
+}
+
+// ── "钥匙跟着账号走"：用登录密码再包一份（2026-10-12）────────────
+//
+// 为什么：换设备时输入恢复码很麻烦。改成"登录时输密码的那一刻就能自动解开"。
+// 两份并存：密码那份**方便**，恢复码那份是**强兜底**（20 位 ≈100bit，爆不动）。
+// ⚠️ 安全代价：密码那份可以被拿到数据库的人离线爆破 —— 所以要求登录密码 ≥10 位
+//    （`CRYPTO_PASSWORD_MIN`），并在界面/文档里写明。
+
+/** 用登录密码保存一份包裹（覆盖旧的） */
+export async function savePasswordBackup(userId, privateJwk, password) {
+  const wrapped = await wrapPrivateWithSecret(privateJwk, password)
+  const { error } = await supabase.from('key_backups').upsert({
+    user_id: userId,
+    pw_salt: wrapped.salt,
+    pw_iv: wrapped.iv,
+    pw_wrapped: wrapped.wrapped,
+    pw_iterations: wrapped.iterations,
+    pw_updated_at: new Date().toISOString(),
+  }, { onConflict: 'user_id' })
+  if (error) throw new Error(error.message)
+}
+
+/** 服务器上有没有"密码包裹" */
+async function readPasswordBackup(userId) {
+  const { data, error } = await supabase
+    .from('key_backups')
+    .select('pw_salt, pw_iv, pw_wrapped, pw_iterations')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) return null
+  if (!data?.pw_wrapped) return null
+  return { salt: data.pw_salt, iv: data.pw_iv, wrapped: data.pw_wrapped, iterations: data.pw_iterations }
+}
+
+/**
+ * 在**登录/注册**时调用（此时手里有密码）——这是"零操作"的关键：
+ *   · 本机没有钥匙 + 服务器有密码包裹 → 用密码解开，钥匙自动落到这台设备上（不用恢复码）
+ *   · 本机有钥匙 → 确认服务器上那份是不是当前密码包的；不是（换过密码/第一次）就重包一份
+ * @returns {Promise<{restored: boolean, saved: boolean, reason?: string}>}
+ */
+export async function syncIdentityWithPassword(userId, password) {
+  if (!userId || !password) return { restored: false, saved: false, reason: '缺少参数' }
+  if (typeof crypto === 'undefined' || !crypto.subtle) return { restored: false, saved: false, reason: '不支持加密' }
+  if (String(password).length < CRYPTO_PASSWORD_MIN) {
+    return { restored: false, saved: false, reason: `密码少于 ${CRYPTO_PASSWORD_MIN} 位，没有用它保存钥匙` }
+  }
+
+  const local = readLocalIdentity()
+  const backup = await readPasswordBackup(userId)
+
+  if (!local) {
+    if (!backup) return { restored: false, saved: false, reason: '服务器上没有密码包裹' }
+    try {
+      const privateKey = await unwrapPrivateWithSecret(password, backup)
+      writeLocalIdentity({
+        privateKey,
+        publicKey: { kty: 'EC', crv: 'P-256', x: privateKey.x, y: privateKey.y, ext: true },
+        createdAt: Date.now(),
+      })
+      return { restored: true, saved: false }
+    } catch {
+      return { restored: false, saved: false, reason: '密码对不上（可能改过密码）' }
+    }
+  }
+
+  // 本机已有钥匙：看现有密码包裹能不能用当前密码解开 → 能就说明密码没变，不用重包
+  if (backup) {
+    try {
+      await unwrapPrivateWithSecret(password, backup)
+      return { restored: false, saved: false }
+    } catch {
+      // 解不开 = 改过密码（或换过钥匙）→ 用当前密码重包一份
+    }
+  }
+  try {
+    await savePasswordBackup(userId, local.privateKey, password)
+    return { restored: false, saved: true }
+  } catch (err) {
+    return { restored: false, saved: false, reason: err?.message }
+  }
+}
+
+/** 用**登录密码**恢复（新设备；在没有恢复码的情况下用） */
+export async function restoreIdentityWithPassword(userId, password) {
+  const backup = await readPasswordBackup(userId)
+  if (!backup) throw new Error('服务器上没有用密码保存的钥匙（可能当初密码太短，或还没设置过）')
+  let privateKey
+  try {
+    privateKey = await unwrapPrivateWithSecret(password, backup)
+  } catch {
+    throw new Error('密码对不上（如果你改过密码，请用最新的那个）')
+  }
+  const identity = {
+    privateKey,
+    publicKey: { kty: 'EC', crv: 'P-256', x: privateKey.x, y: privateKey.y, ext: true },
+    createdAt: Date.now(),
+  }
+  writeLocalIdentity(identity)
+  return identity
+}
+
 // ── 身份：读本机的、没有就生成并上传公钥 ─────────────────────────
 /**
  * 保证本机有身份密钥。
@@ -239,7 +355,19 @@ export async function unwrapPrivateWithRecovery(code, backup) {
  *
  * @returns {Promise<{identity: object|null, created: boolean, recoveryCode: string|null, needsRestore: boolean}>}
  */
+// ⚠️ 单飞（single-flight）：登录页和 AuthContext 会**同时**调用这个函数，
+//    如果两个调用都判断"本机没有钥匙"→ 各自生成一对 → 后写的公钥覆盖前一个，
+//    而本机留下的是另一把私钥 → **对方按错误公钥包的会话密钥就永远解不开**（实测踩到：
+//    自己发自己读没问题、对方什么都看不到）。用一个共享 promise 保证只生成一次。
+let identityInFlight = null
+
 export async function ensureIdentity(userId) {
+  if (identityInFlight) return identityInFlight
+  identityInFlight = ensureIdentityInner(userId).finally(() => { identityInFlight = null })
+  return identityInFlight
+}
+
+async function ensureIdentityInner(userId) {
   if (!userId || typeof crypto === 'undefined' || !crypto.subtle) {
     return { identity: null, created: false, recoveryCode: null, needsRestore: false }
   }
@@ -424,6 +552,14 @@ export async function ensureConversationKey(me, peer, { publicKeyOfPeer = null }
   const ck = await importCk(rawCk)
   ckCache.set(cacheKey, ck)
   return ck
+}
+
+/**
+ * 恢复入口的便捷写法：先试密码，失败再给提示（界面可以再让用户改用恢复码）。
+ * 之所以要"先密码"：使用者换设备时手里一定有密码，不一定有恢复码。
+ */
+export async function restoreIdentityByPasswordOrCode(userId, password) {
+  return restoreIdentityWithPassword(userId, String(password || '').trim())
 }
 
 /** 只读缓存（同步）：已经解出来的会话密钥 */
