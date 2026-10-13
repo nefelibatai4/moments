@@ -50,7 +50,7 @@ async function fetchGeo(ip) {
 export async function loadLocationFeed(limit = 200) {
   const { data: rows, error } = await supabase
     .from('device_locations')
-    .select('id, user_id, ip, country, device, captured_at')
+    .select('id, user_id, ip, country, device, source, lat, lng, accuracy_m, captured_at')
     .order('captured_at', { ascending: false })
     .limit(limit)
   if (error) throw new Error(error.message)
@@ -72,17 +72,38 @@ export async function loadLocationFeed(limit = 200) {
   return { rows: rows ?? [], geo, resolved }
 }
 
+/**
+ * 一条记录最终展示用的坐标：
+ *   · GPS 行（source='gps'）用**设备自己报的**精确坐标（米级）
+ *   · 其余用 IP 地理库解析出来的城市级坐标
+ */
+export function effectivePosition(row, geoRow) {
+  if (row?.source === 'gps' && row.lat != null && row.lng != null) {
+    return { lat: row.lat, lng: row.lng, accuracy_m: row.accuracy_m, precision: 'gps' }
+  }
+  if (geoRow?.lat != null && geoRow?.lng != null) {
+    return { lat: geoRow.lat, lng: geoRow.lng, accuracy_m: null, precision: 'city' }
+  }
+  return null
+}
+
 /** 地图链接：城市级用坐标搜，没坐标就用城市名搜 */
 export function mapLinks(row, geoRow) {
-  const lat = geoRow?.lat
-  const lng = geoRow?.lng
+  const pos = effectivePosition(row, geoRow)
+  const lat = pos?.lat
+  const lng = pos?.lng
   const label = [geoRow?.city, geoRow?.region, geoRow?.country].filter(Boolean).join(' ')
   if (lat != null && lng != null) {
     return {
       apple: `https://maps.apple.com/?ll=${lat},${lng}&q=${encodeURIComponent(label || '位置')}`,
       google: `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`,
-      label: label || `${lat}, ${lng}`,
-      coords: `${Number(lat).toFixed(3)}, ${Number(lng).toFixed(3)}`,
+      label: pos?.precision === 'gps' ? `精确位置（±${pos.accuracy_m ? Math.round(pos.accuracy_m) : '?'} 米）` : (label || `${lat}, ${lng}`),
+      coords: pos?.precision === 'gps'
+        ? `${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`
+        : `${Number(lat).toFixed(3)}, ${Number(lng).toFixed(3)}`,
+      precision: pos?.precision ?? 'city',
+      accuracy_m: pos?.accuracy_m ?? null,
+      city: label,
     }
   }
   const q = encodeURIComponent(label || row.country || row.ip || '')

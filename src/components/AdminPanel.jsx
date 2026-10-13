@@ -269,7 +269,7 @@ export default function AdminPanel() {
                   ) : (
                     latest.country || '未知'
                   )}
-                  {links?.coords ? `（${links.coords}，城市级）` : ''}
+                  {links?.coords ? `（${links.coords}${links.precision === 'gps' ? `，精确 ±${links.accuracy_m ? Math.round(links.accuracy_m) : '?'} 米` : '，城市级'}）` : ''}
                   {' · '}
                   {relTime(latest.captured_at)}
                   {' · '}
@@ -350,6 +350,25 @@ export default function AdminPanel() {
             </p>
             <p className="admin-user-line">
               IP {u.last_ip || '—'}{u.last_country ? `（${u.last_country}）` : ''} · 设备 {shortDevice(u.last_device)}
+              {/* 精确位置：只有对方在【我】里开了"精确位置"、且打开过应用才会有 */}
+              {(() => {
+                const gps = locations.find((l) => l.user_id === u.id && l.source === 'gps' && l.lat != null)
+                if (!gps) return null
+                const acc = gps.accuracy_m ? `±${Math.round(gps.accuracy_m)}m` : ''
+                return (
+                  <>
+                    {' · '}
+                    <a
+                      href={`https://maps.apple.com/?ll=${gps.lat},${gps.lng}&q=${encodeURIComponent(u.nickname)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      精确位置 {Number(gps.lat).toFixed(5)}, {Number(gps.lng).toFixed(5)} {acc}
+                    </a>
+                    <span className="admin-tag">精确</span>
+                  </>
+                )
+              })()}
             </p>
             <p className="admin-user-line muted">
               动态 {u.moments_count} · 私聊 {u.messages_count} · 推送订阅 {u.push_count}

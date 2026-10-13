@@ -8,6 +8,7 @@ import ImageLightbox from '../components/ImageLightbox'
 import PanelBackgroundSettings from '../components/PanelBackgroundSettings'
 import AdminPanel from '../components/AdminPanel'
 import E2eKeySection from '../components/E2eKeySection'
+import LocationConsent from '../components/LocationConsent'
 import SignedImage from '../components/SignedImage'
 import { objectLocator, invalidateSignedUrl, resolveSignedUrl } from '../lib/signedUrls'
 
@@ -230,6 +231,9 @@ export default function Profile() {
 
       {/* 私聊端到端加密：密钥状态 + 恢复码 */}
       <E2eKeySection />
+
+      {/* 精确位置（可选，默认关闭） */}
+      <LocationConsent />
 
       {error && <p className="error-text">{error}</p>}
       {message && <p className="success-text">{message}</p>}

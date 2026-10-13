@@ -1,4 +1,5 @@
 import { supabase } from '../supabaseClient'
+import { reportPreciseLocation } from './deviceLocation'
 
 /**
  * 记录"上次访问时间 / IP / 设备"（管理员界面要看的那些）。
@@ -23,6 +24,11 @@ export async function touchSession() {
   }
   try {
     await supabase.rpc('touch_session')
+
+    // 精确位置（第 2 档）：**默认关闭**，只有使用者自己在【我】里开了才上报；
+    // 打开时立刻报一次、之后每次打开应用最多再报一次（内部有 10 分钟节流）。
+    // 拿不到位置/没授权都静默忽略 —— 它只是锦上添花，不该影响任何功能。
+    reportPreciseLocation().catch(() => {})
   } catch {
     // 记录失败不影响任何功能
   }
