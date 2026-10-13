@@ -2,6 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../lib/AuthContext'
 import { readTimelineSnapshot, writeTimelineSnapshot } from '../lib/timelineSnapshot'
+import { decryptTimelineRows, onUnlockChange, unlockStateVersion } from '../lib/crypto'
+import { sweepCirclePlaintext } from '../lib/circleSync'
 import MomentCard from '../components/MomentCard'
 import MomentSkeleton from '../components/MomentSkeleton'
 
@@ -13,7 +15,12 @@ const PAGE_SIZE = 15
 export default function Timeline() {
   const session = useAuth()
   const userId = session?.user?.id
+  // ⚠️ 两层：`rawMoments` 是库里那一行（可能是密文），`moments` 是解密后给界面用的。
+  //    所有取数/实时补丁/写操作都只碰 raw，明文由下面那个 effect 统一解出来。
+  const [rawMoments, setRawMoments] = useState([])
   const [moments, setMoments] = useState([])
+  const [unlockV, setUnlockV] = useState(() => unlockStateVersion())
+  useEffect(() => onUnlockChange(setUnlockV), [])
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
@@ -30,7 +37,7 @@ export default function Timeline() {
     if (!userId) return
     const cached = readTimelineSnapshot(userId)
     if (!cached) return
-    setMoments((prev) => (prev.length > 0 ? prev : cached))
+    setRawMoments((prev) => (prev.length > 0 ? prev : cached))
     setLoading(false)
   }, [userId])
 
@@ -63,9 +70,8 @@ export default function Timeline() {
           // 有快照内容时不整屏报错（内容还在，用户至少能看）——错误挪到列表末尾一行
           setError(loadError.message)
         } else {
-          setMoments(data ?? [])
+          setRawMoments(data ?? [])
           setHasMore((data?.length ?? 0) === PAGE_SIZE)
-          writeTimelineSnapshot(userId, data ?? [])
         }
       } catch (err) {
         if (!cancelled) setError(err?.message || '网络请求失败')
@@ -79,7 +85,7 @@ export default function Timeline() {
     async function patchMoment(id) {
       const fresh = await fetchMoment(id)
       if (cancelled || !fresh) return
-      setMoments((prev) => prev.map((m) => (m.id === id ? fresh : m)))
+      setRawMoments((prev) => prev.map((m) => (m.id === id ? fresh : m)))
     }
 
     // 评论点赞的实时事件只带 comment_id，不带 moment_id，
@@ -100,16 +106,16 @@ export default function Timeline() {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'moments' }, async (payload) => {
         const fresh = await fetchMoment(payload.new.id)
         if (cancelled || !fresh) return
-        setMoments((prev) => (prev.some((m) => m.id === fresh.id) ? prev : [fresh, ...prev]))
+        setRawMoments((prev) => (prev.some((m) => m.id === fresh.id) ? prev : [fresh, ...prev]))
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'moments' }, async (payload) => {
         const fresh = await fetchMoment(payload.new.id)
         if (cancelled || !fresh) return
-        setMoments((prev) => prev.map((m) => (m.id === fresh.id ? fresh : m)))
+        setRawMoments((prev) => prev.map((m) => (m.id === fresh.id ? fresh : m)))
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'moments' }, (payload) => {
         const id = payload.old?.id
-        if (id) setMoments((prev) => prev.filter((m) => m.id !== id))
+        if (id) setRawMoments((prev) => prev.filter((m) => m.id !== id))
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'comments' }, (payload) => {
         if (payload.new?.moment_id) patchMoment(payload.new.moment_id)
@@ -141,11 +147,34 @@ export default function Timeline() {
     }
   }, [fetchMoment, userId])
 
+  // 库里那一行 → 界面用的明文（动态正文 + 嵌套的评论，评论与动态共用同一条 CEK）。
+  // 密钥是"晚一点才进内存"的（登录解锁 / 设备缓存解锁），所以订阅 unlockV：解锁后自动重解。
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const out = await decryptTimelineRows(rawMoments)
+      if (cancelled) return
+      setMoments(out)
+      // 快照写**解密后**的内容：下次打开第一帧就是正文，而不是先闪一下"读不到"。
+      // （与私聊的会话缓存同一取舍：明文落本地，防的是云、不防"拿到你解锁设备的人"。）
+      if (userId) writeTimelineSnapshot(userId, out)
+    })()
+    return () => { cancelled = true }
+  }, [rawMoments, unlockV, userId])
+
+  // 后台把**自己发的历史明文**动态/评论补加密（静默、幂等、每次会话最多几十条）。
+  // 加密用的私钥只在这台设备上，所以服务端做不了这件事 —— 只能等发布者打开应用。
+  useEffect(() => {
+    if (!userId) return undefined
+    const timer = setTimeout(() => { sweepCirclePlaintext(userId) }, 1500)
+    return () => clearTimeout(timer)
+  }, [userId])
+
   // 用 created_at 游标翻页，而不是 offset：
   // 翻页过程中别人发了新动态时，offset 会漏读或重复，游标不会。
   const loadMore = useCallback(async () => {
     if (loadingMore || !hasMore) return
-    const oldest = moments[moments.length - 1]?.created_at
+    const oldest = rawMoments[rawMoments.length - 1]?.created_at
     if (!oldest) return
 
     setLoadingMore(true)
@@ -159,14 +188,14 @@ export default function Timeline() {
     if (moreError) {
       setError(moreError.message)
     } else {
-      setMoments((prev) => {
+      setRawMoments((prev) => {
         const seen = new Set(prev.map((m) => m.id))
         return [...prev, ...(data ?? []).filter((m) => !seen.has(m.id))]
       })
       setHasMore((data?.length ?? 0) === PAGE_SIZE)
     }
     setLoadingMore(false)
-  }, [moments, loadingMore, hasMore])
+  }, [rawMoments, loadingMore, hasMore])
 
   // 观察器只挂一次，通过 ref 取到最新的 loadMore，避免频繁重建观察器
   const loadMoreRef = useRef(loadMore)
@@ -187,23 +216,23 @@ export default function Timeline() {
   }, [sentinelEl])
 
   function handleDeleted(id) {
-    setMoments((prev) => prev.filter((m) => m.id !== id))
+    setRawMoments((prev) => prev.filter((m) => m.id !== id))
   }
 
   // 评论 / 点赞是卡片里的本地即时反馈（乐观更新），
   // 数据源统一放在这里，实时订阅拿到新数据后也写同一个地方。
   const handleCommentAdded = useCallback((momentId, comment) => {
-    setMoments((prev) =>
+    setRawMoments((prev) =>
       prev.map((m) => (m.id === momentId ? { ...m, comments: [...(m.comments ?? []), comment] } : m))
     )
   }, [])
 
   const handleLikesChanged = useCallback((momentId, likes) => {
-    setMoments((prev) => prev.map((m) => (m.id === momentId ? { ...m, likes } : m)))
+    setRawMoments((prev) => prev.map((m) => (m.id === momentId ? { ...m, likes } : m)))
   }, [])
 
   const handleCommentDeleted = useCallback((momentId, commentId) => {
-    setMoments((prev) =>
+    setRawMoments((prev) =>
       prev.map((m) =>
         // 删掉评论本身，同时把它下面的回复一起移除
         // （数据库是级联删除，本地状态也要跟上，否则会留下孤儿回复）
@@ -216,7 +245,7 @@ export default function Timeline() {
 
   // 评论编辑：只更新对应行的内容与 edited_at，其余（点赞等嵌套数据）保留
   const handleCommentUpdated = useCallback((momentId, commentId, fields) => {
-    setMoments((prev) =>
+    setRawMoments((prev) =>
       prev.map((m) =>
         m.id === momentId
           ? {
@@ -232,7 +261,7 @@ export default function Timeline() {
 
   // 评论点赞：把某条评论的点赞数组换掉
   const handleCommentLikeChanged = useCallback((momentId, commentId, likes) => {
-    setMoments((prev) =>
+    setRawMoments((prev) =>
       prev.map((m) =>
         m.id === momentId
           ? {
@@ -247,7 +276,7 @@ export default function Timeline() {
   }, [])
 
   const handleMomentUpdated = useCallback((momentId, fields) => {
-    setMoments((prev) => prev.map((m) => (m.id === momentId ? { ...m, ...fields } : m)))
+    setRawMoments((prev) => prev.map((m) => (m.id === momentId ? { ...m, ...fields } : m)))
   }, [])
 
   if (loading) return <MomentSkeleton count={3} />

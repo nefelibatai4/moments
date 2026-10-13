@@ -6,6 +6,7 @@ import { safeStorageKey } from '../lib/sanitizeFilename'
 import { compressImage } from '../lib/compressImage'
 import { CARD_COLORS } from '../lib/cardColors'
 import { objectLocator } from '../lib/signedUrls'
+import { circleReady, createMomentKey, encryptCircleText } from '../lib/crypto'
 
 export default function Publish() {
   const session = useAuth()
@@ -67,8 +68,14 @@ export default function Publish() {
       }
       setUploadHint(null)
 
+      // ⚠️ 顺序是刻意的：**先按明文入库，成功了再换成密文**。
+      //    中间任何一步失败（比如给对方包钥匙失败）都不会让内容变成"谁也看不懂"，
+      //    顶多这条动态暂时还是明文（下次打开会自动补加密，见 lib/circleSync.js）。
+      const text = content.trim() || null
+      const momentId = crypto.randomUUID()
       const { error: insertError } = await supabase.from('moments').insert({
-        content: content.trim() || null,
+        id: momentId,
+        content: text,
         images: imageUrls.length > 0 ? imageUrls : null,
         latitude: location?.latitude ?? null,
         longitude: location?.longitude ?? null,
@@ -78,6 +85,23 @@ export default function Publish() {
         card_color: cardColor === 'default' ? null : cardColor,
       })
       if (insertError) throw insertError
+
+      // 文字端到端加密（阶段 2）：给每位成员包一份 CEK，然后把正文换成密文。
+      // 圈子里只要还有成员的公钥世代对不上，就**整条不加密**（有人解不开 = 有人看不到）。
+      if (text) {
+        const { ready, members } = await circleReady()
+        if (ready) {
+          const cek = await createMomentKey(momentId, members)
+          const sealed = cek ? await encryptCircleText(cek, text) : null
+          if (sealed) {
+            const { error: sealError } = await supabase
+              .from('moments')
+              .update({ ...sealed, content: null })
+              .eq('id', momentId)
+            if (sealError) console.warn('[circle] 动态没能加密，将保持明文:', sealError.message)
+          }
+        }
+      }
 
       navigate('/')
     } catch (err) {

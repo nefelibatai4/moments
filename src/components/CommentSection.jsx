@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import SignedImage from './SignedImage'
+import { encryptCircleText, momentKey } from '../lib/crypto'
 
 // 评论的显示名：nickname 有值说明是匿名评论，优先用它
 function commentName(c) {
@@ -10,6 +11,14 @@ function commentName(c) {
 // 编辑窗口：2 分钟内（与私信编辑/撤回一致）。
 // 服务端 protect_comment_fields() 里有同一份强制，这里只控制入口出不出来。
 const EDIT_WINDOW_MS = 2 * 60 * 1000
+
+/** 评论与它所属的动态共用同一条 CEK；拿不到钥匙就退回明文（宁可暂时不加密，也不能发不出去） */
+async function sealComment(momentId, momentOwnerId, text) {
+  const cek = await momentKey(momentId, momentOwnerId)
+  if (!cek) return null
+  return encryptCircleText(cek, text)
+}
+
 
 /**
  * 把扁平评论整理成「顶层评论 + 它下面的回复」。
@@ -119,9 +128,11 @@ export default function CommentSection({
     setSubmitting(true)
     setError(null)
 
+    const text = content.trim()
+    const sealed = await sealComment(momentId, momentOwnerId, text)
     const { data, error: insertError } = await supabase
       .from('comments')
-      .insert({ moment_id: momentId, user_id: me, content: content.trim() })
+      .insert({ moment_id: momentId, user_id: me, ...(sealed ? { ...sealed, content: null } : { content: text }) })
       .select('*, profiles(nickname, avatar_url)')
       .single()
 
@@ -143,13 +154,15 @@ export default function CommentSection({
     setError(null)
 
     // 匿名只体现在显示名上：仍记录真实 user_id，这样作者本人能删/能编辑自己的匿名评论
+    const anonText = anonContent.trim()
+    const anonSealed = await sealComment(momentId, momentOwnerId, anonText)
     const { data, error: insertError } = await supabase
       .from('comments')
       .insert({
         moment_id: momentId,
         user_id: me,
         nickname: anonNickname.trim(),
-        content: anonContent.trim(),
+        ...(anonSealed ? { ...anonSealed, content: null } : { content: anonText }),
       })
       .select('*, profiles(nickname, avatar_url)')
       .single()
@@ -172,13 +185,15 @@ export default function CommentSection({
     setSubmitting(true)
     setError(null)
 
+    const replyText = replyContent.trim()
+    const replySealed = await sealComment(momentId, momentOwnerId, replyText)
     const { data, error: insertError } = await supabase
       .from('comments')
       .insert({
         moment_id: momentId,
         user_id: me,
         parent_id: replyTo.id,
-        content: replyContent.trim(),
+        ...(replySealed ? { ...replySealed, content: null } : { content: replyText }),
       })
       .select('*, profiles(nickname, avatar_url)')
       .single()
@@ -219,9 +234,11 @@ export default function CommentSection({
     setError(null)
     // .select() 不能省：被 RLS / 触发器拦下的写不报错、只影响 0 行（PITFALLS #32）。
     // edited_at 由服务端触发器写，这里不传（传了也会被覆盖）。
+    const editSealed = await sealComment(momentId, momentOwnerId, next)
+    const editPatch = editSealed ? { ...editSealed, content: null } : { content: next }
     const { data, error: updateError } = await supabase
       .from('comments')
-      .update({ content: next })
+      .update(editPatch)
       .eq('id', editing.id)
       .select('id')
     if (updateError) {
@@ -230,7 +247,7 @@ export default function CommentSection({
     } else if (!data || data.length === 0) {
       setError('编辑没有生效（可能已超过 2 分钟窗口，或你不是评论作者）')
     } else {
-      onCommentUpdated?.(editing.id, { content: next, edited_at: new Date().toISOString() })
+      onCommentUpdated?.(editing.id, { ...editPatch, edited_at: new Date().toISOString() })
       setEditing(null)
     }
   }
@@ -334,7 +351,7 @@ export default function CommentSection({
             </span>
           ) : (
             <>
-              {comment.content}
+              {comment.content ?? (comment.ciphertext ? '🔒 读不到' : '')}
               {comment.edited_at && <span className="comment-edited-tag">已编辑</span>}
             </>
           )}

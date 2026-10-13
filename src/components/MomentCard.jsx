@@ -9,6 +9,7 @@ import { useAuth } from '../lib/AuthContext'
 import { supabase } from '../supabaseClient'
 import { storagePathFromUrl, useSignedUrls } from '../lib/signedUrls'
 import SignedImage from './SignedImage'
+import { encryptCircleText, momentKey } from '../lib/crypto'
 
 /**
  * 评论和点赞的数据源在 Timeline（单一数据源），这样实时订阅拿到新数据后
@@ -148,23 +149,28 @@ export default function MomentCard({
     setDeleteError(null)
     try {
       const next = draft.trim()
+      const patch = { card_color: draftColor === 'default' ? null : draftColor, content: next || null }
+      // 这条动态已经是密文了 → 编辑后的文字也用同一条 CEK 加密（否则一编辑就退回明文）
+      if (next && (moment.ciphertext || moment.scheme)) {
+        const cek = await momentKey(moment.id, moment.user_id)
+        const sealed = cek ? await encryptCircleText(cek, next) : null
+        if (sealed) Object.assign(patch, sealed, { content: null })
+        else console.warn('[circle] 编辑后的动态没能加密，将保持明文')
+      }
       // 必须带 .select() 才知道"到底改了几行"：
       // 被 RLS 拦下的 update **不会返回错误**，只是影响 0 行。不加这层判断，
       // 界面会显示保存成功、实际库里一个字都没变。
       const { data, error } = await supabase
         .from('moments')
         // 颜色跟着一起改（默认色 = null，与历史数据一致）
-        .update({ content: next || null, card_color: draftColor === 'default' ? null : draftColor })
+        .update(patch)
         .eq('id', moment.id)
         .select('id')
       if (error) throw error
       if (!data || data.length === 0) {
         throw new Error('保存失败：这条动态不存在，或你没有修改权限')
       }
-      onMomentUpdated?.(moment.id, {
-        content: next || null,
-        card_color: draftColor === 'default' ? null : draftColor,
-      })
+      onMomentUpdated?.(moment.id, patch)
       setEditing(false)
     } catch (err) {
       setDeleteError(err.message)
@@ -274,9 +280,11 @@ export default function MomentCard({
             </button>
           </div>
         </form>
-      ) : (
-        moment.content && <p className="moment-content">{moment.content}</p>
-      )}
+      ) : moment.content ? (
+        <p className="moment-content">{moment.content}</p>
+      ) : moment.ciphertext ? (
+        <p className="moment-content moment-locked">🔒 这条动态在这台设备上读不到</p>
+      ) : null}
 
       {allImages.length > 0 && (
         <div className={`moment-images ${allImages.length === 1 ? 'single' : 'grid'}`}>

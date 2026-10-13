@@ -67,6 +67,8 @@ export function lockCrypto() {
   currentUserId = null
   conversationKeys.clear()
   noPeerKeyUntil.clear()
+  pubCache.clear()
+  momentKeys.clear()
   bumpUnlock()
 }
 export function unlockedDek() {
@@ -355,20 +357,34 @@ export const DM_SCHEME = 'v2-dm'
  */
 export const KEY_SCHEME = 'v2'
 const conversationKeys = new Map()   // "小id|大id" → CryptoKey
-const noPeerKeyUntil = new Map()     // "小id|大id" → 时间戳：对方还没有可用公钥（短时负缓存）
+const noPeerKeyUntil = new Map()     // 用户 id → 时间戳：这个人还没有可用公钥（短时负缓存）
+const pubCache = new Map()           // 用户 id → { jwk, at }：公钥读取缓存（私聊/动态都要用）
 
 function pairTag(a, b) {
   return [String(a), String(b)].sort().join('|')
 }
 
+/**
+ * 取某个人的**可用公钥**（"有公钥"且"世代对得上"才算可用）。
+ * 私聊与动态都走这里，所以缓存放在一层：5 分钟正缓存 + 30 秒负缓存。
+ * ⚠️ 公钥是从服务器读的 → 等于信任服务器分发公钥（已知边界，见上）。
+ */
 async function peerKeyInfo(peerId) {
+  const hit = pubCache.get(peerId)
+  if (hit && Date.now() - hit.at < 5 * 60 * 1000) return hit.jwk
+  if ((noPeerKeyUntil.get(peerId) ?? 0) > Date.now()) return null
   const { data, error } = await supabase
     .from('profiles')
     .select('public_key, key_scheme')
     .eq('id', peerId)
     .maybeSingle()
   if (error) throw new Error(error.message)
-  if (!data?.public_key || data.key_scheme !== KEY_SCHEME) return null
+  if (!data?.public_key || data.key_scheme !== KEY_SCHEME) {
+    noPeerKeyUntil.set(peerId, Date.now() + 30000)
+    return null
+  }
+  pubCache.set(peerId, { jwk: data.public_key, at: Date.now() })
+  noPeerKeyUntil.delete(peerId)
   return data.public_key
 }
 
@@ -376,16 +392,8 @@ async function peerKeyInfo(peerId) {
 async function pairBits(peerId) {
   if (!currentUserId || !currentIdentity?.privateKey) return null
   if (!peerId || peerId === currentUserId) return null
-  const tag = pairTag(currentUserId, peerId)
-  // 对方还没有可用公钥时别反复打网络（列表/会话每次渲染都会问一遍）。
-  // 只负缓存 30 秒：对方登录一次之后就会带上世代标记，不该让人等太久。
-  if ((noPeerKeyUntil.get(tag) ?? 0) > Date.now()) return null
   const jwk = await peerKeyInfo(peerId)
-  if (!jwk) {
-    noPeerKeyUntil.set(tag, Date.now() + 30000)
-    return null
-  }
-  noPeerKeyUntil.delete(tag)
+  if (!jwk) return null
   const pub = await crypto.subtle.importKey('jwk', jwk, IDENTITY_ALGO, false, [])
   return crypto.subtle.deriveBits({ name: 'ECDH', public: pub }, currentIdentity.privateKey, 256)
 }
@@ -477,6 +485,190 @@ export async function decryptPeerMessages(peerId, rows) {
 export function clearConversationKeys() {
   conversationKeys.clear()
   noPeerKeyUntil.clear()
+  pubCache.clear()
+  momentKeys.clear()
+}
+
+// ── 圈子内容密钥（阶段 2：动态与评论文字）─────────────────────────
+/**
+ * 每条动态一把随机 **CEK**，用 `ECDH(发布者私钥, 成员公钥)` 派生的包裹密钥包成"一人一份"，
+ * 存在 `moment_keys`（RLS：每人只能读到自己那一份）。评论与动态共用这条 CEK。
+ *
+ * 为什么不做"一把圈子主密钥"：那样成员一变动就得换钥、还得重新加密历史；
+ * 现在换成员只是"以后的新动态多包一份"，历史照旧。
+ * 代价（诚实记录）：**新成员看不到他加入之前的动态**（那些 CEK 从没给他包过）。
+ */
+const WRAP_INFO = 'moments-cek-v1'
+/** 密文行里的算法标记（动态/评论共用） */
+export const CIRCLE_SCHEME = 'v2-circle'
+const momentKeys = new Map()         // momentId → CryptoKey
+
+/** 成员清单 + "能不能加密"：**所有已激活成员的公钥世代都得对得上**，否则不加密。
+ *  理由：圈子是"所有人都能看"，任何一个成员解不开 = 这个人看不到内容，宁可先明文。 */
+export async function circleReady() {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, public_key, key_scheme')
+    .eq('approved', true)
+  if (error) return { ready: false, members: [] }
+  const members = data ?? []
+  const ready = members.length > 0 && members.every((m) => !!m.public_key && m.key_scheme === KEY_SCHEME)
+  return { ready, members }
+}
+
+/** 包裹密钥：只有"发布者私钥 × 这一位成员公钥"这一对算得出来（双方算出的相同） */
+async function deriveWrapKek(otherId, otherJwk, usages) {
+  const pub = await crypto.subtle.importKey('jwk', otherJwk, IDENTITY_ALGO, false, [])
+  const bits = await crypto.subtle.deriveBits({ name: 'ECDH', public: pub }, currentIdentity.privateKey, 256)
+  const base = await crypto.subtle.importKey('raw', bits, 'HKDF', false, ['deriveKey'])
+  return crypto.subtle.deriveKey(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      // 盐里带上"发布者|读者"两人 id（排序后），保证包与解用的是同一个派生上下文
+      salt: te.encode(`moments-wrap-v1:${pairTag(currentUserId, otherId)}`),
+      info: te.encode(WRAP_INFO),
+    },
+    base,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    usages,
+  )
+}
+
+/**
+ * 给一条动态生成 CEK 并给每位成员各包一份（发布者自己那份用"自己的公钥"包，
+ * ECDH(私钥, 自己公钥) 只有自己算得出来，所以新设备登录后照样能读）。
+ * @returns {Promise<CryptoKey|null>} 生成好的 CEK（失败返回 null，调用方应退回明文）
+ */
+export async function createMomentKey(momentId, members) {
+  if (!momentId || !currentIdentity?.privateKey || !currentUserId) return null
+  const list = (members ?? []).filter((m) => m?.id && m?.public_key)
+  if (list.length === 0) return null
+  const cek = await crypto.subtle.importKey(
+    'raw', crypto.getRandomValues(new Uint8Array(32)),
+    { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey'],
+  )
+  try {
+    const rows = []
+    for (const m of list) {
+      const kek = await deriveWrapKek(m.id, m.public_key, ['wrapKey'])
+      const iv = crypto.getRandomValues(new Uint8Array(12))
+      const wrapped = await crypto.subtle.wrapKey('raw', cek, kek, { name: 'AES-GCM', iv })
+      rows.push({ moment_id: momentId, user_id: m.id, iv: toB64(iv), wrapped: toB64(wrapped), scheme: CIRCLE_SCHEME })
+    }
+    const { error } = await supabase.from('moment_keys').upsert(rows, { onConflict: 'moment_id,user_id' })
+    if (error) {
+      console.warn('[circle] 写钥匙包裹失败:', error.message)
+      return null
+    }
+    momentKeys.set(momentId, cek)
+    return cek
+  } catch (err) {
+    console.warn('[circle] 生成钥匙包裹失败:', err?.message)
+    return null
+  }
+}
+
+/** 取某条动态的 CEK：解开"自己那一份"包裹（内存缓存；拿不到返回 null） */
+export async function momentKey(momentId, authorId) {
+  if (!momentId || !authorId) return null
+  if (momentKeys.has(momentId)) return momentKeys.get(momentId)
+  if (!currentIdentity?.privateKey || !currentUserId) return null
+  const { data, error } = await supabase
+    .from('moment_keys')
+    .select('iv, wrapped')
+    .eq('moment_id', momentId)
+    .eq('user_id', currentUserId)
+    .maybeSingle()
+  if (error || !data) return null
+  const authorJwk = await peerKeyInfo(authorId)
+  if (!authorJwk) return null
+  try {
+    const kek = await deriveWrapKek(authorId, authorJwk, ['unwrapKey'])
+    const cek = await crypto.subtle.unwrapKey(
+      'raw', fromB64(data.wrapped), kek,
+      { name: 'AES-GCM', iv: fromB64(data.iv) },
+      { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey'],
+    )
+    momentKeys.set(momentId, cek)
+    return cek
+  } catch {
+    return null
+  }
+}
+
+/** 用 CEK 加密一段文字（动态或评论） */
+export async function encryptCircleText(cek, text) {
+  if (!cek) return null
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, cek, te.encode(String(text)))
+  return { ciphertext: toB64(ct), iv: toB64(iv), scheme: CIRCLE_SCHEME }
+}
+
+/** 用 CEK 解一段文字：解不开就沿用行里已有的（本地快照里的明文），都没有才返回 null */
+export async function decryptCircleText(cek, row) {
+  if (!cek || !row?.ciphertext) return row?.content ?? null
+  try {
+    const plain = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: fromB64(row.iv) }, cek, fromB64(row.ciphertext),
+    )
+    return td.decode(plain)
+  } catch {
+    return row.content ?? null
+  }
+}
+
+/**
+ * 时间线一屏数据的解密：动态正文 + **嵌套的评论**（评论与动态共用同一条 CEK）。
+ * 一次查询把这一屏所有动态的包裹取回来，逐条解开（解不开就留 null → 显示占位）。
+ */
+export async function decryptTimelineRows(rows) {
+  const list = rows ?? []
+  if (list.length === 0) return list
+  if (!currentUserId || !currentIdentity?.privateKey) return list
+  const withCipher = list.filter((m) => m?.ciphertext || (m?.comments ?? []).some((c) => c?.ciphertext))
+  if (withCipher.length === 0) return list
+  const ids = withCipher.map((m) => m.id)
+  // ⚠️ 必须显式筛"我自己那一份"：读策略允许动态作者看到自己动态的所有包裹
+  //    （那是为了让 INSERT ... RETURNING 能通过），所以不筛就会拿到**别人那份**，
+  //    用它去解当然解不开（实测：发布者自己反而读不到自己的动态）。
+  const { data: keyRows, error } = await supabase
+    .from('moment_keys')
+    .select('moment_id, iv, wrapped')
+    .eq('user_id', currentUserId)
+    .in('moment_id', ids)
+  if (error) return list
+  const byMoment = new Map()
+  for (const r of keyRows ?? []) byMoment.set(r.moment_id, r)
+
+  const out = []
+  for (const m of list) {
+    if (!m?.ciphertext && !(m?.comments ?? []).some((c) => c?.ciphertext)) { out.push(m); continue }
+    let cek = momentKeys.get(m.id) ?? null
+    if (!cek) {
+      const wrap = byMoment.get(m.id)
+      const authorJwk = await peerKeyInfo(m.user_id).catch(() => null)
+      if (wrap && authorJwk) {
+        try {
+          const kek = await deriveWrapKek(m.user_id, authorJwk, ['unwrapKey'])
+          cek = await crypto.subtle.unwrapKey(
+            'raw', fromB64(wrap.wrapped), kek,
+            { name: 'AES-GCM', iv: fromB64(wrap.iv) },
+            { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey'],
+          )
+          momentKeys.set(m.id, cek)
+        } catch { cek = null }
+      }
+    }
+    const content = m.ciphertext ? await decryptCircleText(cek, m) : (m.content ?? null)
+    const comments = []
+    for (const c of m.comments ?? []) {
+      comments.push(c?.ciphertext ? { ...c, content: await decryptCircleText(cek, c) } : c)
+    }
+    out.push({ ...m, content, comments })
+  }
+  return out
 }
 
 /**
@@ -599,6 +791,11 @@ if (typeof window !== 'undefined') {
     conversationFingerprint,
     encryptForPeer,
     decryptForPeer,
+    circleReady,
+    createMomentKey,
+    momentKey,
+    encryptCircleText,
+    decryptCircleText,
     cacheState: () => {
       try { return !!localStorage.getItem('moments_dek_cache_v1') } catch { return false }
     },

@@ -315,6 +315,12 @@ button:disabled {
   margin-bottom: 12px;
 }
 
+/* 密文但本机解不开（极少：还没解锁 / 加入圈子之前的动态）—— 与私聊同一套文案 */
+.moment-locked {
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+}
+
 /* 动态内联编辑 */
 .moment-edit-form {
   display: flex;
