@@ -7,6 +7,7 @@ import { compressImage } from '../lib/compressImage'
 import { CARD_COLORS } from '../lib/cardColors'
 import { objectLocator } from '../lib/signedUrls'
 import { circleReady, createMomentKey, encryptCircleText } from '../lib/crypto'
+import { uploadEncryptedImage } from '../lib/imageCrypto'
 
 export default function Publish() {
   const session = useAuth()
@@ -50,33 +51,16 @@ export default function Publish() {
     setError(null)
 
     try {
-      const imageUrls = []
-      let index = 0
-      for (const file of files) {
-        index += 1
-        setUploadHint(files.length > 1 ? `处理图片 ${index}/${files.length}…` : '处理图片…')
-        // 先压缩再上传：手机原图常有几 MB，直接传很快会吃满 Storage 配额
-        const prepared = await compressImage(file)
-        const path = safeStorageKey(session.user.id, prepared.name)
-        const { error: uploadError } = await supabase.storage
-          .from('moment-images')
-          .upload(path, prepared, { contentType: prepared.type })
-        if (uploadError) throw uploadError
-
-        // 桶已私有：存**定位串**（本身不可访问），渲染时统一换签名地址（见 lib/signedUrls.js）
-        imageUrls.push(objectLocator('moment-images', path))
-      }
-      setUploadHint(null)
-
-      // ⚠️ 顺序是刻意的：**先按明文入库，成功了再换成密文**。
-      //    中间任何一步失败（比如给对方包钥匙失败）都不会让内容变成"谁也看不懂"，
-      //    顶多这条动态暂时还是明文（下次打开会自动补加密，见 lib/circleSync.js）。
       const text = content.trim() || null
       const momentId = crypto.randomUUID()
+      // ⚠️ 顺序是刻意的：**先按明文入库（图片先不填），成功了再换成密文**。
+      //    中间任何一步失败（比如给对方包钥匙失败、某张图上传失败）都不会让内容变成
+      //    "谁也看不懂"，顶多这条动态暂时还是明文（下次打开会自动补加密，见 lib/circleSync.js）。
+      //    先入库还有一个原因：图片要用"这条动态的 CEK"加密，而 CEK 的包裹表要求动态已经存在。
       const { error: insertError } = await supabase.from('moments').insert({
         id: momentId,
         content: text,
-        images: imageUrls.length > 0 ? imageUrls : null,
+        images: null,
         latitude: location?.latitude ?? null,
         longitude: location?.longitude ?? null,
         user_id: session.user.id,
@@ -86,22 +70,41 @@ export default function Publish() {
       })
       if (insertError) throw insertError
 
-      // 文字端到端加密（阶段 2）：给每位成员包一份 CEK，然后把正文换成密文。
+      // 端到端加密（阶段 2 文字 / 阶段 3 图片）：给每位成员包一份 CEK。
       // 圈子里只要还有成员的公钥世代对不上，就**整条不加密**（有人解不开 = 有人看不到）。
-      if (text) {
-        const { ready, members } = await circleReady()
-        if (ready) {
-          const cek = await createMomentKey(momentId, members)
-          const sealed = cek ? await encryptCircleText(cek, text) : null
-          if (sealed) {
-            const { error: sealError } = await supabase
-              .from('moments')
-              .update({ ...sealed, content: null })
-              .eq('id', momentId)
-            if (sealError) console.warn('[circle] 动态没能加密，将保持明文:', sealError.message)
-          }
+      const { ready, members } = await circleReady()
+      const cek = ready ? await createMomentKey(momentId, members) : null
+
+      // 图片：先压缩，再用这条动态的 CEK 加密上传（拿不到钥匙就退回明文上传）
+      const imageUrls = []
+      let index = 0
+      for (const file of files) {
+        index += 1
+        setUploadHint(files.length > 1 ? `处理图片 ${index}/${files.length}…` : '处理图片…')
+        // 先压缩再上传：手机原图常有几 MB，直接传很快会吃满 Storage 配额
+        const prepared = await compressImage(file)
+        const path = safeStorageKey(session.user.id, prepared.name)
+        const up = cek ? await uploadEncryptedImage(path, prepared, cek) : { ok: false, reason: 'no-key' }
+        if (!up.ok) {
+          console.warn('[image] 这张图片没能加密，按明文上传:', up.reason)
+          const { error: uploadError } = await supabase.storage
+            .from('moment-images')
+            .upload(path, prepared, { contentType: prepared.type })
+          if (uploadError) throw uploadError
         }
+        // 桶已私有：存**定位串**（本身不可访问），渲染时统一换签名地址（见 lib/signedUrls.js）
+        imageUrls.push(objectLocator('moment-images', path))
       }
+      setUploadHint(null)
+
+      // 回写：图片定位串 + 正文密文（图片的密文钥匙就是这条 CEK，不需要额外记录）
+      const patch = { images: imageUrls.length > 0 ? imageUrls : null }
+      if (text && cek) {
+        const sealed = await encryptCircleText(cek, text)
+        if (sealed) Object.assign(patch, sealed, { content: null })
+      }
+      const { error: patchError } = await supabase.from('moments').update(patch).eq('id', momentId)
+      if (patchError) console.warn('[circle] 动态回写失败（内容仍是明文）:', patchError.message)
 
       navigate('/')
     } catch (err) {

@@ -27,7 +27,15 @@ function serviceWorkerVersion() {
       } catch {
         return   // 没有 sw.js（例如 build:app 的别的 outDir）就跳过
       }
-      const entry = readdirSync(join(outDir, 'assets')).find((f) => /^index-.*\.js$/.test(f))
+      // ⚠️ 这一步必须容错：`dist/assets` 不存在时（构建中途失败、或别的 outDir）
+      //    readdirSync 会抛 ENOENT，把整个构建带崩 —— 报出来的是"找不到目录"，
+      //    真正的构建错误反而被这层盖住了（实测踩到，白查了一轮）。
+      let entry = null
+      try {
+        entry = readdirSync(join(outDir, 'assets')).find((f) => /^index-.*\.js$/.test(f))
+      } catch {
+        entry = null
+      }
       const version = entry ? entry.replace(/^index-/, '').replace(/\.js$/, '') : String(Date.now())
       writeFileSync(swPath, source.replaceAll('__SW_VERSION__', version))
       console.log(`  ✓ sw.js 版本号 = ${version}（外壳缓存按它失效）`)

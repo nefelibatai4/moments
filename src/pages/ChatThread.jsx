@@ -6,10 +6,13 @@ import { safeStorageKey } from '../lib/sanitizeFilename'
 import { compressImage } from '../lib/compressImage'
 import ImageLightbox from '../components/ImageLightbox'
 import SignedImage from '../components/SignedImage'
-import { objectLocator, resolveSignedUrl, storagePathFromUrl, useSignedUrls } from '../lib/signedUrls'
+import { objectLocator, resolveSignedUrl, storagePathFromUrl } from '../lib/signedUrls'
+import { uploadEncryptedImage, useContentImageUrls } from '../lib/imageCrypto'
 import { fetchThreadData, readCachedThread, writeCachedThread } from '../lib/chatCache'
 // 阶段 1：私聊文本端到端加密（会话密钥由双方身份密钥 ECDH 得到，见 lib/crypto.js）
-import { decryptPeerMessages, encryptForPeer, onUnlockChange, unlockStateVersion } from '../lib/crypto'
+import {
+  conversationKey, decryptPeerMessages, encryptForPeer, onUnlockChange, unlockStateVersion,
+} from '../lib/crypto'
 
 // 撤回 / 编辑窗口：2 分钟内（与微信一致）。
 // 两个窗口一致，但**服务端各有一份强制**，前端这里只是控制按钮出不出来。
@@ -143,7 +146,10 @@ export default function ChatThread() {
     () => messages.map((m) => m.image_url).filter(Boolean),
     [messages],
   )
-  const signedImages = useSignedUrls(chatImageUrls, 'moment-images')
+  // 私聊图片：签名 → 下载 → 用**会话密钥**在本机解密（见 lib/imageCrypto.js）
+  const signedImages = useContentImageUrls(chatImageUrls, {
+    resolveKey: () => conversationKey(userId),
+  })
   // 操作按钮只在 2 分钟窗口内出现。用低频计时器驱动，让按钮在窗口过期后自行消失。
   // （不在 render 里直接调 Date.now()，那会让渲染变成非纯函数）
   const [now, setNow] = useState(() => Date.now())
@@ -396,10 +402,18 @@ export default function ChatThread() {
       if (imageFile) {
         const prepared = await compressImage(imageFile)
         const path = safeStorageKey(me, prepared.name)
-        const { error: uploadError } = await supabase.storage
-          .from('moment-images')
-          .upload(path, prepared, { contentType: prepared.type })
-        if (uploadError) throw uploadError
+        // 图片端到端加密（阶段 3）：用**会话密钥**在设备上加密后再上传。
+        // 拿不到钥匙（本机没解锁 / 对方没公钥）就退回明文上传 —— 宁可暂时不加密，
+        // 也不能让使用者发不出图片（读路径两种都认，见 lib/imageCrypto.js）。
+        const ck = await conversationKey(userId)
+        const up = await uploadEncryptedImage(path, prepared, ck)
+        if (!up.ok) {
+          console.warn('[image] 这张图片没能加密，按明文上传:', up.reason)
+          const { error: uploadError } = await supabase.storage
+            .from('moment-images')
+            .upload(path, prepared, { contentType: prepared.type })
+          if (uploadError) throw uploadError
+        }
         // 桶已私有：存的是**定位串**（本身不可访问），渲染时统一换签名地址
         imageUrl = objectLocator('moment-images', path)
       }

@@ -1,4 +1,5 @@
 import { supabase } from '../supabaseClient'
+import { decryptImageBytes, encryptImageBytes, fetchAndDecryptImage, looksLikeImage } from './imageCrypto'
 
 /**
  * 无感加密 · 阶段 0：密钥基础设施（2026-10-12 使用者定稿）
@@ -545,6 +546,15 @@ export async function createMomentKey(momentId, members) {
   if (!momentId || !currentIdentity?.privateKey || !currentUserId) return null
   const list = (members ?? []).filter((m) => m?.id && m?.public_key)
   if (list.length === 0) return null
+  // ⚠️ **幂等**：这条动态已经有包裹了，就绝不能再造一把新 CEK（新的会覆盖旧包裹，
+  //    用它加密过的正文/图片就永远解不开了）。改成取回现有那把。
+  //    真实触发路径：重复点发布、前台补加密与后台扫尾同时跑到同一条。
+  const { data: existing } = await supabase
+    .from('moment_keys')
+    .select('iv')
+    .eq('moment_id', momentId)
+    .limit(1)
+  if (existing && existing.length > 0) return momentKey(momentId, currentUserId)
   const cek = await crypto.subtle.importKey(
     'raw', crypto.getRandomValues(new Uint8Array(32)),
     { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey'],
@@ -793,6 +803,10 @@ if (typeof window !== 'undefined') {
     decryptForPeer,
     circleReady,
     createMomentKey,
+    encryptImageBytes,
+    decryptImageBytes,
+    looksLikeImage,
+    fetchAndDecryptImage,
     momentKey,
     encryptCircleText,
     decryptCircleText,

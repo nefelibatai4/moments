@@ -4,6 +4,7 @@ import { useAuth } from '../lib/AuthContext'
 import { readTimelineSnapshot, writeTimelineSnapshot } from '../lib/timelineSnapshot'
 import { decryptTimelineRows, onUnlockChange, unlockStateVersion } from '../lib/crypto'
 import { sweepCirclePlaintext } from '../lib/circleSync'
+import { sweepImagePlaintext } from '../lib/imageSync'
 import MomentCard from '../components/MomentCard'
 import MomentSkeleton from '../components/MomentSkeleton'
 
@@ -166,8 +167,10 @@ export default function Timeline() {
   // 加密用的私钥只在这台设备上，所以服务端做不了这件事 —— 只能等发布者打开应用。
   useEffect(() => {
     if (!userId) return undefined
-    const timer = setTimeout(() => { sweepCirclePlaintext(userId) }, 1500)
-    return () => clearTimeout(timer)
+    // 先补文字的（要给动态生成 CEK），再补图片（图片的钥匙就是那条 CEK）—— 所以图片晚一点起
+    const t1 = setTimeout(() => { sweepCirclePlaintext(userId) }, 1500)
+    const t2 = setTimeout(() => { sweepImagePlaintext(userId) }, 6000)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
   }, [userId])
 
   // 用 created_at 游标翻页，而不是 offset：

@@ -7,7 +7,8 @@ import { relativeTime } from '../lib/relativeTime'
 import { CARD_COLORS, normalizeCardColor } from '../lib/cardColors'
 import { useAuth } from '../lib/AuthContext'
 import { supabase } from '../supabaseClient'
-import { storagePathFromUrl, useSignedUrls } from '../lib/signedUrls'
+import { storagePathFromUrl } from '../lib/signedUrls'
+import { useContentImageUrls } from '../lib/imageCrypto'
 import SignedImage from './SignedImage'
 import { encryptCircleText, momentKey } from '../lib/crypto'
 
@@ -51,9 +52,11 @@ export default function MomentCard({
   // 信息流里最多铺 9 张（微博那样），更多的用第 9 格盖「+N」；
   // 灯箱拿到的仍是**全部**图片，点开后能一直往后翻。
   const allImages = moment.images ?? []
-  // 桶已私有：渲染前要换成签名地址（一次批量签，见 lib/signedUrls.js）。
-  // 没签出来的先不渲染 src（占位），拿到后同一个元素自动换成真图。
-  const signedImages = useSignedUrls(allImages, 'moment-images')
+  // 桶已私有 + 图片已端到端加密：渲染前要"签名 → 下载 → 本机解密"（见 lib/imageCrypto.js）。
+  // 还没就绪就不渲染 src（占位），拿到后同一个元素自动换成真图（`data-signed` 语义不变）。
+  const signedImages = useContentImageUrls(allImages, {
+    resolveKey: () => momentKey(moment.id, moment.user_id),
+  })
   const shownImages = (allImages.length > 9 ? allImages.slice(0, 9) : allImages)
     .map((url) => ({ stored: url, url: signedImages.get(url) ?? null }))
   const moreCount = allImages.length - shownImages.length
