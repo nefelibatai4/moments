@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../lib/AuthContext'
+import { loadLocationFeed, mapLinks } from '../lib/geoLookup'
 
 /**
  * 成员管理（只有管理员看得到）。
@@ -56,6 +57,11 @@ export default function AdminPanel() {
   const [showPassphrase, setShowPassphrase] = useState(false)
   const [newPassphrase, setNewPassphrase] = useState('')
   const [savingPassphrase, setSavingPassphrase] = useState(false)
+  // 登录位置（城市级）：轨迹 + IP 地理缓存
+  const [locations, setLocations] = useState([])
+  const [geo, setGeo] = useState(new Map())
+  const [locLoading, setLocLoading] = useState(false)
+  const [showAllLocations, setShowAllLocations] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -106,6 +112,34 @@ export default function AdminPanel() {
     if (classes < 3) return '大写、小写、数字、符号 里至少要包含三类'
     return null
   }
+
+  const loadLocations = useCallback(async () => {
+    setLocLoading(true)
+    try {
+      const { rows, geo: geoMap } = await loadLocationFeed(200)
+      setLocations(rows)
+      setGeo(geoMap)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLocLoading(false)
+    }
+  }, [])
+
+  // 进页面就先拉一次（顺便把没解析过的 IP 解析出来）
+  useEffect(() => {
+    if (!isAdmin) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const { rows, geo: geoMap } = await loadLocationFeed(200)
+        if (cancelled) return
+        setLocations(rows)
+        setGeo(geoMap)
+      } catch { /* 位置不是核心功能，失败就空着 */ }
+    })()
+    return () => { cancelled = true }
+  }, [isAdmin])
 
   async function handleSavePassphrase(e) {
     e.preventDefault()
@@ -205,6 +239,76 @@ export default function AdminPanel() {
         <p className="admin-hint">
           新朋友注册时要输这个口令。换掉之后：新注册立刻按新口令来，已注册的人不受影响
           （他们只在注册/激活时输过一次）。口令是明文保存的 —— 因为你要能回看并发给朋友。
+        </p>
+      </div>
+
+      {/* 登录位置（城市级）：IP / 国家 / 设备由服务端记录，城市+坐标在这里补全。
+          ⚠️ IP 定位只能到城市，别当成"精确位置"。 */}
+      <div className="admin-passphrase">
+        <div className="admin-head">
+          <h4>登录位置（城市级）</h4>
+          <button type="button" className="admin-refresh" onClick={loadLocations} disabled={locLoading}>
+            {locLoading ? '解析中…' : '刷新'}
+          </button>
+        </div>
+        {locations.length === 0 ? (
+          <p className="admin-hint">还没有记录。打开一次应用就会记一条（同一个 IP 30 分钟内只记一次）。</p>
+        ) : (
+          <>
+            {/* 每个使用者最近一次 */}
+            {users.map((u) => {
+              const latest = locations.find((l) => l.user_id === u.id)
+              if (!latest) return null
+              const links = mapLinks(latest, geo.get(latest.ip))
+              return (
+                <p className="admin-user-line" key={`loc-${u.id}`}>
+                  <strong>{u.nickname}</strong>
+                  {' · '}
+                  {links ? (
+                    <a href={links.apple} target="_blank" rel="noopener noreferrer">{links.label}</a>
+                  ) : (
+                    latest.country || '未知'
+                  )}
+                  {links?.coords ? `（${links.coords}，城市级）` : ''}
+                  {' · '}
+                  {relTime(latest.captured_at)}
+                  {' · '}
+                  {latest.device ? shortDevice(latest.device) : '—'}
+                  {latest.ip ? ` · ${latest.ip}` : ''}
+                </p>
+              )
+            })}
+            <button
+              type="button"
+              className="admin-refresh"
+              onClick={() => setShowAllLocations((v) => !v)}
+            >
+              {showAllLocations ? '收起轨迹' : '展开最近轨迹（每台设备最多保留 50 条）'}
+            </button>
+            {showAllLocations && (
+              <div className="admin-locations">
+                {locations.map((l) => {
+                  const links = mapLinks(l, geo.get(l.ip))
+                  const who = users.find((u) => u.id === l.user_id)
+                  return (
+                    <p className="admin-user-line muted" key={l.id}>
+                      {absTime(l.captured_at)} · {who?.nickname ?? '（已删除）'} ·{' '}
+                      {links ? (
+                        <a href={links.apple} target="_blank" rel="noopener noreferrer">{links.label}</a>
+                      ) : (l.country || '未知')}
+                      {links?.coords ? `（${links.coords}）` : ''}
+                      {l.ip ? ` · ${l.ip}` : ''}
+                    </p>
+                  )
+                })}
+              </div>
+            )}
+          </>
+        )}
+        <p className="admin-hint">
+          IP 定位只到<strong>城市</strong>（误差几公里到几十公里，VPN 或运营商出口会更离谱），
+          所以它说明"网络出口在哪"，不等于"人在哪"。要精确到米需要手机定位权限（iOS 上还必须
+          应用开着），目前没做。城市与坐标由 IP 地理库（ipwho.is）解析，同一个 IP 只查一次。
         </p>
       </div>
 
