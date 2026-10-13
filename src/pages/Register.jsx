@@ -59,15 +59,6 @@ export default function Register() {
         return
       }
 
-      // 2.5 「钥匙跟着账号走」：用刚设的密码把加密钥匙存一份到服务器（换设备就不用抄恢复码了）
-      try {
-        const { ensureIdentity, savePasswordBackup } = await import('../lib/e2e')
-        const { identity } = await ensureIdentity(signUpData.user.id)
-        if (identity && gate.length >= 10) await savePasswordBackup(signUpData.user.id, identity.privateKey, password)
-      } catch (err) {
-        console.warn('[e2e] 用密码保存钥匙失败（不影响注册）:', err?.message)
-      }
-
       // 3. 把口令从本地会话/user_metadata 里清掉。数据库那边有 BEFORE 触发器兜底
       //    （GoTrue 会把 options.data 原样存进 auth.users.raw_user_meta_data），
       //    这里顺手把浏览器缓存里的那一份也擦掉。失败也无所谓，不影响注册结果。
@@ -95,10 +86,10 @@ export default function Register() {
       />
       <input
         type="password"
-        placeholder="密码（至少 10 位）"
+        placeholder="密码"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
-        minLength={10}
+        minLength={6}
         required
       />
       <input

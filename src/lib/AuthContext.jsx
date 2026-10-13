@@ -2,7 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { supabase } from '../supabaseClient'
 import { clearTimelineSnapshots } from './timelineSnapshot.js'
 import { clearChatListSnapshots } from './chatCache.js'
-import { clearConversationKeys, ensureIdentity, hasLocalIdentity } from './e2e.js'
+// 端到端加密已于 2026-10-12 下线（使用者：用户不知道怎么操作、情绪较大）。
+// 这里只保留"登出时清掉内存里的会话密钥"，保证旧密文不会跨账号残留。
+import { clearConversationKeys } from './e2e.js'
 
 // session:   undefined = 还在加载 / null = 未登录 / object = 已登录
 // approved:  undefined = 还在查询 / null = 未登录 / false = 已登录但未激活 / true = 已激活
@@ -101,11 +103,6 @@ export function AuthProvider({ children }) {
       const ok = !!data.approved
       setApproved(ok)
       writeCachedApproval(userId, ok)
-      // 激活之后确保本机有端到端加密的身份密钥（顺手把公钥传到服务器，
-      // 这样对方才能给你发加密消息）。失败不影响任何功能。
-      if (ok && !hasLocalIdentity()) {
-        ensureIdentity(userId).catch((err) => console.warn('[e2e] 初始化密钥失败:', err?.message))
-      }
       return
     }
 

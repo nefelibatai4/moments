@@ -8,9 +8,8 @@ import ImageLightbox from '../components/ImageLightbox'
 import SignedImage from '../components/SignedImage'
 import { objectLocator, resolveSignedUrl, storagePathFromUrl, useSignedUrls } from '../lib/signedUrls'
 import { fetchThreadData, readCachedThread, writeCachedThread } from '../lib/chatCache'
-import {
-  cachedConversationKey, decryptMessages, encryptText, ensureConversationKey,
-} from '../lib/e2e'
+// 加密已下线（2026-10-12）：只保留"读旧密文"用的解密能力，不再加密新消息
+import { cachedConversationKey, decryptMessages, ensureConversationKey } from '../lib/e2e'
 
 // 撤回 / 编辑窗口：2 分钟内（与微信一致）。
 // 两个窗口一致，但**服务端各有一份强制**，前端这里只是控制按钮出不出来。
@@ -22,6 +21,9 @@ const PAGE_SIZE = 50
 // 用户就永远打不出换行——所以触屏让 Enter 保持默认（换行），发送交给右边的按钮。
 const isTouchPrimary =
   typeof window !== 'undefined' && !!window.matchMedia?.('(hover: none)').matches
+
+// 已经尝试过"明文回填"的消息 id（避免每次渲染都重复请求）
+const backfilled = new Set()
 
 function msgTimeLabel(iso) {
   const d = new Date(iso)
@@ -336,20 +338,10 @@ export default function ChatThread() {
         // 桶已私有：存的是**定位串**（本身不可访问），渲染时统一换签名地址
         imageUrl = objectLocator('moment-images', path)
       }
-      // 端到端加密：有会话密钥就只发密文（明文永远不出这台设备）。
-      // ⚠️ 密钥是异步准备的（要读 dm_keys / 公钥），第一条消息很容易在它就绪之前发出去 ——
-      //    所以这里**再等一次**：能加密就绝不发明文。
+      // ⚠️ 端到端加密已于 2026-10-12 下线（使用者：用户不知道怎么操作、情绪较大）——
+      //    现在私聊一律发**明文**，跟加密之前一样。旧的密文消息仍然能读（下面的解密逻辑保留）。
       const text = content.trim()
-      let key = ck
-      if (!key && text) {
-        key = await ensureConversationKey(me, userId, { publicKeyOfPeer: otherProfile?.public_key ?? null })
-        if (key) setCk(key)
-      }
-      let body = { content: text || null }
-      if (key && text) {
-        const enc = await encryptText(key, text)
-        body = { content: null, ciphertext: enc.ciphertext, iv: enc.iv, scheme: enc.scheme }
-      }
+      const body = { content: text || null }
       const { error } = await supabase
         .from('messages')
         .insert({
@@ -411,27 +403,17 @@ export default function ChatThread() {
     setError(null)
     try {
       // edited_at 由服务端触发器写，这里不传（传了也会被覆盖）
-      // 加密消息的编辑：同样只发密文（明文不出设备）
-      const target = rawMessages.find((x) => x.id === editing.id)
-      let sentEncrypted = null
-      let patchBody = { content: next }
-      if (ck && (target?.ciphertext || !target?.content)) {
-        const enc = await encryptText(ck, next)
-        sentEncrypted = enc
-        patchBody = { content: null, ciphertext: enc.ciphertext, iv: enc.iv, scheme: enc.scheme }
-      }
+      // （加密已下线：编辑一律按明文处理；如果这条是旧的密文消息，编辑会把明文写进 content）
       const { data, error } = await supabase
         .from('messages')
-        .update(patchBody)
+        .update({ content: next })
         .eq('id', editing.id)
         .select('id')
       if (error) throw error
       if (!data || data.length === 0) throw new Error('编辑没有生效（可能已超过 2 分钟窗口）')
       const stamp = new Date().toISOString()
       setRawMessages((prev) =>
-        prev.map((x) => (x.id === editing.id
-          ? { ...x, content: sentEncrypted ? null : next, ciphertext: sentEncrypted?.ciphertext ?? null, iv: sentEncrypted?.iv ?? null, edited_at: stamp }
-          : x))
+        prev.map((x) => (x.id === editing.id ? { ...x, content: next, edited_at: stamp } : x))
       )
       setEditing(null)
     } catch (err) {
@@ -473,6 +455,14 @@ export default function ChatThread() {
     ;(async () => {
       const out = await decryptMessages(ck, rawMessages)
       if (!cancelled) setMessages(out)
+      // 加密下线后的一次性回填（2026-10-12）：能解密出来的旧密文，顺手把明文写回库里，
+      // 这样以后换设备/清缓存也不会再读不到。逐条尽力而为、失败静默、不重复尝试。
+      for (const m of out) {
+        if (!m?.ciphertext || !m.content || backfilled.has(m.id)) continue
+        backfilled.add(m.id)
+        supabase.rpc('backfill_encrypted_message', { p_id: m.id, p_text: m.content })
+          .then(({ error }) => { if (error) backfilled.delete(m.id) })
+      }
     })()
     return () => { cancelled = true }
   }, [ck, rawMessages])
@@ -693,8 +683,9 @@ export default function ChatThread() {
                       <>
                         {m.content}
                         {/* 加密消息但本机没有钥匙（例如新设备还没输入恢复码）→ 别显示空气泡 */}
+                        {/* 旧的加密消息：本机没有钥匙时只能提示一句（加密功能已下线，不再提供恢复入口） */}
                         {!m.content && m.ciphertext && (
-                          <span className="chat-encrypted-hint">🔒 加密消息（这台设备还没有钥匙，去【我】里用恢复码恢复）</span>
+                          <span className="chat-encrypted-hint">🔒 这条是加密版本时期的消息，这台设备上读不到</span>
                         )}
                         {m.edited_at && <span className="chat-edited-tag">已编辑</span>}
                       </>
