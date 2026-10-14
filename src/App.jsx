@@ -19,6 +19,9 @@ const Login = lazy(() => import('./pages/Login'))
 const Register = lazy(() => import('./pages/Register'))
 const Activate = lazy(() => import('./pages/Activate'))
 const Profile = lazy(() => import('./pages/Profile'))
+// 「捏玩偶形象」单独一个路由：avataaars 那套美术（约 1MB）只进这个 chunk，
+// 时间线 / 私聊 / 插件都不加载它（那边只渲染光栅化后的头像 `<img>`）。
+const Doll = lazy(() => import('./pages/Doll'))
 const ChatList = lazy(() => import('./pages/ChatList'))
 const ChatThread = lazy(() => import('./pages/ChatThread'))
 const UserProfile = lazy(() => import('./pages/UserProfile'))
@@ -88,6 +91,7 @@ export default function App() {
             <Route path="/" element={<RequireAuth><Timeline /></RequireAuth>} />
             <Route path="/publish" element={<RequireAuth><Publish /></RequireAuth>} />
             <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
+            <Route path="/doll" element={<RequireAuth><Doll /></RequireAuth>} />
             <Route path="/chat" element={<RequireAuth><ChatList /></RequireAuth>} />
             <Route path="/chat/:userId" element={<RequireAuth><ChatThread /></RequireAuth>} />
             <Route path="/user/:userId" element={<RequireAuth><UserProfile /></RequireAuth>} />

@@ -315,6 +315,62 @@ button:disabled {
   margin-bottom: 12px;
 }
 
+/* ── 玩偶形象（【我】里的入口 + 独立编辑页）──────────────────── */
+.doll-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 18px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-secondary);
+  flex-wrap: wrap;
+}
+.doll-entry-btn {
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--accent-color, #3b82f6);
+  color: #fff;
+  text-decoration: none;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+.doll-page { padding: 12px 0 40px; }
+.doll-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.doll-back { color: var(--text-secondary); text-decoration: none; }
+.doll-preview { display: flex; justify-content: center; padding: 10px 0 4px; }
+.doll-preview-inner, .doll-preview-inner svg { width: 180px; height: 180px; display: block; }
+/* 缩略图/色块：DiceBear 生成的 SVG 自带 viewBox，撑满格子即可 */
+.doll-thumb, .doll-thumb svg { width: 54px; height: 54px; display: block; }
+.doll-swatch {
+  display: block; width: 54px; height: 54px; border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+.doll-actions { display: flex; gap: 10px; justify-content: center; margin: 8px 0 16px; }
+.doll-actions button { padding: 8px 16px; border-radius: 999px; cursor: pointer; }
+.doll-tabs {
+  display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-color);
+}
+.doll-tab {
+  border: 1px solid var(--border-color); background: var(--bg-secondary);
+  color: var(--text-primary); padding: 4px 10px; border-radius: 999px;
+  font-size: 0.82rem; white-space: nowrap; cursor: pointer;
+}
+.doll-tab.on { border-color: var(--accent-color, #3b82f6); background: color-mix(in srgb, var(--accent-color, #3b82f6) 14%, transparent); }
+.doll-options {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+  gap: 6px; margin: 12px 0;
+}
+.doll-option {
+  border: 1px solid transparent; background: var(--bg-secondary);
+  border-radius: 12px; padding: 2px; cursor: pointer; line-height: 0;
+}
+.doll-option.on { border-color: var(--accent-color, #3b82f6); background: color-mix(in srgb, var(--accent-color, #3b82f6) 12%, transparent); }
+.doll-note { margin-top: 8px; }
+
 /* ── 表情包（私聊）────────────────────────────────────────────── */
 .chat-sticker-btn {
   border: none;

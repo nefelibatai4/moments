@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../lib/AuthContext'
 import { getTheme, setTheme } from '../lib/theme'
@@ -302,6 +302,15 @@ export default function Profile() {
           )}
         </section>
       )}
+
+      {/* 玩偶形象（可选）：独立路由，玩偶库只在那里加载 */}
+      <section className="doll-entry">
+        <div>
+          <strong>玩偶形象</strong>
+          <p className="status-text">不想用照片当头像？捏一个小玩偶：肤色、发型、眉型、穿搭都能自己选。</p>
+        </div>
+        <Link to="/doll" className="doll-entry-btn">去捏一个</Link>
+      </section>
 
       {/* 精确位置（可选，默认关闭） */}
       <LocationConsent />
