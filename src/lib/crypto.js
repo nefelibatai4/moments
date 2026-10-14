@@ -1002,7 +1002,7 @@ export async function fulfillRecoveryRequest(reqId, ownerId) {
       .eq('owner_id', ownerId)
       .eq('holder_id', S.userId)
       .maybeSingle()
-    if (!esc) return { ok: false, reason: '这台设备上没有他的恢复包裹' }
+    if (!esc) return { ok: false, reason: '这台设备上没有 TA 的数据备份' }
     const ownerJwk = await peerKeyInfo(ownerId)
     if (!ownerJwk) return { ok: false, reason: '拿不到他的公钥' }
     const escKek = await deriveWrapKek(ownerId, ownerJwk, ['encrypt', 'decrypt'], ESCROW_INFO)
