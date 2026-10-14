@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabaseClient'
-import { storagePathFromUrl, useSignedUrls } from './signedUrls'
+import { resolveSignedUrl, storagePathFromUrl, useSignedUrls } from './signedUrls'
 
 /**
  * 图片的端到端加密（阶段 3，2026-10-13）。
@@ -110,13 +110,24 @@ export async function uploadEncryptedImage(path, file, key) {
 
 /** 下载 + 解密一个对象路径（`key` 为 null 时只处理老明文图） */
 export async function fetchAndDecryptImage(signedUrl, key) {
-  const res = await fetch(signedUrl, { credentials: 'omit' })
-  if (!res.ok) {
-    console.warn('[image] 下载失败:', res.status, signedUrl.slice(0, 80))
-    return null
+  // ⚠️ 后台"补加密"会**原地覆盖**同一个对象：对方正好在这时取图就可能拿到一半/失败。
+  //    所以这里失败重试一次（600ms 后），而不是让这张图永久空着。
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const res = await fetch(signedUrl, { credentials: 'omit' })
+      if (res.ok) {
+        const raw = new Uint8Array(await res.arrayBuffer())
+        const out = await decryptImageBytes(key, raw)
+        if (out) return out
+      } else if (attempt === 1) {
+        console.warn('[image] 下载失败:', res.status, signedUrl.slice(0, 80))
+      }
+    } catch (err) {
+      if (attempt === 1) console.warn('[image] 下载异常:', err?.message)
+    }
+    if (attempt === 0) await new Promise((r) => setTimeout(r, 600))
   }
-  const raw = new Uint8Array(await res.arrayBuffer())
-  return decryptImageBytes(key, raw)
+  return null
 }
 
 /** 登出/换账号时释放内存里所有 `blob:` 地址（否则会把上一个人的内容留在内存里） */
@@ -151,32 +162,42 @@ export function useContentImageUrls(locators, { resolveKey }) {
   //    `list` 每次渲染都是新数组、`signed` 的 Map 也可能重建，直接进依赖会无限循环。
   const fingerprint = list.map((l) => `${l}→${signed.get(l) ?? ''}`).join('|')
   const [version, setVersion] = useState(0)
+  const [retry, setRetry] = useState(0)
 
   useEffect(() => {
     let cancelled = false
-    const todo = list.filter((l) => signed.get(l) && !urlCache.has(l))
-    if (todo.length === 0) return undefined
+    const storageOnes = list.filter((l) => storagePathFromUrl(l))
+    const pending = storageOnes.filter((l) => !urlCache.has(l))
+    if (pending.length === 0) return undefined
+    let stillPending = false
     ;(async () => {
       const key = await resolveKey().catch(() => null)
-      for (const locator of todo) {
+      for (const locator of pending) {
         if (cancelled) return
-        const already = urlCache.get(locator)
-        if (already) continue
+        if (urlCache.has(locator)) continue
         try {
-          const out = await fetchAndDecryptImage(signed.get(locator), key)
-          if (!out) {
-            console.warn('[image] 这张图解不开（钥匙不对或不是密文）:', locator)
-            continue
-          }
-          const url = URL.createObjectURL(new Blob([out.bytes], { type: mimeOf(out.bytes) }))
-          remember(locator, url)
+          // ⚠️ 先只用**批量签名**的结果（一屏多图必须合并成一次请求，这是既有的性能约定）。
+          //    只有当重试都试过了还拿不到地址（批量那次真的失败了），才单独补签一个 ——
+          //    否则每次渲染都自己签一遍，实测会把"1 次请求"变成 6 次。
+          const url = signed.get(locator)
+            ?? (retry >= 3 ? await resolveSignedUrl(BUCKET, locator).catch(() => null) : null)
+          if (!url) { stillPending = true; continue }
+          const out = await fetchAndDecryptImage(url, key)
+          if (!out) { stillPending = true; continue }
+          const objUrl = URL.createObjectURL(new Blob([out.bytes], { type: mimeOf(out.bytes) }))
+          remember(locator, objUrl)
           if (!cancelled) setVersion((v) => v + 1)
-        } catch { /* 单张失败不影响别的图 */ }
+        } catch { stillPending = true }
+      }
+      // 有界重试（1s / 3s / 8s）：网络抖一下、或后台正在"原地补加密"时正好取图，都能自愈
+      if (!cancelled && stillPending && retry < 3) {
+        const wait = [1000, 3000, 8000][retry] ?? 8000
+        setTimeout(() => { if (!cancelled) setRetry((r) => r + 1) }, wait)
       }
     })()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fingerprint])
+  }, [fingerprint, retry])
 
   return useMemo(() => {
     const out = new Map()
@@ -189,5 +210,5 @@ export function useContentImageUrls(locators, { resolveKey }) {
     }
     return out
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fingerprint, version])
+  }, [fingerprint, version, retry])
 }

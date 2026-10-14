@@ -55,7 +55,7 @@ const S = (globalThis.__momentsCryptoState ||= {
   momentKeys: new Map(),         // momentId → CryptoKey（动态）
   noPeerKeyUntil: new Map(),     // 用户 id → 时间戳（没有可用公钥的负缓存）
   pubCache: new Map(),           // 用户 id → { jwk, at }
-  escrowEnsuredFor: null,        // 这一页已经用哪个凭据刷过恢复包裹（避免每次开应用都写一遍）
+  escrowCredential: null,        // 上一次写恢复包裹用的是哪个凭据（凭据变了就必须全刷）
   credentialVerified: false,     // 这个登录凭据是"刚刚真的登录成功过"的（设备缓存里恢复的不算）
 })
 
@@ -84,9 +84,8 @@ export function noteLoginSecrets({ password, credential, email } = {}) {
   if (credential) {
     S.loginCredential = String(credential)
     S.credentialVerified = true      // 能走到这里 = 刚刚拿它登录成功了
-    // 每次"重新输密码登录"都允许刷新一遍恢复包裹：否则这一次登录时还不可用的成员
-    // （比如对方刚登录过还没轮到我）会一直拿不到我的包裹（实测踩到：A→B 那份永远不写）。
-    S.escrowEnsuredFor = null
+    // 每次"重新输密码登录"都允许重新算一遍要写哪些包裹（凭据可能刚变过）
+    S.escrowCredential = null
   }
   if (email) S.loginEmail = normEmail(email)
 }
@@ -826,7 +825,6 @@ export async function ensureEscrowWraps() {
   if (!isUnlocked() || !S.userId || !S.loginCredential) return 0
   // 只写"验证过的"凭据：设备缓存里恢复出来的可能是旧密码，写进去反而害了以后的重置
   if (!S.credentialVerified) return 0
-  if (S.escrowEnsuredFor === S.loginCredential) return 0
   const { data, error } = await supabase
     .from('profiles')
     .select('id, public_key, key_scheme')
@@ -835,10 +833,24 @@ export async function ensureEscrowWraps() {
   if (error) return 0
   const members = (data ?? []).filter((m) => m.public_key && m.key_scheme === KEY_SCHEME)
   if (members.length === 0) return 0
+
+  // 同一个凭据已经写过一轮之后，就只看"还缺谁"：
+  // 这样**新成员变可用时会在 45 秒内自动补上他的那份**，不需要任何人再登录一次。
+  let targets = members
+  if (S.escrowCredential === S.loginCredential) {
+    const { data: mine } = await supabase
+      .from('key_escrow')
+      .select('holder_id')
+      .eq('owner_id', S.userId)
+    const have = new Set((mine ?? []).map((r) => r.holder_id))
+    targets = members.filter((m) => !have.has(m.id))
+    if (targets.length === 0) return 0
+  }
+
   const payload = await buildRecoveryPayload()
   if (!payload) return 0
   let written = 0
-  for (const m of members) {
+  for (const m of targets) {
     try {
       const kek = await deriveWrapKek(m.id, m.public_key, ['encrypt', 'decrypt'], ESCROW_INFO)
       const iv = crypto.getRandomValues(new Uint8Array(12))
@@ -856,7 +868,7 @@ export async function ensureEscrowWraps() {
       console.warn('[recovery] 恢复包裹生成失败:', err?.message)
     }
   }
-  if (written > 0) S.escrowEnsuredFor = S.loginCredential
+  if (written > 0) S.escrowCredential = S.loginCredential
   return written
 }
 

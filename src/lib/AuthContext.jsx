@@ -128,8 +128,9 @@ export function AuthProvider({ children }) {
       const uid = session?.user?.id
       if (!uid || approved !== true) return
       if (isUnlocked()) {
-        // 包裹只在"刚登录/刚解锁"那一下刷一次；45 秒的轮询不写库（否则每 45 秒打一次 DB）
-        if (writeEscrow) ensureEscrowWraps().catch(() => {})
+        // 包裹：登录/解锁那一下算一遍"要写谁"；45 秒的轮询只看"还缺谁"（通常一个查询、零写入），
+        // 这样对方刚变得可用时最多 45 秒就会自动补上他的那份包裹。
+        ensureEscrowWraps().catch(() => {})
         return
       }
       // 还没解锁：只有"本机留着等待交付的临时钥匙"时才去收尾（否则是正常没解锁）

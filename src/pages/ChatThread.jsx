@@ -69,23 +69,31 @@ async function sweepPlaintextOnce(me, peerId) {
       queryFails = 0
       if (!data || data.length === 0) break
       oldest = data[data.length - 1].created_at
+      const items = []
+      const okIds = []
       for (const row of data) {
-        if (rowFails >= 5) break          // 连续失败太多次：这一轮先收工，下次打开接着扫
+        if (rowFails >= 5) break
         try {
           const sealed = await encryptForPeer(peerId, row.content)
-          // 拿不到钥匙（本机没解锁 / 对方还没公钥）：这不是"抖动"，别再白试
           if (!sealed) { console.warn('[chat] 扫尾：本机没解锁或对方还没有公钥，先停'); return }
-          const { data: ok, error: rpcErr } = await supabase.rpc('encrypt_message_payload', {
-            p_id: row.id, p_ciphertext: sealed.ciphertext, p_iv: sealed.iv, p_scheme: sealed.scheme,
-          })
-          // ok !== true 通常是"这一条刚被前台的补加密做掉了"，属正常竞态，不算失败
-          if (rpcErr) { rowFails += 1; await sleep(500); continue }
-          rowFails = 0
-          if (ok === true) budget -= 1
+          items.push({ id: row.id, ...sealed })
+          okIds.push(row.id)
         } catch (err) {
           rowFails += 1
           console.warn('[chat] 扫尾单条失败:', err?.message)
-          await sleep(500)
+          await sleep(400)
+        }
+      }
+      if (items.length > 0) {
+        const { data: n, error: rpcErr } = await supabase.rpc('encrypt_message_payloads', { p_items: items })
+        if (rpcErr) {
+          rowFails += 1
+          console.warn('[chat] 扫尾批量写失败:', rpcErr.message)
+          await sleep(600)
+        } else {
+          rowFails = 0
+          budget -= Math.max(0, Number(n) || 0)
+          void okIds
         }
       }
       await sleep(150)
@@ -548,22 +556,31 @@ export default function ChatThread() {
       const todo = out
         .filter((row) => row.sender_id === me && row.content && !row.ciphertext && !backfillTried.has(row.id))
         .slice(0, 25)
-      for (const row of todo) {
-        if (cancelled) return
-        backfillTried.add(row.id)
+      if (todo.length > 0) {
         try {
-          const sealed = await encryptForPeer(userId, row.content)
-          if (!sealed) { backfillTried.delete(row.id); break }
-          const { data, error } = await supabase.rpc('encrypt_message_payload', {
-            p_id: row.id, p_ciphertext: sealed.ciphertext, p_iv: sealed.iv, p_scheme: sealed.scheme,
-          })
-          if (error || data !== true) { backfillTried.delete(row.id); continue }
-          if (cancelled) return
-          setRawMessages((prev) => prev.map((x) => (
-            x.id === row.id ? { ...x, content: null, ...sealed } : x
-          )))
+          // 一批一次请求（踩过的坑：一条一次 RPC 实测 0.34 秒/条，1900 条要几分钟）
+          const items = []
+          const local = []
+          for (const row of todo) {
+            backfillTried.add(row.id)
+            const sealed = await encryptForPeer(userId, row.content)
+            if (!sealed) { backfillTried.delete(row.id); break }
+            items.push({ id: row.id, ...sealed })
+            local.push({ id: row.id, ...sealed })
+          }
+          if (items.length > 0) {
+            const { data, error } = await supabase.rpc('encrypt_message_payloads', { p_items: items })
+            if (error || !(data > 0)) {
+              for (const it of local) backfillTried.delete(it.id)
+            } else if (!cancelled) {
+              const byId = new Map(local.map((it) => [it.id, it]))
+              setRawMessages((prev) => prev.map((x) => (
+                byId.has(x.id) ? { ...x, content: null, ...byId.get(x.id) } : x
+              )))
+            }
+          }
         } catch {
-          backfillTried.delete(row.id)
+          for (const row of todo) backfillTried.delete(row.id)
         }
       }
       // 一屏只有 50 条，光靠"看到哪条补哪条"要翻很久才补完历史。所以再开一条**后台扫尾**：
