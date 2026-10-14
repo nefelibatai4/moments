@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
-import { cacheDekOnDevice, deriveAuthPassword, unlockWithPassword } from '../lib/crypto'
+import { cacheDekOnDevice, deriveAuthPassword, noteLoginSecrets, unlockWithPassword } from '../lib/crypto'
 import { useAccess } from '../lib/AuthContext'
 
 /**
@@ -64,6 +64,7 @@ export default function Register() {
 
       // 2.6 无感解锁：用同一个密码派生主密钥并生成数据密钥（服务器上只存被包住的密文）
       try {
+        noteLoginSecrets({ password, credential: authPassword, email })
         const res = await unlockWithPassword(signUpData.user.id, password, email)
         if (res.ok) await cacheDekOnDevice(signUpData.user.id)
       } catch (err) {

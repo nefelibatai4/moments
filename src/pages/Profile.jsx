@@ -10,6 +10,7 @@ import AdminPanel from '../components/AdminPanel'
 import LocationConsent from '../components/LocationConsent'
 import SignedImage from '../components/SignedImage'
 import { objectLocator, invalidateSignedUrl, resolveSignedUrl } from '../lib/signedUrls'
+import { fulfillRecoveryRequest, onUnlockChange, recoveryStatus, unlockStateVersion } from '../lib/crypto'
 
 // 扩展只能在桌面版 Chrome 里安装：iOS 壳里没有「解压 + 装扩展」这个概念。
 // 原生端不显示下载按钮，但也不让它静默消失（那样会被当成 bug），改显示一句该去哪做。
@@ -118,6 +119,41 @@ export default function Profile() {
     if (error) setError(error.message)
     else setMessage('个性签名已保存')
     setSavingSignature(false)
+  }
+
+  // 社交恢复（阶段 0b）：正常情况下这个区块**什么都不显示**，只有在下面两种罕见情况下才出现
+  //   ① 对方忘过密码、在等我帮忙交付 → 一个按钮
+  //   ② 有人取过我的恢复数据（审计）→ 一行字
+  const [recovery, setRecovery] = useState({ outgoing: [], access: [], waiting: false })
+  const [recoveryMsg, setRecoveryMsg] = useState(null)
+  const [helping, setHelping] = useState(false)
+
+  // ⚠️ 必须跟着"解锁状态"重查：这一页可能在**设备缓存解锁完成之前**就挂载了，
+  //    那一刻还不知道当前账号是谁，查询会返回空、而且再也不会重试（实测踩到：
+  //    对方的"帮 TA 取回"入口永远不出现）。
+  const [unlockV, setUnlockV] = useState(() => unlockStateVersion())
+  useEffect(() => onUnlockChange(setUnlockV), [])
+  useEffect(() => {
+    const uid = session?.user?.id
+    if (!uid) return undefined
+    let cancelled = false
+    recoveryStatus()
+      .then((st) => { if (!cancelled) setRecovery(st) })
+      .catch((err) => { console.warn('[recovery] 读取恢复状态失败:', err?.message) })
+    return () => { cancelled = true }
+  }, [session?.user?.id, unlockV])
+
+  async function handleHelpRecover(req) {
+    setHelping(true)
+    setRecoveryMsg(null)
+    const res = await fulfillRecoveryRequest(req.id, req.ownerId)
+    if (res.ok) {
+      setRecovery((prev) => ({ ...prev, outgoing: prev.outgoing.filter((r) => r.id !== req.id) }))
+      setRecoveryMsg(`已经交给 ${req.ownerName} 了：让 TA 打开一次 Moments，历史内容就会自己回去。`)
+    } else {
+      setRecoveryMsg(`没能帮上：${res.reason ?? '请稍后再试'}`)
+    }
+    setHelping(false)
   }
 
   async function handleChangePassword(e) {
@@ -241,6 +277,31 @@ export default function Profile() {
           {changingPassword ? '修改中…' : '修改密码'}
         </button>
       </form>
+
+      {/* 社交恢复：正常什么都不显示 */}
+      {(recovery.outgoing.length > 0 || recovery.waiting || recovery.access.length > 0) && (
+        <section className="recovery-section">
+          {recovery.waiting && (
+            <p className="status-text">
+              历史内容还在等 TA 帮忙取回：让 TA 打开一次 Moments；TA 帮忙之后你再登录一次即可。
+            </p>
+          )}
+          {recovery.outgoing.map((req) => (
+            <div key={req.id} className="recovery-row">
+              <span>{req.ownerName} 忘了密码，需要你帮 TA 把历史内容取回。</span>
+              <button type="button" onClick={() => handleHelpRecover(req)} disabled={helping}>
+                {helping ? '处理中…' : '帮 TA 取回'}
+              </button>
+            </div>
+          ))}
+          {recoveryMsg && <p className="success-text">{recoveryMsg}</p>}
+          {recovery.access.length > 0 && (
+            <p className="status-text recovery-audit">
+              有人取过你的恢复数据（用于忘密码时找回）：{new Date(recovery.access[0].at).toLocaleString('zh-CN')}
+            </p>
+          )}
+        </section>
+      )}
 
       {/* 精确位置（可选，默认关闭） */}
       <LocationConsent />

@@ -4,7 +4,10 @@ import { clearTimelineSnapshots } from './timelineSnapshot.js'
 import { clearChatListSnapshots } from './chatCache.js'
 // 端到端加密已于 2026-10-12 下线（使用者：用户不知道怎么操作、情绪较大）。
 // 这里只保留"登出时清掉内存里的会话密钥"，保证旧密文不会跨账号残留。
-import { clearCachedDek, clearConversationKeys, loadCachedDek, lockCrypto } from './crypto.js'
+import {
+  applyRecoveryHandover, clearCachedDek, clearConversationKeys, ensureEscrowWraps,
+  hasLocalRecoveryEph, isUnlocked, loadCachedDek, lockCrypto, onUnlockChange,
+} from './crypto.js'
 import { clearImageCache } from './imageCrypto.js'
 
 // session:   undefined = 还在加载 / null = 未登录 / object = 已登录
@@ -115,6 +118,42 @@ export function AuthProvider({ children }) {
     // 若确实什么都还没有，RequireAuth 的兜底定时器会继续重试。
     console.error(`[auth] 读取激活状态失败（已重试 ${APPROVAL_ATTEMPTS} 次）：`, lastError?.message)
   }, [])
+
+  // 社交恢复（阶段 0b）：解锁后静默维护"替对方存的那份恢复包裹"；
+  // 如果是"忘过密码、正等对方交付"的状态，就定期看一眼，拿到交付物后自动装回来 —— 全程无提示。
+  useEffect(() => {
+    let stopped = false
+    async function maintain(writeEscrow = false) {
+      if (stopped) return
+      const uid = session?.user?.id
+      if (!uid || approved !== true) return
+      if (isUnlocked()) {
+        // 包裹只在"刚登录/刚解锁"那一下刷一次；45 秒的轮询不写库（否则每 45 秒打一次 DB）
+        if (writeEscrow) ensureEscrowWraps().catch(() => {})
+        return
+      }
+      // 还没解锁：只有"本机留着等待交付的临时钥匙"时才去收尾（否则是正常没解锁）
+      if (!hasLocalRecoveryEph(uid)) return
+      // 收尾成功后也把钥匙写回设备缓存（下次打开就不用再输密码）
+      applyRecoveryHandover(session?.user?.email)
+        .then((res) => { if (res?.ok) return loadCachedDek(uid) })
+        .catch(() => {})
+    }
+    maintain(true)
+    const timer = setInterval(() => { maintain(false) }, 45000)
+    const off = onUnlockChange(() => { maintain(true) })
+    return () => { stopped = true; clearInterval(timer); off() }
+  }, [session?.user?.id, approved])
+
+  // 只要"有会话、又还没解锁"，就尝试用设备缓存解锁。
+  // ⚠️ 为什么单独一条：以前只在"读到激活状态成功"那条路径里调它，那条路径一旦抖动
+  //    （网络、token 未就绪的重试）这个用户就会**看起来像从没登录过**（要重新输密码），
+  //    而设备缓存明明还在（实测踩到：重开应用偶发变回未登录）。
+  useEffect(() => {
+    const uid = session?.user?.id
+    if (!uid || isUnlocked()) return
+    loadCachedDek(uid).catch(() => {})
+  }, [session?.user?.id])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))

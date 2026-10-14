@@ -24,6 +24,9 @@ import { decryptImageBytes, encryptImageBytes, fetchAndDecryptImage, looksLikeIm
  *    理论上能读被恢复者的数据（社交恢复的固有代价，已告知使用者）。
  */
 
+/** 模块实例标识：只为排障（开发服务器 HMR 有可能同时存在两个模块实例，见文件末尾说明） */
+const MODULE_ID = Math.random().toString(36).slice(2, 8)
+
 const KEK_ITERATIONS = 600000
 const AUTH_INFO = 'moments-auth-v1'      // 派生登录凭据
 const KEK_INFO = 'moments-kek-v1'        // 派生包裹密钥
@@ -32,51 +35,132 @@ const IDENTITY_ALGO = { name: 'ECDH', namedCurve: 'P-256' }
 const te = new TextEncoder()
 const td = new TextDecoder()
 
-// ── 内存里的"已解锁"状态（刷新即失效，磁盘上不留明文密钥）────────
-let currentDek = null          // CryptoKey（AES-GCM 256）
-let currentIdentity = null     // { privateKey: CryptoKey, publicJwk }
-let currentUserId = null
+// ── 可变状态：放在 globalThis 上的**单例**里 ─────────────────────
+// 为什么不用普通的模块级变量：同一个页面里 crypto.js 可能被加载成**两个实例**
+// （开发服务器 HMR 会加 `?t=` 查询串；静态 import 与动态 import 也可能各解析一次），
+// 那样"已解锁的钥匙 / 登录时的密码 / 缓存"就会两边不同步 —— 症状是
+// "登录明明成功了，另一个界面却以为没登录"（实测踩到：恢复请求因此永远发不出去）。
+// 放进程级单例后，无论有几个实例副本，状态只有一份。
+const S = (globalThis.__momentsCryptoState ||= {
+  dek: null,                 // CryptoKey（AES-GCM 256）
+  identity: null,            // { privateKey, publicJwk }
+  userId: null,
+  loginPassword: null,       // 用户输入的密码（恢复/换密码时要重包）
+  loginCredential: null,     // 真正发去认证的值（恢复包裹里存它）
+  loginEmail: null,
+  recoveryEph: null,         // 忘密码时的一次性临时密钥
+  unlockVersion: 0,
+  listeners: new Set(),
+  conversationKeys: new Map(),   // "小id|大id" → CryptoKey（私聊）
+  momentKeys: new Map(),         // momentId → CryptoKey（动态）
+  noPeerKeyUntil: new Map(),     // 用户 id → 时间戳（没有可用公钥的负缓存）
+  pubCache: new Map(),           // 用户 id → { jwk, at }
+  escrowEnsuredFor: null,        // 这一页已经用哪个凭据刷过恢复包裹（避免每次开应用都写一遍）
+  credentialVerified: false,     // 这个登录凭据是"刚刚真的登录成功过"的（设备缓存里恢复的不算）
+})
+
+const unlockListeners = S.listeners
 
 // "解锁状态变了"的订阅：界面靠它重算（比如登录前先渲染、解锁后补解密的私聊）。
 // 不加这个就会卡在"密钥还没进内存 → 解不出来 → 界面永远停在读不到"（实测踩到过）。
-let unlockVersion = 0
-const unlockListeners = new Set()
 function bumpUnlock() {
-  unlockVersion += 1
-  for (const cb of unlockListeners) {
-    try { cb(unlockVersion) } catch { /* 订阅方自己的错，不影响别人 */ }
+  S.unlockVersion += 1
+  for (const cb of S.listeners) {
+    try { cb(S.unlockVersion) } catch { /* 订阅方自己的错，不影响别人 */ }
   }
 }
 /** 订阅解锁状态变化，返回退订函数 */
 export function onUnlockChange(cb) {
-  unlockListeners.add(cb)
-  return () => unlockListeners.delete(cb)
+  S.listeners.add(cb)
+  return () => S.listeners.delete(cb)
 }
 export function unlockStateVersion() {
-  return unlockVersion
+  return S.unlockVersion
+}
+
+/** 登录成功后由登录/注册页告知"真正发去认证的值"（社交恢复的包裹里要存它） */
+export function noteLoginSecrets({ password, credential, email } = {}) {
+  if (password) S.loginPassword = String(password)
+  if (credential) {
+    S.loginCredential = String(credential)
+    S.credentialVerified = true      // 能走到这里 = 刚刚拿它登录成功了
+    // 每次"重新输密码登录"都允许刷新一遍恢复包裹：否则这一次登录时还不可用的成员
+    // （比如对方刚登录过还没轮到我）会一直拿不到我的包裹（实测踩到：A→B 那份永远不写）。
+    S.escrowEnsuredFor = null
+  }
+  if (email) S.loginEmail = normEmail(email)
+}
+export function loginCredentialKnown() {
+  return !!S.loginCredential
+}
+/** 排障用：只回答"那几个值在不在内存里"，**不暴露任何值本身** */
+export function secretsReady() {
+  return {
+    password: !!S.loginPassword,
+    credential: !!S.loginCredential,
+    email: !!S.loginEmail,
+    unlocked: !!S.dek && S.userId != null,
+  }
+}
+
+// 忘密码时那对**一次性临时密钥**：必须落本机（对方可能过一会儿/第二天才交付），
+// 与设备缓存同一信任级别，用完即删，7 天过期。
+const RECOVERY_EPH_KEY = 'moments_recovery_eph_v1'
+const RECOVERY_EPH_TTL_MS = 7 * 24 * 60 * 60 * 1000
+
+function saveRecoveryEph(jwk) {
+  try {
+    localStorage.setItem(`${RECOVERY_EPH_KEY}:${S.userId}`, JSON.stringify({ jwk, at: Date.now() }))
+  } catch { /* 隐私模式等：忽略 */ }
+}
+function loadRecoveryEph() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(`${RECOVERY_EPH_KEY}:${S.userId}`) || 'null')
+    if (!raw?.jwk || !raw?.at || Date.now() - raw.at > RECOVERY_EPH_TTL_MS) return null
+    return raw.jwk
+  } catch {
+    return null
+  }
+}
+function clearRecoveryEph() {
+  try { localStorage.removeItem(`${RECOVERY_EPH_KEY}:${S.userId}`) } catch { /* 忽略 */ }
+}
+/** 本机是否还留着"等着对方交付"的临时私钥（AuthContext 用它决定要不要轮询收尾） */
+export function hasLocalRecoveryEph(userId) {
+  try {
+    const raw = JSON.parse(localStorage.getItem(`${RECOVERY_EPH_KEY}:${userId}`) || 'null')
+    return !!raw?.jwk && !!raw?.at && Date.now() - raw.at <= RECOVERY_EPH_TTL_MS
+  } catch {
+    return false
+  }
 }
 
 export function isUnlocked() {
-  return !!currentDek && currentUserId != null
+  return !!S.dek && S.userId != null
 }
 export function lockedUserId() {
-  return currentUserId
+  return S.userId
 }
 export function lockCrypto() {
-  currentDek = null
-  currentIdentity = null
-  currentUserId = null
-  conversationKeys.clear()
-  noPeerKeyUntil.clear()
-  pubCache.clear()
-  momentKeys.clear()
+  S.dek = null
+  S.identity = null
+  S.userId = null
+  S.loginPassword = null
+  S.loginCredential = null
+  S.loginEmail = null
+  S.recoveryEph = null
+  S.credentialVerified = false
+  S.conversationKeys.clear()
+  S.noPeerKeyUntil.clear()
+  S.pubCache.clear()
+  S.momentKeys.clear()
   bumpUnlock()
 }
 export function unlockedDek() {
-  return currentDek
+  return S.dek
 }
 export function unlockedIdentity() {
-  return currentIdentity
+  return S.identity
 }
 
 // ── base64 小工具 ───────────────────────────────────────────────
@@ -194,6 +278,11 @@ async function createAndUploadKeys(userId, password, email) {
  */
 export async function unlockWithPassword(userId, password, email) {
   if (!userId || !password) return { ok: false, reason: '缺少参数' }
+  S.loginPassword = String(password)
+  S.loginEmail = normEmail(email)
+  // ⚠️ 这里就要把"当前账号"记下：钥匙**解不开**时（忘过密码）后面要靠它挂恢复请求，
+  //    之前只在成功分支里赋值，于是恢复流程永远认为"没有用户/没有密码"（实测踩到）。
+  S.userId = userId
   if (typeof crypto === 'undefined' || !crypto.subtle) return { ok: false, reason: '这个浏览器不支持加密' }
 
   const { data, error } = await supabase
@@ -206,9 +295,9 @@ export async function unlockWithPassword(userId, password, email) {
   if (!data) {
     try {
       const created = await createAndUploadKeys(userId, password, email)
-      currentDek = created.dek
-      currentIdentity = created.identity
-      currentUserId = userId
+      S.dek = created.dek
+      S.identity = created.identity
+      S.userId = userId
       bumpUnlock()
       return { ok: true, created: true }
     } catch (err) {
@@ -239,9 +328,9 @@ export async function unlockWithPassword(userId, password, email) {
   } catch {
     console.warn('[crypto] 身份私钥解不开（换密码时可能漏了重包）')
   }
-  currentDek = dekKey
-  currentIdentity = identityPriv ? { privateKey: identityPriv, publicJwk: data.identity_public } : null
-  currentUserId = userId
+  S.dek = dekKey
+  S.identity = identityPriv ? { privateKey: identityPriv, publicJwk: data.identity_public } : null
+  S.userId = userId
   bumpUnlock()
   return { ok: true }
 }
@@ -298,41 +387,41 @@ export async function rekeyForNewPassword(userId, oldPassword, newPassword, emai
   }).eq('user_id', userId)
   if (upErr) return { ok: false, reason: upErr.message }
 
-  currentDek = dekKey
-  currentUserId = userId
+  S.dek = dekKey
+  S.userId = userId
   return { ok: true }
 }
 
 // ── 数据加解密（阶段 1 起会被私聊/动态/图片用到）─────────────────
 export async function encryptJson(value) {
-  if (!currentDek) throw new Error('还没有解锁（请先登录）')
+  if (!S.dek) throw new Error('还没有解锁（请先登录）')
   const iv = crypto.getRandomValues(new Uint8Array(12))
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, currentDek, te.encode(JSON.stringify(value)))
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, S.dek, te.encode(JSON.stringify(value)))
   return { iv: toB64(iv), ciphertext: toB64(ct) }
 }
 
 export async function decryptJson(ciphertextB64, ivB64) {
-  if (!currentDek) throw new Error('还没有解锁（请先登录）')
+  if (!S.dek) throw new Error('还没有解锁（请先登录）')
   const plain = await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv: fromB64(ivB64) },
-    currentDek,
+    S.dek,
     fromB64(ciphertextB64),
   )
   return JSON.parse(td.decode(plain))
 }
 
 export async function encryptText(value) {
-  if (!currentDek) throw new Error('还没有解锁（请先登录）')
+  if (!S.dek) throw new Error('还没有解锁（请先登录）')
   const iv = crypto.getRandomValues(new Uint8Array(12))
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, currentDek, te.encode(String(value)))
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, S.dek, te.encode(String(value)))
   return { iv: toB64(iv), ciphertext: toB64(ct) }
 }
 
 export async function decryptText(ciphertextB64, ivB64) {
-  if (!currentDek) throw new Error('还没有解锁（请先登录）')
+  if (!S.dek) throw new Error('还没有解锁（请先登录）')
   const plain = await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv: fromB64(ivB64) },
-    currentDek,
+    S.dek,
     fromB64(ciphertextB64),
   )
   return td.decode(plain)
@@ -357,9 +446,7 @@ export const DM_SCHEME = 'v2-dm'
  * 对不上就退回明文（宁可暂时不加密，也不制造读不回来的历史）。
  */
 export const KEY_SCHEME = 'v2'
-const conversationKeys = new Map()   // "小id|大id" → CryptoKey
-const noPeerKeyUntil = new Map()     // 用户 id → 时间戳：这个人还没有可用公钥（短时负缓存）
-const pubCache = new Map()           // 用户 id → { jwk, at }：公钥读取缓存（私聊/动态都要用）
+// 私聊会话密钥缓存、"还没有可用公钥"负缓存、公钥读取缓存 —— 都放在上面的单例 S 里
 
 function pairTag(a, b) {
   return [String(a), String(b)].sort().join('|')
@@ -371,9 +458,9 @@ function pairTag(a, b) {
  * ⚠️ 公钥是从服务器读的 → 等于信任服务器分发公钥（已知边界，见上）。
  */
 async function peerKeyInfo(peerId) {
-  const hit = pubCache.get(peerId)
+  const hit = S.pubCache.get(peerId)
   if (hit && Date.now() - hit.at < 5 * 60 * 1000) return hit.jwk
-  if ((noPeerKeyUntil.get(peerId) ?? 0) > Date.now()) return null
+  if ((S.noPeerKeyUntil.get(peerId) ?? 0) > Date.now()) return null
   const { data, error } = await supabase
     .from('profiles')
     .select('public_key, key_scheme')
@@ -381,22 +468,22 @@ async function peerKeyInfo(peerId) {
     .maybeSingle()
   if (error) throw new Error(error.message)
   if (!data?.public_key || data.key_scheme !== KEY_SCHEME) {
-    noPeerKeyUntil.set(peerId, Date.now() + 30000)
+    S.noPeerKeyUntil.set(peerId, Date.now() + 30000)
     return null
   }
-  pubCache.set(peerId, { jwk: data.public_key, at: Date.now() })
-  noPeerKeyUntil.delete(peerId)
+  S.pubCache.set(peerId, { jwk: data.public_key, at: Date.now() })
+  S.noPeerKeyUntil.delete(peerId)
   return data.public_key
 }
 
 /** 会话密钥的原始 ECDH 位（测试要对指纹用；业务代码用下面的 conversationKey） */
 async function pairBits(peerId) {
-  if (!currentUserId || !currentIdentity?.privateKey) return null
-  if (!peerId || peerId === currentUserId) return null
+  if (!S.userId || !S.identity?.privateKey) return null
+  if (!peerId || peerId === S.userId) return null
   const jwk = await peerKeyInfo(peerId)
   if (!jwk) return null
   const pub = await crypto.subtle.importKey('jwk', jwk, IDENTITY_ALGO, false, [])
-  return crypto.subtle.deriveBits({ name: 'ECDH', public: pub }, currentIdentity.privateKey, 256)
+  return crypto.subtle.deriveBits({ name: 'ECDH', public: pub }, S.identity.privateKey, 256)
 }
 
 async function deriveConversationKey(peerId) {
@@ -407,7 +494,7 @@ async function deriveConversationKey(peerId) {
     {
       name: 'HKDF',
       hash: 'SHA-256',
-      salt: te.encode(`moments-pair-v1:${pairTag(currentUserId, peerId)}`),
+      salt: te.encode(`moments-pair-v1:${pairTag(S.userId, peerId)}`),
       info: te.encode(DM_INFO),
     },
     base,
@@ -419,10 +506,10 @@ async function deriveConversationKey(peerId) {
 
 /** 取会话密钥（内存缓存；拿不到返回 null：对方还没公钥 / 本机还没解锁） */
 export async function conversationKey(peerId) {
-  const tag = pairTag(currentUserId, peerId)
-  if (conversationKeys.has(tag)) return conversationKeys.get(tag)
+  const tag = pairTag(S.userId, peerId)
+  if (S.conversationKeys.has(tag)) return S.conversationKeys.get(tag)
   const ck = await deriveConversationKey(peerId)
-  if (ck) conversationKeys.set(tag, ck)
+  if (ck) S.conversationKeys.set(tag, ck)
   return ck
 }
 
@@ -484,10 +571,10 @@ export async function decryptPeerMessages(peerId, rows) {
 
 /** 登出时清掉内存里的会话密钥（换账号不能残留） */
 export function clearConversationKeys() {
-  conversationKeys.clear()
-  noPeerKeyUntil.clear()
-  pubCache.clear()
-  momentKeys.clear()
+  S.conversationKeys.clear()
+  S.noPeerKeyUntil.clear()
+  S.pubCache.clear()
+  S.momentKeys.clear()
 }
 
 // ── 圈子内容密钥（阶段 2：动态与评论文字）─────────────────────────
@@ -502,7 +589,7 @@ export function clearConversationKeys() {
 const WRAP_INFO = 'moments-cek-v1'
 /** 密文行里的算法标记（动态/评论共用） */
 export const CIRCLE_SCHEME = 'v2-circle'
-const momentKeys = new Map()         // momentId → CryptoKey
+// 每条动态的内容密钥缓存也放在上面的单例 S 里
 
 /** 成员清单 + "能不能加密"：**所有已激活成员的公钥世代都得对得上**，否则不加密。
  *  理由：圈子是"所有人都能看"，任何一个成员解不开 = 这个人看不到内容，宁可先明文。 */
@@ -518,17 +605,17 @@ export async function circleReady() {
 }
 
 /** 包裹密钥：只有"发布者私钥 × 这一位成员公钥"这一对算得出来（双方算出的相同） */
-async function deriveWrapKek(otherId, otherJwk, usages) {
+async function deriveWrapKek(otherId, otherJwk, usages, info = WRAP_INFO) {
   const pub = await crypto.subtle.importKey('jwk', otherJwk, IDENTITY_ALGO, false, [])
-  const bits = await crypto.subtle.deriveBits({ name: 'ECDH', public: pub }, currentIdentity.privateKey, 256)
+  const bits = await crypto.subtle.deriveBits({ name: 'ECDH', public: pub }, S.identity.privateKey, 256)
   const base = await crypto.subtle.importKey('raw', bits, 'HKDF', false, ['deriveKey'])
   return crypto.subtle.deriveKey(
     {
       name: 'HKDF',
       hash: 'SHA-256',
       // 盐里带上"发布者|读者"两人 id（排序后），保证包与解用的是同一个派生上下文
-      salt: te.encode(`moments-wrap-v1:${pairTag(currentUserId, otherId)}`),
-      info: te.encode(WRAP_INFO),
+      salt: te.encode(`moments-wrap-v1:${pairTag(S.userId, otherId)}`),
+      info: te.encode(info),
     },
     base,
     { name: 'AES-GCM', length: 256 },
@@ -543,7 +630,7 @@ async function deriveWrapKek(otherId, otherJwk, usages) {
  * @returns {Promise<CryptoKey|null>} 生成好的 CEK（失败返回 null，调用方应退回明文）
  */
 export async function createMomentKey(momentId, members) {
-  if (!momentId || !currentIdentity?.privateKey || !currentUserId) return null
+  if (!momentId || !S.identity?.privateKey || !S.userId) return null
   const list = (members ?? []).filter((m) => m?.id && m?.public_key)
   if (list.length === 0) return null
   // ⚠️ **幂等**：这条动态已经有包裹了，就绝不能再造一把新 CEK（新的会覆盖旧包裹，
@@ -554,7 +641,7 @@ export async function createMomentKey(momentId, members) {
     .select('iv')
     .eq('moment_id', momentId)
     .limit(1)
-  if (existing && existing.length > 0) return momentKey(momentId, currentUserId)
+  if (existing && existing.length > 0) return momentKey(momentId, S.userId)
   const cek = await crypto.subtle.importKey(
     'raw', crypto.getRandomValues(new Uint8Array(32)),
     { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey'],
@@ -572,7 +659,7 @@ export async function createMomentKey(momentId, members) {
       console.warn('[circle] 写钥匙包裹失败:', error.message)
       return null
     }
-    momentKeys.set(momentId, cek)
+    S.momentKeys.set(momentId, cek)
     return cek
   } catch (err) {
     console.warn('[circle] 生成钥匙包裹失败:', err?.message)
@@ -583,13 +670,13 @@ export async function createMomentKey(momentId, members) {
 /** 取某条动态的 CEK：解开"自己那一份"包裹（内存缓存；拿不到返回 null） */
 export async function momentKey(momentId, authorId) {
   if (!momentId || !authorId) return null
-  if (momentKeys.has(momentId)) return momentKeys.get(momentId)
-  if (!currentIdentity?.privateKey || !currentUserId) return null
+  if (S.momentKeys.has(momentId)) return S.momentKeys.get(momentId)
+  if (!S.identity?.privateKey || !S.userId) return null
   const { data, error } = await supabase
     .from('moment_keys')
     .select('iv, wrapped')
     .eq('moment_id', momentId)
-    .eq('user_id', currentUserId)
+    .eq('user_id', S.userId)
     .maybeSingle()
   if (error || !data) return null
   const authorJwk = await peerKeyInfo(authorId)
@@ -601,7 +688,7 @@ export async function momentKey(momentId, authorId) {
       { name: 'AES-GCM', iv: fromB64(data.iv) },
       { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey'],
     )
-    momentKeys.set(momentId, cek)
+    S.momentKeys.set(momentId, cek)
     return cek
   } catch {
     return null
@@ -636,7 +723,7 @@ export async function decryptCircleText(cek, row) {
 export async function decryptTimelineRows(rows) {
   const list = rows ?? []
   if (list.length === 0) return list
-  if (!currentUserId || !currentIdentity?.privateKey) return list
+  if (!S.userId || !S.identity?.privateKey) return list
   const withCipher = list.filter((m) => m?.ciphertext || (m?.comments ?? []).some((c) => c?.ciphertext))
   if (withCipher.length === 0) return list
   const ids = withCipher.map((m) => m.id)
@@ -646,7 +733,7 @@ export async function decryptTimelineRows(rows) {
   const { data: keyRows, error } = await supabase
     .from('moment_keys')
     .select('moment_id, iv, wrapped')
-    .eq('user_id', currentUserId)
+    .eq('user_id', S.userId)
     .in('moment_id', ids)
   if (error) return list
   const byMoment = new Map()
@@ -655,7 +742,7 @@ export async function decryptTimelineRows(rows) {
   const out = []
   for (const m of list) {
     if (!m?.ciphertext && !(m?.comments ?? []).some((c) => c?.ciphertext)) { out.push(m); continue }
-    let cek = momentKeys.get(m.id) ?? null
+    let cek = S.momentKeys.get(m.id) ?? null
     if (!cek) {
       const wrap = byMoment.get(m.id)
       const authorJwk = await peerKeyInfo(m.user_id).catch(() => null)
@@ -667,7 +754,7 @@ export async function decryptTimelineRows(rows) {
             { name: 'AES-GCM', iv: fromB64(wrap.iv) },
             { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey'],
           )
-          momentKeys.set(m.id, cek)
+          S.momentKeys.set(m.id, cek)
         } catch { cek = null }
       }
     }
@@ -681,22 +768,300 @@ export async function decryptTimelineRows(rows) {
   return out
 }
 
+// ── 社交恢复（阶段 0b）───────────────────────────────────────────
+/**
+ * 每个成员替**其他成员**存一份"恢复包裹"（`key_escrow`）：
+ *   包裹 = { 身份私钥, DEK, 登录凭据 }，用 `HKDF(ECDH(我的私钥, 对方公钥))` 加密。
+ * 忘密码时：对方解开包裹 → 用我**当场生成的一次性公钥**重新包一份（`key_recovery_requests`）
+ * → 我解开、用新密码的 KEK 重包回自己这套密钥 → 删掉请求行。
+ *
+ * ⚠️ 使用者 2026-10-13 明确选择"登录凭据也放进包裹"：这样对方**任何情况下**都能把你救回来，
+ *    代价是**帮你恢复的人也能用你的身份登录**。因此每次取出都会写一条
+ *    `key_escrow_access_log`，在【我】里能看到（这就是那条审计）。
+ */
+const ESCROW_INFO = 'moments-escrow-v1'
+const HANDOVER_INFO = 'moments-handover-v1'
+export const ESCROW_SCHEME = 'v2-escrow'
+
+/**
+ * 交付通道的包裹密钥：`ECDH(自己的某把私钥, 对方的公钥)` → HKDF。
+ * ⚠️ 两边**用的私钥不同**，这是这个协议的关键：
+ *    holder（帮忙的人）用自己的**身份私钥** + owner 的一次性公钥；
+ *    owner（忘密码的人）用自己那对**一次性临时私钥** + holder 的身份公钥。
+ *    —— owner 此刻**没有**身份私钥（正找回来的就是它），所以不能复用通用的包裹函数（实测踩到：
+ *    写成通用函数后报 "Cannot read properties of null (reading 'privateKey')"）。
+ */
+async function deriveHandoverKek(myPrivateKey, otherId, otherJwk) {
+  const pub = await crypto.subtle.importKey('jwk', otherJwk, IDENTITY_ALGO, false, [])
+  const bits = await crypto.subtle.deriveBits({ name: 'ECDH', public: pub }, myPrivateKey, 256)
+  const base = await crypto.subtle.importKey('raw', bits, 'HKDF', false, ['deriveKey'])
+  return crypto.subtle.deriveKey(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: te.encode(`moments-wrap-v1:${pairTag(S.userId, otherId)}`),
+      info: te.encode(HANDOVER_INFO),
+    },
+    base,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  )
+}
+
+/** 组装要交出去的恢复包裹（身份私钥 + DEK + 登录凭据） */
+async function buildRecoveryPayload() {
+  if (!S.dek || !S.identity?.privateKey) return null
+  const identity = await crypto.subtle.exportKey('jwk', S.identity.privateKey)
+  const dek = toB64(await crypto.subtle.exportKey('raw', S.dek))
+  return JSON.stringify({ v: 1, identity, dek, cred: S.loginCredential })
+}
+
+/**
+ * 静默刷新"我替对方存的那份包裹"（登录成功后调用；换密码后也必须重来一次，
+ * 因为**登录凭据变了**）。对方还没登录过新版本（拿不到可用公钥）时什么也不做。
+ * @returns {Promise<number>} 写成功的份数
+ */
+export async function ensureEscrowWraps() {
+  if (!isUnlocked() || !S.userId || !S.loginCredential) return 0
+  // 只写"验证过的"凭据：设备缓存里恢复出来的可能是旧密码，写进去反而害了以后的重置
+  if (!S.credentialVerified) return 0
+  if (S.escrowEnsuredFor === S.loginCredential) return 0
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, public_key, key_scheme')
+    .eq('approved', true)
+    .neq('id', S.userId)
+  if (error) return 0
+  const members = (data ?? []).filter((m) => m.public_key && m.key_scheme === KEY_SCHEME)
+  if (members.length === 0) return 0
+  const payload = await buildRecoveryPayload()
+  if (!payload) return 0
+  let written = 0
+  for (const m of members) {
+    try {
+      const kek = await deriveWrapKek(m.id, m.public_key, ['encrypt', 'decrypt'], ESCROW_INFO)
+      const iv = crypto.getRandomValues(new Uint8Array(12))
+      const wrapped = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, kek, te.encode(payload))
+      const { error: upErr } = await supabase.from('key_escrow').upsert({
+        owner_id: S.userId,
+        holder_id: m.id,
+        iv: toB64(iv),
+        wrapped: toB64(wrapped),
+        scheme: ESCROW_SCHEME,
+      }, { onConflict: 'owner_id,holder_id' })
+      if (!upErr) written += 1
+      else console.warn('[recovery] 写恢复包裹失败:', upErr.message)
+    } catch (err) {
+      console.warn('[recovery] 恢复包裹生成失败:', err?.message)
+    }
+  }
+  if (written > 0) S.escrowEnsuredFor = S.loginCredential
+  return written
+}
+
+/**
+ * 忘密码时（认证过了但钥匙解不开）：生成一次性临时密钥并挂出"请对方交付"的请求。
+ * 临时私钥只在本机内存里，刷新即失效（重来一次即可）。
+ */
+export async function createRecoveryRequest() {
+  if (!S.userId) return { ok: false, reason: '缺少会话信息' }
+  if (!S.loginPassword) return { ok: false, reason: '没有密码可用' }
+  try {
+    const pair = await crypto.subtle.generateKey(IDENTITY_ALGO, true, ['deriveBits'])
+    const [pub, priv] = await Promise.all([
+      crypto.subtle.exportKey('jwk', pair.publicKey),
+      crypto.subtle.exportKey('jwk', pair.privateKey),
+    ])
+    const privKey = await crypto.subtle.importKey('jwk', priv, IDENTITY_ALGO, true, ['deriveBits'])
+    S.recoveryEph = { privateKey: privKey, publicJwk: pub }
+    saveRecoveryEph(priv)
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, public_key, key_scheme')
+      .eq('approved', true)
+      .neq('id', S.userId)
+    const rows = (data ?? [])
+      .filter((m) => m.public_key && m.key_scheme === KEY_SCHEME)
+      .map((m) => ({ owner_id: S.userId, holder_id: m.id, eph_public: pub }))
+    if (rows.length === 0) return { ok: false, reason: '还没有人能帮你（对方需要先登录一次）' }
+    const { error } = await supabase
+      .from('key_recovery_requests')
+      .upsert(rows, { onConflict: 'owner_id,holder_id' })
+    if (error) return { ok: false, reason: error.message }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, reason: err?.message }
+  }
+}
+
+/**
+ * 取回对方交付的包裹并装回自己这套密钥（忘密码的收尾动作，全自动、无提示）。
+ * 用**这次登录输入的密码**派生新 KEK 重新包住身份私钥与 DEK。
+ */
+export async function applyRecoveryHandover(email) {
+  if (!S.userId) return { ok: false, reason: '缺少会话信息' }
+  if (email) S.loginEmail = normEmail(email)
+  if (!S.loginPassword || !S.loginEmail) return { ok: false, reason: '需要重新登录一次才能装回' }
+  if (!S.recoveryEph?.privateKey) {
+    const jwk = loadRecoveryEph()
+    if (!jwk) return { ok: false, reason: '本机没有等待中的交付' }
+    try {
+      S.recoveryEph = {
+        privateKey: await crypto.subtle.importKey('jwk', jwk, IDENTITY_ALGO, true, ['deriveBits']),
+        publicJwk: null,
+      }
+    } catch {
+      return { ok: false, reason: '临时密钥读不出来' }
+    }
+  }
+  const { data: reqs, error } = await supabase
+    .from('key_recovery_requests')
+    .select('id, holder_id, iv, wrapped')
+    .eq('owner_id', S.userId)
+    .not('wrapped', 'is', null)
+  if (error) return { ok: false, reason: error.message }
+  if (!reqs || reqs.length === 0) return { ok: false, reason: '对方还没交付' }
+
+  for (const req of reqs) {
+    try {
+      const holderJwk = await peerKeyInfo(req.holder_id)
+      if (!holderJwk) continue
+      const hkek = await deriveHandoverKek(S.recoveryEph.privateKey, req.holder_id, holderJwk)
+      const raw = JSON.parse(td.decode(await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: fromB64(req.iv) }, hkek, fromB64(req.wrapped),
+      )))
+      if (!raw?.identity || !raw?.dek) continue
+
+      const salt = toB64(crypto.getRandomValues(new Uint8Array(16)))
+      const kek = await deriveKek(S.loginPassword, S.loginEmail, salt)
+      const identityKey = await crypto.subtle.importKey('jwk', raw.identity, IDENTITY_ALGO, true, ['deriveBits'])
+      const dekKey = await crypto.subtle.importKey(
+        'raw', fromB64(raw.dek), { name: 'AES-GCM', length: 256 }, true,
+        ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey'],
+      )
+      const dekIv = crypto.getRandomValues(new Uint8Array(12))
+      const dekWrapped = await crypto.subtle.wrapKey('raw', dekKey, kek, { name: 'AES-GCM', iv: dekIv })
+      const idIv = crypto.getRandomValues(new Uint8Array(12))
+      const idWrapped = await crypto.subtle.wrapKey('jwk', identityKey, kek, { name: 'AES-GCM', iv: idIv })
+      const identityPublic = {
+        kty: raw.identity.kty, crv: raw.identity.crv, x: raw.identity.x, y: raw.identity.y,
+        ext: true, key_ops: [],
+      }
+      const { error: upErr } = await supabase.from('user_keys').update({
+        kek_salt: salt,
+        kek_iterations: KEK_ITERATIONS,
+        dek_iv: toB64(dekIv),
+        dek_wrapped: toB64(dekWrapped),
+        identity_iv: toB64(idIv),
+        identity_wrapped: toB64(idWrapped),
+        identity_public: identityPublic,
+        updated_at: new Date().toISOString(),
+      }).eq('user_id', S.userId)
+      if (upErr) return { ok: false, reason: upErr.message }
+
+      S.dek = dekKey
+      S.identity = { privateKey: identityKey, publicJwk: identityPublic }
+      // 登录凭据也一起回来了（包裹里带着）：记下来，之后刷新包裹时用新的
+      if (raw.cred) S.loginCredential = String(raw.cred)
+      await supabase.from('key_recovery_requests').delete().eq('id', req.id)
+      clearRecoveryEph()
+      S.recoveryEph = null
+      bumpUnlock()
+      await ensureEscrowWraps()      // 用恢复后的凭据把包裹刷新一遍
+      return { ok: true, restored: true }
+    } catch (err) {
+      console.warn('[recovery] 装回恢复包裹失败:', err?.message)
+    }
+  }
+  return { ok: false, reason: '交付物打不开' }
+}
+
+/** 对方（holder）这一侧：看看有没有人在等我交付 */
+export async function listRecoveryRequests() {
+  if (!S.userId) return []
+  const { data, error } = await supabase
+    .from('key_recovery_requests')
+    .select('id, owner_id, created_at')
+    .eq('holder_id', S.userId)
+    .is('wrapped', null)
+  if (error || !data?.length) return []
+  const ids = [...new Set(data.map((r) => r.owner_id))]
+  const { data: profs } = await supabase.from('profiles').select('id, nickname').in('id', ids)
+  const nameOf = new Map((profs ?? []).map((p) => [p.id, p.nickname]))
+  return data.map((r) => ({ id: r.id, ownerId: r.owner_id, ownerName: nameOf.get(r.owner_id) ?? '对方', createdAt: r.created_at }))
+}
+
+/** 对方（holder）这一侧：解开自己替他存的那份，用他的一次性公钥重新包好交付回去 */
+export async function fulfillRecoveryRequest(reqId, ownerId) {
+  if (!S.userId || !S.identity?.privateKey) return { ok: false, reason: '本机还没解锁' }
+  try {
+    const { data: esc } = await supabase
+      .from('key_escrow')
+      .select('iv, wrapped')
+      .eq('owner_id', ownerId)
+      .eq('holder_id', S.userId)
+      .maybeSingle()
+    if (!esc) return { ok: false, reason: '这台设备上没有他的恢复包裹' }
+    const ownerJwk = await peerKeyInfo(ownerId)
+    if (!ownerJwk) return { ok: false, reason: '拿不到他的公钥' }
+    const escKek = await deriveWrapKek(ownerId, ownerJwk, ['encrypt', 'decrypt'], ESCROW_INFO)
+    const payload = td.decode(await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: fromB64(esc.iv) }, escKek, fromB64(esc.wrapped),
+    ))
+    const { data: req } = await supabase
+      .from('key_recovery_requests')
+      .select('id, eph_public')
+      .eq('id', reqId)
+      .maybeSingle()
+    if (!req) return { ok: false, reason: '请求已经不在了' }
+    const hkek = await deriveHandoverKek(S.identity.privateKey, ownerId, req.eph_public)
+    const iv = crypto.getRandomValues(new Uint8Array(12))
+    const wrapped = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, hkek, te.encode(payload))
+    const { error } = await supabase
+      .from('key_recovery_requests')
+      .update({ iv: toB64(iv), wrapped: toB64(wrapped), fulfilled_at: new Date().toISOString() })
+      .eq('id', reqId)
+    if (error) return { ok: false, reason: error.message }
+    // 取出记录（使用者选了"凭据也放包裹"，所以这件事必须留痕、并且他自己能看到）
+    await supabase.from('key_escrow_access_log').insert({
+      owner_id: ownerId, holder_id: S.userId, action: 'handover',
+    })
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, reason: err?.message }
+  }
+}
+
+/** 【我】里要显示的两行：有人在等我帮忙 / 我的包裹被取过 */
+export async function recoveryStatus() {
+  if (!S.userId) return { outgoing: [], access: [], waiting: false }
+  const outgoing = await listRecoveryRequests().catch(() => [])
+  const [{ data: access }, { data: mine }] = await Promise.all([
+    supabase.from('key_escrow_access_log')
+      .select('holder_id, at').eq('owner_id', S.userId).order('at', { ascending: false }).limit(3),
+    supabase.from('key_recovery_requests')
+      .select('id').eq('owner_id', S.userId).is('wrapped', null).limit(1),
+  ])
+  return { outgoing, access: access ?? [], waiting: (mine ?? []).length > 0 || hasLocalRecoveryEph(S.userId) }
+}
+
 /**
  * 换密码（无感版）：**不需要旧密码** —— 直接用内存里已解锁的 DEK / 身份私钥重包。
  * 旧密码留给"设备锁着时"的场景（`rekeyForNewPassword`）。
  */
 export async function rekeyWithUnlockedKeys(userId, newPassword, email) {
-  if (!currentDek || !currentUserId || currentUserId !== userId) {
+  if (!S.dek || !S.userId || S.userId !== userId) {
     return { ok: false, reason: '当前会话还没解锁' }
   }
-  const identityJwk = currentIdentity
-    ? await crypto.subtle.exportKey('jwk', currentIdentity.privateKey)
+  const identityJwk = S.identity
+    ? await crypto.subtle.exportKey('jwk', S.identity.privateKey)
     : null
 
   const newSalt = toB64(crypto.getRandomValues(new Uint8Array(16)))
   const newKek = await deriveKek(newPassword, email, newSalt)
   const dekIv = crypto.getRandomValues(new Uint8Array(12))
-  const dekWrapped = await crypto.subtle.wrapKey('raw', currentDek, newKek, { name: 'AES-GCM', iv: dekIv })
+  const dekWrapped = await crypto.subtle.wrapKey('raw', S.dek, newKek, { name: 'AES-GCM', iv: dekIv })
 
   const patch = {
     kek_salt: newSalt,
@@ -714,6 +1079,10 @@ export async function rekeyWithUnlockedKeys(userId, newPassword, email) {
 
   const { error } = await supabase.from('user_keys').update(patch).eq('user_id', userId)
   if (error) return { ok: false, reason: error.message }
+  // 密码变了：内存里记的密码与"恢复包裹里的登录凭据"都要跟着换（否则包裹里的凭据是旧的）
+  S.loginPassword = String(newPassword)
+  S.loginEmail = normEmail(email)
+  S.loginCredential = await deriveAuthPassword(newPassword, email)
   return { ok: true }
 }
 
@@ -739,14 +1108,17 @@ function deviceSecret() {
 /** 把 DEK 缓存到本机（包一层，避免明文摆放） */
 export async function cacheDekOnDevice(userId) {
   const secret = deviceSecret()
-  if (!secret || !currentDek) return false
+  if (!secret || !S.dek) return false
   try {
     // ⚠️ 必须用 base64 解码后的 32 字节；直接 encode(base64 字符串) 是 44 字节，
     //    不是合法 AES 长度，importKey 会直接抛 InvalidAccessError（实测踩到：缓存一直写不进去）
     const kek = await crypto.subtle.importKey('raw', fromB64(secret), { name: 'AES-GCM' }, false, ['encrypt'])
-    const raw = await crypto.subtle.exportKey('raw', currentDek)
-    const identityJwk = currentIdentity ? await crypto.subtle.exportKey('jwk', currentIdentity.privateKey) : null
+    const raw = await crypto.subtle.exportKey('raw', S.dek)
+    const identityJwk = S.identity ? await crypto.subtle.exportKey('jwk', S.identity.privateKey) : null
     const iv = crypto.getRandomValues(new Uint8Array(12))
+    // ⚠️ **刻意不存登录凭据**：设备缓存能解锁 ≠ 这个凭据还有效（密码可能在别处被改过）。
+    //    把没验证过的凭据写进恢复包裹，会让"以后靠它找回"直接失效 —— 所以凭据只在
+    //    真正用它登录成功的那一次才有资格进包裹（见 S.credentialVerified）。
     const payload = JSON.stringify({ dek: toB64(raw), identity: identityJwk })
     const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, kek, te.encode(payload))
     localStorage.setItem(DEVICE_KEY, JSON.stringify({ uid: userId, iv: toB64(iv), ct: toB64(ct) }))
@@ -767,14 +1139,16 @@ export async function loadCachedDek(userId) {
     const kek = await crypto.subtle.importKey('raw', fromB64(secret), { name: 'AES-GCM' }, false, ['decrypt'])
     const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromB64(raw.iv) }, kek, fromB64(raw.ct))
     const parsed = JSON.parse(td.decode(plain))
-    currentDek = await crypto.subtle.importKey('raw', fromB64(parsed.dek), { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey'])
-    currentIdentity = parsed.identity
+    S.dek = await crypto.subtle.importKey('raw', fromB64(parsed.dek), { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey'])
+    S.identity = parsed.identity
       ? { privateKey: await crypto.subtle.importKey('jwk', parsed.identity, IDENTITY_ALGO, true, ['deriveBits']), publicJwk: null }
       : null
-    currentUserId = userId
+    S.userId = userId
     bumpUnlock()
     return true
-  } catch {
+  } catch (err) {
+    // 以前这里静默返回 false，于是"设备缓存明明写着、重新打开却像没登录"完全查不出来（实测踩到）
+    console.warn('[crypto] 设备缓存读不出来（需要重新输密码）:', err?.message)
     return false
   }
 }
@@ -796,13 +1170,20 @@ if (typeof window !== 'undefined') {
     dekFingerprint,
     encryptText,
     decryptText,
-    user: () => currentUserId,
+    user: () => S.userId,
     unlockVersion: unlockStateVersion,
     conversationFingerprint,
     encryptForPeer,
     decryptForPeer,
     circleReady,
     createMomentKey,
+    ensureEscrowWraps,
+    createRecoveryRequest,
+    applyRecoveryHandover,
+    recoveryStatus,
+    fulfillment: fulfillRecoveryRequest,
+    secretsReady,
+    instanceId: () => MODULE_ID,
     encryptImageBytes,
     decryptImageBytes,
     looksLikeImage,
@@ -818,8 +1199,8 @@ if (typeof window !== 'undefined') {
 
 /** DEK 指纹（测试与排障用：不泄露密钥本身） */
 export async function dekFingerprint() {
-  if (!currentDek) return null
-  const raw = await crypto.subtle.exportKey('raw', currentDek)
+  if (!S.dek) return null
+  const raw = await crypto.subtle.exportKey('raw', S.dek)
   const digest = await crypto.subtle.digest('SHA-256', raw)
   return toB64(digest).slice(0, 12)
 }

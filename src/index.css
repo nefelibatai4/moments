@@ -315,6 +315,27 @@ button:disabled {
   margin-bottom: 12px;
 }
 
+/* 社交恢复（阶段 0b）：只在"有人等你帮忙 / 你等别人帮忙 / 有取出记录"时才出现 */
+.recovery-section {
+  margin: 18px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.recovery-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.recovery-audit { font-size: 0.82rem; opacity: 0.75; }
+.recovery-hint { margin-bottom: 12px; }
+
 /* 密文但本机解不开（极少：还没解锁 / 加入圈子之前的动态）—— 与私聊同一套文案 */
 .moment-locked {
   color: var(--text-secondary);
