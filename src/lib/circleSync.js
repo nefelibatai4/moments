@@ -1,6 +1,7 @@
 import { supabase } from '../supabaseClient'
 import {
-  CIRCLE_SCHEME, circleReady, createMomentKey, encryptCircleText, momentKey,
+  CIRCLE_SCHEME, circleReady, conversationKey, createMomentKey, encryptCircleText,
+  encryptForPeer, momentKey,
 } from './crypto'
 
 /**
@@ -126,6 +127,64 @@ async function sweepComments(me) {
       }
     }
     await sleep(120)
+  }
+  return done
+}
+
+/**
+ * 历史**私聊**明文的后台补加密（不要求打开那个会话）。
+ *
+ * 为什么需要它：会话里的扫尾只有"打开那个会话"时才跑 —— 使用者可能很久都不点进某段对话，
+ * 那些历史明文就一直躺在服务器上。改成"打开应用就会补"之后，铺开只依赖他打开过应用。
+ *
+ * 做法：查**我发的、还是明文的**消息（按时间倒序，一批 50 条）→ 按对方取会话密钥
+ * （对方没就绪就跳过）→ 批量写回。每批一次 RPC；预算与别的扫尾一致（一次会话 300 条）。
+ */
+const MSG_BUDGET = 300
+let msgRunning = false
+
+export async function sweepMyMessages(me) {
+  if (msgRunning || !me) return 0
+  msgRunning = true
+  let done = 0
+  let fails = 0
+  const keyReady = new Map()      // 对方 id → 能不能加密（拿不到会话密钥就别白试）
+  try {
+    while (done < MSG_BUDGET && fails < 3) {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('id, content, recipient_id')
+        .eq('sender_id', me)
+        .is('ciphertext', null)
+        .is('recalled_at', null)
+        .not('content', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(50)
+      if (error) { fails += 1; await sleep(800); continue }
+      if (!data || data.length === 0) break
+      fails = 0
+      const items = []
+      for (const row of data) {
+        if (!keyReady.has(row.recipient_id)) {
+          keyReady.set(row.recipient_id, !!(await conversationKey(row.recipient_id).catch(() => null)))
+        }
+        if (!keyReady.get(row.recipient_id)) continue
+        try {
+          const sealed = await encryptForPeer(row.recipient_id, row.content)
+          if (sealed) items.push({ id: row.id, ...sealed })
+        } catch { /* 单条失败不影响别人 */ }
+      }
+      if (items.length === 0) break
+      const { data: n, error: rpcErr } = await supabase.rpc('encrypt_message_payloads', { p_items: items })
+      if (rpcErr) { fails += 1; await sleep(600); continue }
+      done += Number(n) || 0
+      await sleep(150)
+    }
+  } catch (err) {
+    console.warn('[chat] 全局补加密中断:', err?.message)
+  } finally {
+    msgRunning = false
+    if (done) console.info(`[chat] 本次补加密历史私聊 ${done} 条`)
   }
   return done
 }

@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient'
 import { useAuth } from '../lib/AuthContext'
 import { readTimelineSnapshot, writeTimelineSnapshot } from '../lib/timelineSnapshot'
 import { decryptTimelineRows, onUnlockChange, unlockStateVersion } from '../lib/crypto'
-import { sweepCirclePlaintext } from '../lib/circleSync'
+import { sweepCirclePlaintext, sweepMyMessages } from '../lib/circleSync'
 import { sweepImagePlaintext } from '../lib/imageSync'
 import MomentCard from '../components/MomentCard'
 import MomentSkeleton from '../components/MomentSkeleton'
@@ -170,7 +170,9 @@ export default function Timeline() {
     // 先补文字的（要给动态生成 CEK），再补图片（图片的钥匙就是那条 CEK）—— 所以图片晚一点起
     const t1 = setTimeout(() => { sweepCirclePlaintext(userId) }, 1500)
     const t2 = setTimeout(() => { sweepImagePlaintext(userId) }, 6000)
-    return () => { clearTimeout(t1); clearTimeout(t2) }
+    // 历史私聊也在这里补：不要求使用者点进那段对话（否则一年不点就一年是明文）
+    const t3 = setTimeout(() => { sweepMyMessages(userId) }, 9000)
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
   }, [userId])
 
   // 用 created_at 游标翻页，而不是 offset：
