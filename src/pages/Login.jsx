@@ -109,6 +109,9 @@ export default function Login() {
       <p className="auth-switch-link">
         没有账号？<Link to="/register">去注册</Link>
       </p>
+      <p className="auth-switch-link">
+        <Link to="/forgot">忘记密码？</Link>
+      </p>
     </form>
   )
 }

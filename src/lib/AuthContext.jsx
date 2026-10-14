@@ -16,6 +16,10 @@ const AuthContext = createContext({
   session: undefined,
   approved: undefined,
   refreshApproval: () => {},
+  // 「正在走邮件重置」：supabase-js 解析完邮件链接里的令牌后会触发 PASSWORD_RECOVERY，
+  // 界面据此把使用者送到 /reset 去设新密码（见 App.jsx）。
+  recovering: false,
+  clearRecovering: () => {},
 })
 
 // ── 激活状态的本地缓存 ────────────────────────────────────────────
@@ -66,6 +70,8 @@ function writeCachedApproval(userId, approved) {
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(undefined)
   const [approved, setApproved] = useState(undefined)
+  // 邮件重置：解析到恢复令牌后为 true（App 据此把使用者送到 /reset）
+  const [recovering, setRecovering] = useState(false)
   const lastUserIdRef = useRef(undefined)
   // 请求序号：只让"最新那次"查询的结果生效，避免先发出的旧请求（例如刚注册、
   // 口令还没认领时读到 approved=false）后返回、把新结果覆盖掉。
@@ -167,7 +173,10 @@ export function AuthProvider({ children }) {
         clearImageCache()
         lockCrypto()
         clearCachedDek()
+        setRecovering(false)
       }
+      // 邮件里的重置链接：解析成功后 supabase-js 会发这个事件（这时会话已经是恢复会话）
+      if (event === 'PASSWORD_RECOVERY') setRecovering(true)
       setSession(s)
     })
     return () => listener.subscription.unsubscribe()
@@ -206,7 +215,11 @@ export function AuthProvider({ children }) {
   }, [loadApproval])
 
   return (
-    <AuthContext.Provider value={{ session, approved, refreshApproval }}>
+    <AuthContext.Provider value={{
+      session, approved, refreshApproval, recovering,
+      // 设完新密码后由 /reset 调它，避免每次都被送回重置页
+      clearRecovering: () => setRecovering(false),
+    }}>
       {children}
     </AuthContext.Provider>
   )

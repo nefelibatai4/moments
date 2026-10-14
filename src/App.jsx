@@ -1,4 +1,4 @@
-import { Routes, Route, Link } from 'react-router-dom'
+import { Routes, Route, Link, useNavigate } from 'react-router-dom'
 import { lazy, Suspense, useEffect } from 'react'
 import Timeline from './pages/Timeline'
 import RequireAuth from './components/RequireAuth'
@@ -19,6 +19,9 @@ const Publish = lazy(() => import('./pages/Publish'))
 const Login = lazy(() => import('./pages/Login'))
 const Register = lazy(() => import('./pages/Register'))
 const Activate = lazy(() => import('./pages/Activate'))
+// 邮件找回（功能攒单 ①）：/forgot 申请一封、/reset 设新密码（邮件链接落回应用根地址）
+const Forgot = lazy(() => import('./pages/Forgot'))
+const Reset = lazy(() => import('./pages/Reset'))
 const Profile = lazy(() => import('./pages/Profile'))
 // 「捏玩偶形象」单独一个路由：avataaars 那套美术（约 1MB）只进这个 chunk，
 // 时间线 / 私聊 / 插件都不加载它（那边只渲染光栅化后的头像 `<img>`）。
@@ -28,7 +31,13 @@ const ChatThread = lazy(() => import('./pages/ChatThread'))
 const UserProfile = lazy(() => import('./pages/UserProfile'))
 
 export default function App() {
-  const { session, approved } = useAccess()
+  const { session, approved, recovering } = useAccess()
+  const navigate = useNavigate()
+  // 邮件链接里带着恢复令牌 → supabase-js 触发 PASSWORD_RECOVERY → 直接把人送到设置新密码那页。
+  // 不做这件事的话，恢复会话本身是"已登录"，使用者会先看到时间线、完全不知道该干什么。
+  useEffect(() => {
+    if (recovering) navigate('/reset', { replace: true })
+  }, [recovering, navigate])
   // 手机端外壳高度跟着"可见视口"走（CSS 视口单位在 iOS 上启动时偏大，见 hook 里的说明）
   useViewportHeight()
   const unread = useUnreadCount(session && approved ? session.user.id : null)
@@ -92,6 +101,10 @@ export default function App() {
               path="/activate"
               element={<RequireAuth requireApproved={false}><Activate /></RequireAuth>}
             />
+            {/* 这两页**刻意不加 RequireAuth**：忘记密码的人可能已经登不进去了；
+                /reset 也要能在"链接过期、会话已失效"时给出重新申请的出口 */}
+            <Route path="/forgot" element={<Forgot />} />
+            <Route path="/reset" element={<Reset />} />
             <Route path="/" element={<RequireAuth><Timeline /></RequireAuth>} />
             <Route path="/publish" element={<RequireAuth><Publish /></RequireAuth>} />
             <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />

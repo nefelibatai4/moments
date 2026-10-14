@@ -3683,3 +3683,35 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
   text-decoration: underline;
   cursor: pointer;
 }
+
+
+/* ── 邮件找回（功能攒单 ①：/forgot 与 /reset） ──
+   复用登录页的表单样式，只补几处：整块页面容器、靠不上的那句提醒、以及"开始使用"按钮。 */
+.auth-page {
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 24px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.auth-page h2 { margin: 0 0 4px; color: var(--text-primary); }
+.auth-page .status-text { line-height: 1.6; }
+.forgot-caveat {
+  padding: 10px 12px;
+  border: 1px solid var(--border-standard);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  font-size: 0.86rem;
+}
+.auth-done-btn {
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 9px 18px;
+  font-size: 0.9rem;
+  color: var(--btn-primary-text);
+  background: var(--btn-primary-bg);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+}
