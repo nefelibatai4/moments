@@ -5,6 +5,7 @@ import { useAuth } from '../lib/AuthContext'
 import SignedImage from '../components/SignedImage'
 import { prefetchThread, readChatListSnapshot, writeChatListSnapshot } from '../lib/chatCache'
 import { decryptForPeer } from '../lib/crypto'
+import { stickerIdFromContent } from '../lib/stickers'
 
 function formatChatTime(iso) {
   if (!iso) return ''
@@ -88,7 +89,9 @@ export default function ChatList() {
         await Promise.all(Object.entries(latestByPartner).map(async ([partnerId, last]) => {
           if (!last.ciphertext || !last.iv) return
           try {
-            decryptedLast[partnerId] = await decryptForPeer(partnerId, last)
+            const text = await decryptForPeer(partnerId, last)
+            // 表情消息在列表里只显示「[表情]」（不把 [[s:xxx]] 这种内部标记露给使用者）
+            decryptedLast[partnerId] = stickerIdFromContent(text) ? '[表情]' : text
           } catch {
             decryptedLast[partnerId] = null
           }

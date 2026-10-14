@@ -315,6 +315,89 @@ button:disabled {
   margin-bottom: 12px;
 }
 
+/* ── 表情包（私聊）────────────────────────────────────────────── */
+.chat-sticker-btn {
+  border: none;
+  background: transparent;
+  font-size: 1.35rem;
+  line-height: 1;
+  padding: 6px 6px;
+  cursor: pointer;
+}
+/* 表情消息：去掉气泡底与内边距，让它像"贴纸"而不是"带框的图" */
+.chat-bubble.has-sticker {
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+}
+.sticker {
+  display: inline-block;
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  background-size: contain;
+  vertical-align: middle;
+  user-select: none;
+}
+.sticker-placeholder {
+  border-radius: 12px;
+  background: var(--bg-secondary);
+}
+.chat-sticker-fallback { color: var(--text-secondary); }
+
+/* 雪碧图逐帧播放：位置从 0 走到 -（帧数×单帧宽）。CSS 变量在 keyframes 里可用 */
+@keyframes sticker-play {
+  from { background-position-x: 0; }
+  to { background-position-x: calc(-1 * var(--sticker-width, 0px)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sticker { animation: none !important; }
+}
+
+/* 表情面板（点开才挂载；不常驻） */
+.sticker-picker {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 64px;
+  max-height: 46vh;
+  overflow-y: auto;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: var(--bg-primary);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  z-index: 30;
+}
+.sticker-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.sticker-picker-close {
+  border: none;
+  background: transparent;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+.sticker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+  gap: 6px;
+}
+.sticker-grid-item {
+  border: none;
+  background: transparent;
+  padding: 2px;
+  cursor: pointer;
+  border-radius: 10px;
+}
+.sticker-grid-item:hover { background: var(--bg-secondary); }
+
 /* ── 心情：发布页的选择行 ────────────────────────────────────── */
 .mood-row {
   display: flex;

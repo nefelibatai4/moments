@@ -8,6 +8,9 @@ import ImageLightbox from '../components/ImageLightbox'
 import SignedImage from '../components/SignedImage'
 import { objectLocator, resolveSignedUrl, storagePathFromUrl } from '../lib/signedUrls'
 import { uploadEncryptedImage, useContentImageUrls } from '../lib/imageCrypto'
+import { stickerContent, stickerIdFromContent } from '../lib/stickers'
+import StickerMessage from '../components/StickerMessage'
+import StickerPicker from '../components/StickerPicker'
 import { fetchThreadData, readCachedThread, writeCachedThread } from '../lib/chatCache'
 // 阶段 1：私聊文本端到端加密（会话密钥由双方身份密钥 ECDH 得到，见 lib/crypto.js）
 import {
@@ -138,6 +141,7 @@ export default function ChatThread() {
   const [error, setError] = useState(null)
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [imageFile, setImageFile] = useState(null)
+  const [stickerOpen, setStickerOpen] = useState(false)
   // 消息操作菜单（⋯）展开在哪条消息上；null = 全收起
   const [menuFor, setMenuFor] = useState(null)
   // 正在内联编辑的消息：{ id, text }
@@ -454,6 +458,32 @@ export default function ChatThread() {
     }
   }
 
+  /**
+   * 发一个表情。正文就是 `[[s:<id>]]` 这一小段文本 → 走**原本的加密链路**，
+   * 所以服务器连"发了哪个表情"都看不到；对方解出来之后再本地渲染成动画。
+   */
+  async function sendSticker(id) {
+    setError(null)
+    setStickerOpen(false)
+    try {
+      const text = stickerContent(id)
+      let body = { content: text }
+      const sealed = await encryptForPeer(userId, text)
+      if (sealed) body = { ...sealed, content: null }
+      const { error: insertError } = await supabase.from('messages').insert({
+        sender_id: me,
+        recipient_id: userId,
+        image_url: null,
+        reply_to_id: replyTarget?.id ?? null,
+        ...body,
+      })
+      if (insertError) throw insertError
+      setReplyTarget(null)
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
   async function handleRecall(message) {
     if (!window.confirm('撤回这条消息？对方将看不到内容。')) return
     setError(null)
@@ -686,7 +716,7 @@ export default function ChatThread() {
                 </div>
               ) : (
                 <div className={`chat-bubble-row ${isMine ? 'mine' : 'theirs'}`}>
-                  <div className={`chat-bubble ${isMine ? 'mine' : 'theirs'}`}>
+                  <div className={`chat-bubble ${isMine ? 'mine' : 'theirs'}${stickerIdFromContent(m.content) ? ' has-sticker' : ''}`}>
                     {hasMenu && (
                       <div className="chat-msg-menu-wrap">
                         <button
@@ -802,7 +832,11 @@ export default function ChatThread() {
                       </div>
                     ) : (
                       <>
-                        {m.content}
+                        {(() => {
+                          const stickerId = stickerIdFromContent(m.content)
+                          if (stickerId) return <StickerMessage id={stickerId} />
+                          return m.content
+                        })()}
                         {/* 密文行但本机解不开（极少数：还没解锁 / 换了账号）→ 别显示空气泡 */}
                         {!m.content && m.ciphertext && (
                           <span className="chat-encrypted-hint">🔒 这条消息在这台设备上读不到</span>
@@ -855,7 +889,19 @@ export default function ChatThread() {
         </div>
       )}
 
+      {stickerOpen && <StickerPicker onPick={sendSticker} onClose={() => setStickerOpen(false)} />}
+
       <form className="chat-input-row" onSubmit={handleSubmit}>
+        <button
+          type="button"
+          className="chat-sticker-btn"
+          title="表情"
+          aria-label="表情"
+          aria-expanded={stickerOpen}
+          onClick={() => setStickerOpen((v) => !v)}
+        >
+          😊
+        </button>
         <label className="chat-attach-btn" title="发送图片">
           📷
           <input
