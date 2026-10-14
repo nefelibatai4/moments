@@ -6,6 +6,7 @@ import { safeStorageKey } from '../lib/sanitizeFilename'
 import { compressImage } from '../lib/compressImage'
 import { CARD_COLORS } from '../lib/cardColors'
 import { objectLocator } from '../lib/signedUrls'
+import { MOODS } from '../lib/moods'
 import { circleReady, createMomentKey, encryptCircleText } from '../lib/crypto'
 import { uploadEncryptedImage } from '../lib/imageCrypto'
 
@@ -17,6 +18,7 @@ export default function Publish() {
   const [location, setLocation] = useState(null)
   const [locating, setLocating] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [mood, setMood] = useState(null)
   const [anonMode, setAnonMode] = useState(false)
   const [anonNickname, setAnonNickname] = useState('')
   const [error, setError] = useState(null)
@@ -65,6 +67,8 @@ export default function Publish() {
         longitude: location?.longitude ?? null,
         user_id: session.user.id,
         anon_nickname: anonMode ? anonNickname.trim() || null : null,
+        // 心情（明文元数据，白名单见 db-backups/20261014_moment_mood.sql）
+        mood: mood || null,
         // 卡片颜色：default 存 null（历史数据也是 null，两边含义一致）
         card_color: cardColor === 'default' ? null : cardColor,
       })
@@ -152,6 +156,30 @@ export default function Publish() {
         )}
       </div>
       {/* 卡片颜色：一排色点，选中的描一圈蓝边（微博那种"给这条动态挑个底色"） */}
+      {/* 心情：和"卡片颜色"同一层（都是这条动态的样子），先只做"下雨" */}
+      <div className="mood-row" role="group" aria-label="心情">
+        <span className="mood-row-label">心情</span>
+        <button
+          type="button"
+          className={`mood-chip${mood === null ? ' on' : ''}`}
+          aria-pressed={mood === null}
+          onClick={() => setMood(null)}
+        >
+          不选
+        </button>
+        {MOODS.map((m) => (
+          <button
+            key={m.key}
+            type="button"
+            className={`mood-chip${mood === m.key ? ' on' : ''}`}
+            aria-pressed={mood === m.key}
+            onClick={() => setMood(m.key)}
+          >
+            {m.emoji} {m.label}
+          </button>
+        ))}
+      </div>
+
       <div className="card-color-row" role="group" aria-label="卡片颜色">
         {CARD_COLORS.map((c) => (
           <button

@@ -315,6 +315,65 @@ button:disabled {
   margin-bottom: 12px;
 }
 
+/* ── 心情：发布页的选择行 ────────────────────────────────────── */
+.mood-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 10px 0;
+}
+.mood-row-label {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin-right: 2px;
+}
+.mood-chip {
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.mood-chip.on {
+  border-color: var(--accent-color, #3b82f6);
+  background: color-mix(in srgb, var(--accent-color, #3b82f6) 14%, transparent);
+}
+
+/* ── 心情：卡片上的标记与"下雨"层 ─────────────────────────────── */
+.moment-mood {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+/* 卡片要能承载绝对定位的雨层 */
+.moment-card.mood-rain {
+  position: relative;
+  overflow: hidden;
+}
+/* 冷色压暗的底（canvas 只管雨，底色交给 CSS：切主题/重绘都更便宜） */
+.mood-rain-backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(180deg,
+    rgba(18, 32, 48, 0.34) 0%,
+    rgba(24, 44, 66, 0.26) 55%,
+    rgba(12, 24, 38, 0.38) 100%);
+}
+/* 雨层本身：铺满卡片、**不吃事件**（点卡片仍能点赞/进图片），在内容之下、底色之上 */
+.mood-rain {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0.85;
+}
+
 /* 社交恢复（阶段 0b）：只在"有人等你帮忙 / 你等别人帮忙 / 有取出记录"时才出现 */
 .recovery-section {
   margin: 18px 0;

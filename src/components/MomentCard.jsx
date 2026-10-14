@@ -11,6 +11,8 @@ import { storagePathFromUrl } from '../lib/signedUrls'
 import { useContentImageUrls } from '../lib/imageCrypto'
 import SignedImage from './SignedImage'
 import { encryptCircleText, momentKey } from '../lib/crypto'
+import { moodByKey } from '../lib/moods'
+import MoodRain from './MoodRain'
 
 /**
  * 评论和点赞的数据源在 Timeline（单一数据源），这样实时订阅拿到新数据后
@@ -47,6 +49,7 @@ export default function MomentCard({
   const isOwner = session && session.user.id === moment.user_id
   const profile = moment.profiles
   const isAnon = !!moment.anon_nickname
+  const mood = moodByKey(moment.mood)
   const displayName = moment.anon_nickname || (profile?.nickname ?? '匿名')
   const comments = moment.comments ?? []
   // 信息流里最多铺 9 张（微博那样），更多的用第 9 格盖「+N」；
@@ -211,9 +214,10 @@ export default function MomentCard({
 
   return (
     <article
-      className="moment-card"
+      className={`moment-card${mood ? ` mood-${mood.key}` : ''}`}
       ref={cardRef}
       data-card-color={normalizeCardColor(moment.card_color)}
+      data-mood={mood?.key ?? undefined}
       onClick={handleClick}
       onPointerMove={handlePointerMove}
     >
@@ -232,6 +236,11 @@ export default function MomentCard({
           <span className="moment-author-time">{relativeTime(moment.created_at)}</span>
         </span>
         <span className="moment-meta-spacer" />
+        {mood && (
+          <span className="moment-mood" title={`心情：${mood.label}`}>
+            {mood.emoji} {mood.label}
+          </span>
+        )}
         {moment.latitude != null && moment.longitude != null && (
           <a
             className="moment-location"
@@ -252,6 +261,13 @@ export default function MomentCard({
           />
         )}
       </div>
+
+      {mood?.key === 'rain' && (
+        <>
+          <span className="mood-rain-backdrop" aria-hidden="true" />
+          <MoodRain />
+        </>
+      )}
 
       {editing ? (
         <form className="moment-edit-form" onSubmit={handleSaveEdit}>
