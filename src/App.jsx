@@ -10,6 +10,7 @@ import { useUnreadCount } from './lib/useUnreadCount'
 import { touchSession } from './lib/userPresence'
 import { useViewportHeight } from './lib/useViewportHeight'
 import ViewportDebug from './components/ViewportDebug'
+import UnlockPrompt from './components/UnlockPrompt'
 
 // 按路由做代码分割：首屏只需要 React + 路由 + Supabase + 时间线，
 // 其余页面在真正导航过去时才下载。这样首屏 JS 明显变小。
@@ -80,6 +81,9 @@ export default function App() {
         )}
       </header>
       <main>
+        {/* 「这台设备还没就绪」的一次性提示（只有确实解不开、且本机没有缓存时才会出现；
+            固定定位、不参与布局，正常使用的人一辈子看不到它） */}
+        {authed && <UnlockPrompt />}
         <Suspense fallback={<p className="status-text">加载中…</p>}>
           <Routes>
             <Route path="/login" element={<Login />} />

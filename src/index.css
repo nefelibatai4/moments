@@ -323,9 +323,11 @@ button:disabled {
   gap: 12px;
   margin: 18px 0;
   padding: 14px 16px;
-  border: 1px solid var(--border-color);
+  /* ⚠️ 这两个变量名一开始写错了（--border-color / --bg-secondary 在 :root 里不存在），
+     结果是"背景永远透明"、边框跟着文字颜色走 —— 改回真实存在的变量。 */
+  border: 1px solid var(--border-standard);
   border-radius: 12px;
-  background: var(--bg-secondary);
+  background: var(--bg-elevated);
   flex-wrap: wrap;
 }
 .doll-entry-btn {
@@ -3624,4 +3626,60 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
   [data-theme="light"] .moment-card[data-card-color="default"]::after {
     background: radial-gradient(closest-side, rgba(0, 0, 0, 0.04), transparent 72%);
   }
+}
+
+
+/* ── 「这台设备还没就绪」的一次性提示（见 components/UnlockPrompt.jsx） ──
+   只在"确实解不开、本机又没有缓存"时出现（罕见），固定定位、**不参与任何布局** ——
+   它绝不能改变任何页面的排版（信息流/私聊的几何断言都盯着这些）。
+   固定在上方：手机上键盘从底部弹出时不会把卡片顶走。 */
+.unlock-prompt {
+  position: fixed;
+  z-index: 60;
+  top: calc(var(--safe-top) + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(430px, calc(100vw - 24px));
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--bg-elevated);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5);
+}
+.unlock-prompt-title { margin: 0; font-size: 0.95rem; font-weight: 600; color: var(--text-primary); }
+.unlock-prompt-text { margin: 0; font-size: 0.85rem; line-height: 1.55; color: var(--text-secondary); }
+.unlock-prompt-form { display: flex; gap: 8px; margin-top: 2px; }
+.unlock-prompt-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border: 1px solid var(--border-standard);
+  border-radius: 10px;
+}
+.unlock-prompt-form button {
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  color: var(--btn-primary-text);
+  background: var(--btn-primary-bg);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.unlock-prompt-form button:disabled { opacity: 0.6; cursor: default; }
+.unlock-prompt-error { margin: 0; font-size: 0.82rem; color: var(--accent-red); }
+.unlock-prompt-later {
+  align-self: flex-start;
+  padding: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  text-decoration: underline;
+  cursor: pointer;
 }
