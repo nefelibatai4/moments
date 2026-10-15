@@ -151,16 +151,24 @@ export default function Doll() {
         .from('avatars')
         .upload(path, file, { contentType: 'image/png' })
       if (upErr) throw upErr
-      const { data: before } = await supabase.from('profiles').select('avatar_url').eq('id', uid).maybeSingle()
+      // ⚠️ **不碰 avatar_url**（使用者 2026-10-14 明确要求："玩偶是玩偶，头像是头像"）。
+      //    第一版把玩偶光栅化后直接当成头像写进 avatar_url，于是"捏个玩偶"会把用户自己
+      //    上传的照片换掉 —— 那不是我该替他做的决定，也让他找不回原来的头像（虽然对象还在桶里）。
+      //    现在玩偶只写进 `doll`（含它自己的图片地址），在【我】/TA 的主页上单独展示。
+      const { data: before } = await supabase.from('profiles').select('doll').eq('id', uid).maybeSingle()
       const { data: updated, error: dbErr } = await supabase
         .from('profiles')
-        .update({ avatar_url: objectLocator('avatars', path), doll: { seed, picks } })
+        .update({ doll: { seed, picks, image: objectLocator('avatars', path) } })
         .eq('id', uid)
         .select('id')
       if (dbErr) throw dbErr
       if (!updated || updated.length === 0) throw new Error('保存没有生效（可能没有权限）')
-      if (before?.avatar_url) invalidateSignedUrl('avatars', before.avatar_url)
-      setMessage('已保存：这就是你现在的形象。')
+      // 旧的那张玩偶图不再被引用：让签名地址缓存失效就行。
+      // ⚠️ 刻意**不删**桶里的旧对象：文件名由 safeStorageKey 统一生成（`<uid>/<时间戳>-<uuid>.png`），
+      //    没法可靠地区分"这是玩偶图还是他上传的头像" —— 为了几 KB 去赌一次误删不值得。
+      const oldImage = before?.doll?.image
+      if (oldImage) invalidateSignedUrl('avatars', oldImage)
+      setMessage('已保存：玩偶形象已更新（头像不受影响）。')
     } catch (err) {
       setError(err.message)
     } finally {

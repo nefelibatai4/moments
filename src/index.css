@@ -505,8 +505,11 @@ button:disabled {
     rgba(24, 44, 66, 0.26) 55%,
     rgba(12, 24, 38, 0.38) 100%);
 }
-/* 雨层本身：铺满卡片、**不吃事件**（点卡片仍能点赞/进图片），在内容之下、底色之上 */
-.mood-rain {
+/* 雨层本身：铺满卡片、**不吃事件**（点卡片仍能点赞/进图片）。
+   ⚠️ 类名是 `mood-rain-canvas`，**不是** `mood-rain`：卡片的修饰类就叫
+   `moment-card mood-rain`，同名时这条 `pointer-events: none` 会一起命中整张卡片，
+   于是下雨卡片里的点赞/评论/图片**全部点不动**（2026-10-14 实测踩到，见 PITFALLS #99）。 */
+.mood-rain-canvas {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -3715,3 +3718,64 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
   border-radius: 10px;
   cursor: pointer;
 }
+
+
+/* ── 玩偶形象展示（【我】与 TA 的主页）：与头像分开，互不覆盖 ── */
+.doll-showcase {
+  width: 72px;
+  height: 72px;
+  border-radius: 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-standard);
+  flex: 0 0 auto;
+}
+.doll-entry-text { flex: 1 1 160px; }
+.user-card-doll {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 4px;
+}
+.user-card-doll img {
+  width: 96px;
+  height: 96px;
+  border-radius: 16px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-standard);
+}
+.user-card-doll-label { font-size: 0.78rem; color: var(--text-muted); }
+
+
+/* ── 长文折叠（发布不限字数，读的时候默认只露几行） ──
+   用 `-webkit-line-clamp` 而不是按字数截断：中文/英文/emoji 混排时"多少个字算几行"
+   根本算不准，按**真实渲染行数**折才稳（MomentCard 里用 scrollHeight 判定是否真的溢出，
+   没有溢出就不显示「全文」，短动态一点不受影响）。 */
+.moment-content.is-clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 8;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.moment-fold-btn {
+  display: inline-block;
+  margin: -6px 0 10px;
+  padding: 2px 0;
+  font-size: 0.84rem;
+  color: var(--accent-blue);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.moment-fold-btn:hover { opacity: 0.8; }
+.publish-count-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 18px;
+  margin: -4px 0 2px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+.publish-count.over, .publish-count-hint.over { color: var(--accent-red); }
+.publish-count-hint { color: var(--text-muted); }

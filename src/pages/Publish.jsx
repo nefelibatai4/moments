@@ -10,6 +10,12 @@ import { MOODS } from '../lib/moods'
 import { circleReady, createMomentKey, encryptCircleText } from '../lib/crypto'
 import { uploadEncryptedImage } from '../lib/imageCrypto'
 
+// 超过这个字数，动态页默认折叠（只露前几行）；写的时候完全不拦。
+// 这个数字取"原来那个 maxLength"（1000），保证老习惯不变、老内容形态不变。
+const FOLD_AT = 1000
+// 防误操作的硬顶（不是内容限制）：整篇论文粘进来会让时间线一屏放不下、解密也变慢。
+const SAFETY_MAX = 20000
+
 export default function Publish() {
   const session = useAuth()
   const navigate = useNavigate()
@@ -45,6 +51,10 @@ export default function Publish() {
 
   async function handleSubmit(e) {
     e.preventDefault()
+    if (content.length > SAFETY_MAX) {
+      setError(`太长了（上限 ${SAFETY_MAX} 字），分几条发吧`)
+      return
+    }
     if (!content.trim() && files.length === 0) {
       setError('请输入文字或选择图片')
       return
@@ -122,13 +132,27 @@ export default function Publish() {
   return (
     <form className="publish-form" onSubmit={handleSubmit}>
       <h2>发布动态</h2>
+      {/* ⚠️ 刻意**不设 maxLength**：使用者 2026-10-14 要求"发布不要有字数限制"。
+          长文不是靠拦，而是靠**在读的时候折叠**（超过 FOLD_AT 字，动态里默认只露前几行，
+          点「全文」就地展开）—— 写的人不必迁就显示形态。
+          唯一的硬顶是 SAFETY_MAX：防的不是长文，是"整篇论文粘进来"这类误操作。 */}
       <textarea
         placeholder="分享点什么…"
         value={content}
         onChange={(e) => setContent(e.target.value)}
         rows={5}
-        maxLength={1000}
       />
+      <div className="publish-count-row">
+        <span className={content.length > SAFETY_MAX ? 'publish-count over' : 'publish-count'}>
+          {content.length > 0 ? `${content.length} 字` : ''}
+        </span>
+        {content.length > FOLD_AT && content.length <= SAFETY_MAX && (
+          <span className="publish-count-hint">发出去后在动态里默认折叠，点「全文」看全部</span>
+        )}
+        {content.length > SAFETY_MAX && (
+          <span className="publish-count-hint over">太长了（上限 {SAFETY_MAX} 字），分几条发吧</span>
+        )}
+      </div>
       <input
         type="file"
         accept="image/*"

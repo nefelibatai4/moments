@@ -32,7 +32,7 @@ export default function UserProfile() {
       // 都当成 error，两者混在一起会显示错误的提示（详见 PITFALLS #47）
       const { data, error: err } = await supabase
         .from('profiles')
-        .select('id, nickname, avatar_url, signature, created_at')
+        .select('id, nickname, avatar_url, signature, created_at, doll')
         .eq('id', userId)
         .maybeSingle()
       if (cancelled) return
@@ -66,6 +66,12 @@ export default function UserProfile() {
 
       <h2 className="user-card-name">{profile.nickname}</h2>
       <p className="user-card-id">ID：{profile.nickname}</p>
+      {profile.doll?.image && (
+        <div className="user-card-doll">
+          <SignedImage bucket="avatars" stored={profile.doll.image} data-doll-image="1" alt="TA 的玩偶形象" />
+          <span className="user-card-doll-label">TA 的玩偶形象</span>
+        </div>
+      )}
       <p className="user-card-signature">
         {profile.signature ? profile.signature : <span className="user-card-empty">这个人很懒，还没有写个性签名</span>}
       </p>

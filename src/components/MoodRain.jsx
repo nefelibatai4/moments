@@ -25,6 +25,9 @@ import { useEffect, useRef, useState } from 'react'
  *
  * 测试用的 DOM 契约（与 `data-signed` 同一套思路，方便断言"是不是真的在动"）：
  *   `data-mood-rain="1"`、`data-rain-mode="animating" | "static"`、`data-rain-reduced="1"`（系统要求减少动效时）
+ *   ⚠️ 类名**不能**叫 `.mood-rain`：卡片的修饰类就是 `moment-card mood-rain`，
+ *      两者同名时"雨层不吃事件"那条 `pointer-events: none` 会同时命中整张卡片
+ *      —— 症状是下雨卡片点赞/评论**完全点不动**（2026-10-14 使用者报的，见 PITFALLS #99）。
  */
 const MAX_ANIMATING = 3
 const MAX_DROPS = 220
@@ -227,7 +230,7 @@ export default function MoodRain() {
   return (
     <canvas
       ref={canvasRef}
-      className="mood-rain"
+      className="mood-rain-canvas"
       data-mood-rain="1"
       data-rain-mode={mode}
       {...(prefersReducedMotion() ? { 'data-rain-reduced': '1' } : {})}

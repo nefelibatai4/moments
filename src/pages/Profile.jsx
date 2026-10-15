@@ -39,18 +39,21 @@ export default function Profile() {
   const [darkMode, setDarkMode] = useState(getTheme() === 'dark')
   const [error, setError] = useState(null)
   const [message, setMessage] = useState(null)
+  // 玩偶形象：与头像各放各的（使用者 2026-10-14：玩偶是玩偶，头像是头像）
+  const [doll, setDoll] = useState(null)
 
   useEffect(() => {
     async function load() {
       const { data, error } = await supabase
         .from('profiles')
-        .select('nickname, avatar_url, signature')
+        .select('nickname, avatar_url, signature, doll')
         .eq('id', session.user.id)
         .single()
       if (!error && data) {
         setNickname(data.nickname)
         setAvatarUrl(data.avatar_url)
         setSignature(data.signature ?? '')
+        setDoll(data.doll ?? null)
       }
       setLoading(false)
     }
@@ -303,13 +306,28 @@ export default function Profile() {
         </section>
       )}
 
-      {/* 玩偶形象（可选）：独立路由，玩偶库只在那里加载 */}
+      {/* 玩偶形象：独立路由，玩偶库只在那里加载。
+          ⚠️ 玩偶**不动头像**（使用者 2026-10-14 明确要求"玩偶是玩偶，头像是头像"），
+             所以这里是"展示区"：捏好的玩偶在这儿单独亮相，头像还是他上传的那张。 */}
       <section className="doll-entry">
-        <div>
+        {doll?.image && (
+          <SignedImage
+            bucket="avatars"
+            stored={doll.image}
+            className="doll-showcase"
+            data-doll-image="1"
+            alt="我的玩偶形象"
+          />
+        )}
+        <div className="doll-entry-text">
           <strong>玩偶形象</strong>
-          <p className="status-text">不想用照片当头像？捏一个小玩偶：肤色、发型、眉型、穿搭都能自己选。</p>
+          <p className="status-text">
+            {doll?.image
+              ? '这是你捏的玩偶，只在这里展示，不会替换头像。'
+              : '捏一个小玩偶放在主页上：肤色、发型、眉型、穿搭都能自己选（头像不受影响）。'}
+          </p>
         </div>
-        <Link to="/doll" className="doll-entry-btn">去捏一个</Link>
+        <Link to="/doll" className="doll-entry-btn">{doll?.image ? '改一改' : '去捏一个'}</Link>
       </section>
 
       {/* 精确位置（可选，默认关闭） */}

@@ -37,6 +37,12 @@ export default function MomentCard({
   // 翻页时得知道"现在看到第几张了"（见 components/ImageLightbox.jsx）。
   const [viewerIndex, setViewerIndex] = useState(null)
   const [likePending, setLikePending] = useState(false)
+  // 长文折叠（使用者 2026-10-14："发布不要有字数限制…超出的在动态页面自动折叠"）：
+  // 写的时候完全不限，**读**的时候默认只露几行，点「全文」就地展开。
+  // 判据不是字数而是**真实渲染高度**（中英混排、窄屏、字号都会影响行数，数行数才准）。
+  const [foldExpanded, setFoldExpanded] = useState(false)
+  const [foldable, setFoldable] = useState(false)
+  const contentRef = useRef(null)
   // 双击点赞：`burst` 是那颗心的位置（相对卡片），`id` 换了就重播动画
   const [burst, setBurst] = useState(null)
   const cardRef = useRef(null)
@@ -64,31 +70,57 @@ export default function MomentCard({
     .map((url) => ({ stored: url, url: signedImages.get(url) ?? null }))
   const moreCount = allImages.length - shownImages.length
   const likes = moment.likes ?? []
+  // 乐观更新时先拿自己的昵称顶上（服务器返回后用真实值覆盖）
+  const nickname = profile?.nickname
 
   const liked = !!session && likes.some((l) => l.user_id === session.user.id)
+
+  // 折叠测量：只在"折叠状态"下量（展开时 scrollHeight === clientHeight，量不出东西）。
+  // 用 ResizeObserver 跟着宽度/字体/图片变化重算 —— 窗口一窄，行数就变。
+  useEffect(() => {
+    if (foldExpanded) return undefined
+    const el = contentRef.current
+    if (!el) return undefined
+    const measure = () => setFoldable(el.scrollHeight > el.clientHeight + 4)
+    measure()
+    const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null
+    ro?.observe(el)
+    return () => ro?.disconnect()
+  }, [moment.content, foldExpanded])
 
   // 点赞/取消赞：从 MomentExpandMenu 搬过来的（现在操作条上的 ♥ 直接点，不用先进 ⋯ 菜单）。
   // ⚠️ 两处 `.select()` 都是为了"确认真的写进去了"：被 RLS 拦下的写操作不报错、只影响 0 行。
   async function handleToggleLike() {
     if (likePending || !session) return
     setLikePending(true)
+    // ⚠️ **先即时反馈，再和服务器对账**（2026-10-15 实测：等服务器回来再更新界面，
+    //    真实数据变密文之后要 2 秒多才翻 —— 点一下两秒没反应，手感很差）。
+    //    乐观更新不安全的地方只有"写失败"，而下面两处 `.select()` 正是为了确认写进去了：
+    //    服务器说没写成功（被 RLS 拦下时是"不报错但影响 0 行"）就**回滚**界面。
+    const myId = session.user.id
     if (liked) {
+      onLikesChanged?.(moment.id, likes.filter((l) => l.user_id !== myId))
       const { data, error } = await supabase
         .from('likes')
         .delete()
         .eq('moment_id', moment.id)
-        .eq('user_id', session.user.id)
+        .eq('user_id', myId)
         .select('user_id')
-      if (!error && data && data.length > 0) {
-        onLikesChanged?.(moment.id, likes.filter((l) => l.user_id !== session.user.id))
+      if (error || !data || data.length === 0) {
+        onLikesChanged?.(moment.id, likes)   // 没删掉 → 把界面改回来
       }
     } else {
+      onLikesChanged?.(moment.id, [...likes, { user_id: myId, profiles: { nickname: nickname ?? '我' } }])
       const { data, error } = await supabase
         .from('likes')
-        .insert({ moment_id: moment.id, user_id: session.user.id })
+        .insert({ moment_id: moment.id, user_id: myId })
         .select('user_id, profiles(nickname)')
         .single()
-      if (!error && data) onLikesChanged?.(moment.id, [...likes, data])
+      if (error || !data) {
+        onLikesChanged?.(moment.id, likes)   // 没写进去 → 把界面改回来
+      } else {
+        onLikesChanged?.(moment.id, [...likes, data])   // 用服务器返回的那一行覆盖（拿到真实昵称）
+      }
     }
     setLikePending(false)
   }
@@ -275,7 +307,7 @@ export default function MomentCard({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             rows={3}
-            maxLength={1000}
+            maxLength={20000}
             autoFocus
           />
           <div className="card-color-row" role="group" aria-label="卡片颜色">
@@ -300,7 +332,24 @@ export default function MomentCard({
           </div>
         </form>
       ) : moment.content ? (
-        <p className="moment-content">{moment.content}</p>
+        <>
+          <p
+            ref={contentRef}
+            className={`moment-content${foldExpanded ? '' : ' is-clamped'}`}
+            data-folded={foldExpanded ? '0' : '1'}
+          >
+            {moment.content}
+          </p>
+          {(foldable || foldExpanded) && (
+            <button
+              type="button"
+              className="moment-fold-btn"
+              onClick={() => setFoldExpanded((v) => !v)}
+            >
+              {foldExpanded ? '收起' : '全文'}
+            </button>
+          )}
+        </>
       ) : moment.ciphertext ? (
         <p className="moment-content moment-locked">🔒 这条动态在这台设备上读不到</p>
       ) : null}
