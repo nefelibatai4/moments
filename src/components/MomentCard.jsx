@@ -269,11 +269,8 @@ export default function MomentCard({
           <span className="moment-author-time">{relativeTime(moment.created_at)}</span>
         </span>
         <span className="moment-meta-spacer" />
-        {mood && (
-          <span className="moment-mood" title={`心情：${mood.label}`}>
-            {mood.emoji} {mood.label}
-          </span>
-        )}
+        {/* 2026-10-15 使用者：卡片本身就在下雨，不需要再用中文标注「🌧 下雨」。
+            以后加别的（开花/阳光）如果一眼看不出来，再用更轻的图形标记，不用文字。 */}
         {moment.latitude != null && moment.longitude != null && (
           <a
             className="moment-location"
@@ -462,13 +459,11 @@ export default function MomentCard({
       )}
       {deleteError && <p className="error-text">{deleteError}</p>}
 
-      {(likes.length > 0 || comments.length > 0 || commentBoxOpen || anonCommentOpen) && (
+      {/* 2026-10-15 使用者：不要"谁谁谁赞了"那行 —— 只有两个人用，罗列名字反而啰嗦。
+          赞的状态只留操作条上那**一个心**（对方赞了就变红 + 旁边那个小数字），
+          所以这个面板现在只为"评论"存在。 */}
+      {(comments.length > 0 || commentBoxOpen || anonCommentOpen) && (
         <div className="moment-panel">
-          {likes.length > 0 && (
-            <p className="moment-likes-line">
-              ♥ {likes.map((l) => l.profiles?.nickname ?? '匿名').join('、')}
-            </p>
-          )}
           {/* ⚠️ 评论正文**只在展开时渲染**：使用者 2026-09-30 明确要"整个评论内容都收进去，
               点【评论】才展开"（0 条评论时点评论就直接是输入框）。 */}
           {session && (commentBoxOpen || anonCommentOpen) && (

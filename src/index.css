@@ -516,7 +516,7 @@ button:disabled {
   width: 100%;
   height: 100%;
   pointer-events: none;
-  opacity: 0.85;
+  opacity: 0.55;          /* 微雨：更淡一点（2026-10-15 使用者反馈"太快太密"） */
 }
 
 /* 社交恢复（阶段 0b）：只在"有人等你帮忙 / 你等别人帮忙 / 有取出记录"时才出现 */
@@ -3390,7 +3390,10 @@ html[data-surface] .moment-card .moment-actions {
 }
 
 .moment-act:hover {
-  background: var(--hover-wrap-bg);
+  /* ⚠️ 使用者 2026-10-15：hover 时那个椭圆背景"边界感很明显"，不要。
+     改成只变文字/图标颜色 —— 有反馈、但没有边界。 */
+  background: transparent;
+  color: var(--text-primary);
   opacity: 1;                     /* 抹掉全局 button:hover 的淡出 */
 }
 
@@ -3880,7 +3883,9 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
 /* ── 私聊输入区：协调的两枚图标按钮（表情 / + 更多）2026-10-15 ──
    使用者原话："照片发送表情包按钮看着太粗糙" ⇒ 不再用 emoji 当图标：
    两枚按钮**同一套自绘 SVG、同尺寸、同描边、同间距**，颜色跟随主题。 */
-.chat-icon-btn {
+/* ⚠️ 选择器必须带 `.chat-input-row`：那条 `.chat-input-row button`（优先级 0,1,1）里写着
+   蓝色胶囊底 + padding，会把这两枚图标按钮变成"两个蓝色小点"（使用者 2026-10-15 报的）。 */
+.chat-input-row .chat-icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3895,10 +3900,10 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
   cursor: pointer;
   transition: background-color .15s ease, color .15s ease;
 }
-.chat-icon-btn:hover { background: var(--btn-secondary-hover); color: var(--text-primary); }
-.chat-icon-btn[aria-expanded="true"] { background: var(--btn-secondary-bg); color: var(--text-primary); }
-.chat-icon-btn svg { display: block; }
-@media (prefers-reduced-motion: reduce) { .chat-icon-btn { transition: none; } }
+.chat-input-row .chat-icon-btn:hover { background: var(--btn-secondary-hover); color: var(--text-primary); }
+.chat-input-row .chat-icon-btn[aria-expanded="true"] { background: var(--btn-secondary-bg); color: var(--text-primary); }
+.chat-input-row .chat-icon-btn svg { display: block; }
+@media (prefers-reduced-motion: reduce) { .chat-input-row .chat-icon-btn { transition: none; } }
 
 /* 「+」多功能面板：占位式（把消息区顶上去），和表情面板互斥 */
 .chat-more-panel {

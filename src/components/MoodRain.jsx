@@ -30,7 +30,9 @@ import { useEffect, useRef, useState } from 'react'
  *      —— 症状是下雨卡片点赞/评论**完全点不动**（2026-10-14 使用者报的，见 PITFALLS #99）。
  */
 const MAX_ANIMATING = 3
-const MAX_DROPS = 220
+// 2026-10-15 使用者：雨太快、太密 —— 改成"微雨/小雨，有一滴一滴的效果就行"。
+// 做法：粒子数降到 1/3、速度降到约 1/4、透明度减半，保持三层景深但都更安静。
+const MAX_DROPS = 70
 const MIN_FRAME_MS = 1000 / 60
 
 /** 当前有几张卡正在跑（模块级；不是为了性能统计，而是为了"同屏最多几张"这条硬约束） */
@@ -79,9 +81,9 @@ export default function MoodRain() {
         ripple: cfg.ripple,
       }))
       drops = [
-        ...layer(far, { len: [7, 14], v: [420, 620], a: [0.1, 0.22], lw: 1, ripple: false }),
-        ...layer(mid, { len: [12, 22], v: [640, 900], a: [0.18, 0.34], lw: 1.2, ripple: false }),
-        ...layer(near, { len: [18, 34], v: [900, 1250], a: [0.3, 0.5], lw: 1.8, ripple: true }),
+        ...layer(far, { len: [6, 12], v: [110, 170], a: [0.06, 0.13], lw: 1, ripple: false }),
+        ...layer(mid, { len: [10, 18], v: [180, 260], a: [0.1, 0.2], lw: 1.2, ripple: false }),
+        ...layer(near, { len: [16, 28], v: [260, 360], a: [0.18, 0.3], lw: 1.6, ripple: true }),
       ]
     }
 
