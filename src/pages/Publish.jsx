@@ -57,8 +57,10 @@ const SAFETY_MAX = 20000
 // 短视频的护栏（2026-10-15 使用者："保留视频自动播放"）。浏览器**没法压缩视频**，
 // 传上去多大就是多大 —— 所以只能在入口把住：一条动态一段、限时长、限体积。
 // 依据：3~10 秒的 H.264 大概 2~5 MB；20 秒是"还能忍"的上限。
+// 2026-10-15 使用者问"25MB 的出发点、能不能扩大"→ 提高到 50 MB（覆盖绝大多数手机视频，
+// 包括那段 56 MB 的高码率 DJI 片段），并计划接上"发布时自动压缩"（压完上限就不再是痛点）。
 const VIDEO_MAX_MS = 20_000
-const VIDEO_MAX_BYTES = 25 * 1024 * 1024
+const VIDEO_MAX_BYTES = 50 * 1024 * 1024
 
 export default function Publish() {
   const session = useAuth()
