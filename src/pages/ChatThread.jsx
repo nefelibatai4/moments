@@ -7,7 +7,7 @@ import { compressImage } from '../lib/compressImage'
 import ImageLightbox from '../components/ImageLightbox'
 import SignedImage from '../components/SignedImage'
 import { objectLocator, resolveSignedUrl, storagePathFromUrl } from '../lib/signedUrls'
-import { uploadEncryptedImage, useContentImageUrls } from '../lib/imageCrypto'
+import { fetchAndDecryptImage, uploadEncryptedImage, useContentImageUrls } from '../lib/imageCrypto'
 import { stickerContent, stickerIdFromContent } from '../lib/stickers'
 import StickerMessage from '../components/StickerMessage'
 import StickerPicker from '../components/StickerPicker'
@@ -22,6 +22,8 @@ import {
 const RECALL_WINDOW_MS = 2 * 60 * 1000
 const EDIT_WINDOW_MS = 2 * 60 * 1000
 // 聊天历史每次加载的条数
+// 文件上限 25MB（使用者 2026-10-15 定的）：和照片一个量级，主要受 1GB 存储额度约束
+const FILE_MAX_BYTES = 25 * 1024 * 1024
 const PAGE_SIZE = 50
 // 触屏设备没有 Shift 键。桌面端 Enter 直接发送没问题，但触屏上一旦拦掉 Enter，
 // 用户就永远打不出换行——所以触屏让 Enter 保持默认（换行），发送交给右边的按钮。
@@ -121,6 +123,98 @@ function msgTimeLabel(iso) {
   return `${d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })} ${hm}`
 }
 
+/**
+ * 输入栏图标：**自绘 SVG**，不再用 emoji 当图标。
+ * 理由（使用者 2026-10-15："照片/表情包按钮看着太粗糙"）：emoji 的字形/大小/颜色由系统决定，
+ * 和界面其它图标不是一个体系；自绘图标才能统一线宽、统一大小、跟着主题色走。
+ * 「表情」与「+ 更多」两个按钮**必须同一套语言**（同尺寸、同描边、同间距）。
+ */
+function FaceIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor"
+      strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M8.5 14.5a4.5 4.5 0 0 0 7 0" />
+      <path d="M9 9.5h.01M15 9.5h.01" />
+    </svg>
+  )
+}
+function PlusIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor"
+      strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 8v8M8 12h8" />
+    </svg>
+  )
+}
+function PhotoEntryIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor"
+      strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="4" width="18" height="16" rx="3" />
+      <circle cx="8.5" cy="9.5" r="1.6" />
+      <path d="M4 17l4.5-4.5 3.5 3.5 3-3L20 17" />
+    </svg>
+  )
+}
+function FileEntryIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor"
+      strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+      <path d="M14 3v5h5" />
+    </svg>
+  )
+}
+
+/** 文件消息：正文是这段 JSON（**跟着文本一起加密**），定位串仍在 image_url 里 */
+const FILE_ENVELOPE = { v: 1, kind: 'file' }
+function fileEnvelopeOf(text) {
+  if (typeof text !== 'string' || !text.startsWith('{"v":1,"kind":"file"')) return null
+  try {
+    const o = JSON.parse(text)
+    return o && o.kind === 'file' && o.name ? o : null
+  } catch { return null }
+}
+function humanSize(n) {
+  if (!n && n !== 0) return ''
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
+  return `${(n / 1024 / 1024).toFixed(1)} MB`
+}
+
+/**
+ * 文件下载按钮：**自己**把附件解密成 blob 地址（不借图片那套共享缓存 ——
+ * 那套是按"图片嗅探"判定的，任意文件会被判成"解不开"，实测就卡在"准备中…"）。
+ */
+function FileDownload({ locator, name, resolveKey }) {
+  const [href, setHref] = useState(null)
+  useEffect(() => {
+    if (!locator) return undefined
+    let cancelled = false
+    ;(async () => {
+      for (let round = 0; round < 4 && !cancelled; round += 1) {
+        if (round > 0) await new Promise((r) => setTimeout(r, [800, 2000, 5000][round - 1] ?? 5000))
+        if (cancelled) return
+        try {
+          const key = await resolveKey().catch(() => null)
+          if (!key) continue
+          const url = await resolveSignedUrl('moment-images', locator).catch(() => null)
+          if (!url) continue
+          const out = await fetchAndDecryptImage(url, key, 'file')
+          if (!out || cancelled) continue
+          setHref(URL.createObjectURL(new Blob([out.bytes], { type: 'application/octet-stream' })))
+          return
+        } catch { /* 下一轮再试 */ }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [locator, resolveKey])
+  if (!href) return <span className="chat-file-download" aria-disabled="true">准备中…</span>
+  return <a className="chat-file-download" href={href} download={name}>下载</a>
+}
+
 export default function ChatThread() {
   const session = useAuth()
   const { userId } = useParams()
@@ -142,6 +236,11 @@ export default function ChatThread() {
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [imageFile, setImageFile] = useState(null)
   const [stickerOpen, setStickerOpen] = useState(false)
+  // 「+」多功能面板（与表情面板互斥；照片/文件都在里面 —— 使用者 2026-10-15 的要求）
+  const [moreOpen, setMoreOpen] = useState(false)
+  // 待发送的文件（与图片互斥，只占一个"附件位"）
+  const [fileToSend, setFileToSend] = useState(null)
+  const [uploadHint, setUploadHint] = useState(null)
   // 消息操作菜单（⋯）展开在哪条消息上；null = 全收起
   const [menuFor, setMenuFor] = useState(null)
   // 正在内联编辑的消息：{ id, text }
@@ -406,7 +505,7 @@ export default function ChatThread() {
 
   async function handleSubmit(e) {
     e.preventDefault()
-    if ((!content.trim() && !imageFile) || sending) return
+    if ((!content.trim() && !imageFile && !fileToSend) || sending) return
     setSending(true)
     setError(null)
     try {
@@ -429,9 +528,30 @@ export default function ChatThread() {
         // 桶已私有：存的是**定位串**（本身不可访问），渲染时统一换签名地址
         imageUrl = objectLocator('moment-images', path)
       }
+      // 文件：和图片同一扇门（会话密钥加密后上传），但正文里放一个**信封**：
+      // 文件名/大小/类型都藏在密文里 —— 服务器只看到一个不可读的定位串，
+      // 连"你发的是体检报告.pdf"都看不到。
+      if (fileToSend) {
+        setUploadHint('加密上传文件…')
+        const path = safeStorageKey(me, fileToSend.name)
+        const ck = await conversationKey(userId)
+        const up = await uploadEncryptedImage(path, fileToSend, ck)
+        if (!up.ok) {
+          console.warn('[file] 这个文件没能加密，按明文上传:', up.reason)
+          const { error: uploadError } = await supabase.storage
+            .from('moment-images')
+            .upload(path, fileToSend, { contentType: fileToSend.type || 'application/octet-stream' })
+          if (uploadError) throw uploadError
+        }
+        imageUrl = objectLocator('moment-images', path)
+      }
+      setUploadHint(null)
+
       // 文本加密后再入库（库里只留密文）。拿不到密钥时（本机没解锁 / 对方还没公钥）
       // 退回明文发送：宁可这一刻漏加密，也不能让使用者发不出消息；控制台留一行便于排查。
-      const text = content.trim()
+      const text = fileToSend
+        ? JSON.stringify({ ...FILE_ENVELOPE, name: fileToSend.name, size: fileToSend.size, mime: fileToSend.type || '' })
+        : content.trim()
       let body = { content: text || null }
       if (text) {
         const sealed = await encryptForPeer(userId, text)
@@ -450,6 +570,7 @@ export default function ChatThread() {
       if (error) throw error
       setContent('')
       setImageFile(null)
+      setFileToSend(null)
       setReplyTarget(null)
     } catch (err) {
       setError(err.message)
@@ -833,6 +954,19 @@ export default function ChatThread() {
                     ) : (
                       <>
                         {(() => {
+                          const fe = fileEnvelopeOf(m.content)
+                          if (fe) {
+                            return (
+                              <span className="chat-file-card" data-chat-file="1">
+                                <span className="chat-file-icon"><FileEntryIcon /></span>
+                                <span className="chat-file-meta">
+                                  <span className="chat-file-name" title={fe.name}>{fe.name}</span>
+                                  <span className="chat-file-size">{humanSize(fe.size)}</span>
+                                </span>
+                                <FileDownload locator={m.image_url} name={fe.name} resolveKey={() => conversationKey(userId)} />
+                              </span>
+                            )
+                          }
                           const stickerId = stickerIdFromContent(m.content)
                           if (stickerId) return <StickerMessage id={stickerId} />
                           return m.content
@@ -871,6 +1005,7 @@ export default function ChatThread() {
         </button>
       )}
 
+      {uploadHint && <p className="status-text chat-upload-hint">{uploadHint}</p>}
       {error && <p className="error-text">{error}</p>}
 
       {replyTarget && (
@@ -889,28 +1024,91 @@ export default function ChatThread() {
         </div>
       )}
 
+      {moreOpen && (
+        <div className="chat-more-panel" role="group" aria-label="更多" data-chat-more="1">
+          <label className="chat-more-item" title="照片">
+            <span className="chat-more-icon"><PhotoEntryIcon /></span>
+            <span className="chat-more-label">照片</span>
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                e.target.value = ''
+                if (!f) return
+                setFileToSend(null)
+                setImageFile(f)
+                setMoreOpen(false)
+                setError(null)
+              }}
+            />
+          </label>
+          <label className="chat-more-item" title={`文件（最大 ${FILE_MAX_BYTES / 1024 / 1024}MB）`}>
+            <span className="chat-more-icon"><FileEntryIcon /></span>
+            <span className="chat-more-label">文件</span>
+            <input
+              type="file"
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                e.target.value = ''
+                if (!f) return
+                if (f.size > FILE_MAX_BYTES) {
+                  setError(`这个文件 ${humanSize(f.size)}，超过 ${FILE_MAX_BYTES / 1024 / 1024}MB 了`)
+                  return
+                }
+                setImageFile(null)
+                setFileToSend(f)
+                setMoreOpen(false)
+                setError(null)
+              }}
+            />
+          </label>
+        </div>
+      )}
+
       {stickerOpen && <StickerPicker onPick={sendSticker} onClose={() => setStickerOpen(false)} />}
 
       <form className="chat-input-row" onSubmit={handleSubmit}>
         <button
           type="button"
-          className="chat-sticker-btn"
+          className="chat-icon-btn"
           title="表情"
           aria-label="表情"
+          data-composer-icon="sticker"
           aria-expanded={stickerOpen}
-          onClick={() => setStickerOpen((v) => !v)}
+          onClick={() => { setMoreOpen(false); setStickerOpen((v) => !v) }}
         >
-          😊
+          <FaceIcon />
         </button>
-        <label className="chat-attach-btn" title="发送图片">
-          📷
-          <input
-            type="file"
-            accept="image/*"
-            hidden
-            onChange={(e) => setImageFile(e.target.files[0] ?? null)}
-          />
-        </label>
+        <button
+          type="button"
+          className="chat-icon-btn"
+          title="更多"
+          aria-label="更多"
+          data-composer-icon="more"
+          aria-expanded={moreOpen}
+          onClick={() => { setStickerOpen(false); setMoreOpen((v) => !v) }}
+        >
+          <PlusIcon />
+        </button>
+        {fileToSend && (
+          <span className="chat-file-preview" data-file-preview="1">
+            <FileEntryIcon />
+            <span className="chat-file-preview-name" title={fileToSend.name}>{fileToSend.name}</span>
+            <span className="chat-file-preview-size">{humanSize(fileToSend.size)}</span>
+            <button
+              type="button"
+              className="chat-attach-remove"
+              onClick={() => setFileToSend(null)}
+              aria-label="移除文件"
+            >
+              ×
+            </button>
+          </span>
+        )}
         {imageFile && (
           <span className="chat-attach-preview">
             <img src={imagePreviewUrl} alt="" />
@@ -941,7 +1139,7 @@ export default function ChatThread() {
             }
           }}
         />
-        <button type="submit" disabled={sending || (!content.trim() && !imageFile)}>
+        <button type="submit" disabled={sending || (!content.trim() && !imageFile && !fileToSend)}>
           {sending ? '…' : '发送'}
         </button>
       </form>

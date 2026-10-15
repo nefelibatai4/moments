@@ -112,6 +112,20 @@ export async function encryptImageBytes(key, bytes) {
 export async function decryptImageBytes(key, raw, kind = 'image') {
   const sniff = kind === 'video' ? looksLikeVideo : looksLikeImage
   const bytes = raw instanceof Uint8Array ? raw : new Uint8Array(raw)
+  // `kind='file'`（私聊里的任意文件）：**不做嗅探**，只解密。
+  // 原因：文件不是图片、也不是视频，嗅探必然失败；而 AES-GCM 自带认证，
+  // 钥匙不对会直接抛错，所以"解出来"的字节一定就是原文（不需要再猜格式）。
+  if (kind === 'file') {
+    if (!key || bytes.length <= IV_LEN) return null
+    try {
+      const plain = new Uint8Array(await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: bytes.slice(0, IV_LEN) },
+        key,
+        bytes.slice(IV_LEN),
+      ))
+      return { bytes: plain, encrypted: true }
+    } catch { return null }
+  }
   if (sniff(bytes)) return { bytes, encrypted: false }   // 加密上线前的老明文
   if (!key || bytes.length <= IV_LEN) return null
   try {

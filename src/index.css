@@ -3875,3 +3875,100 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
   /* 减少动效时不做任何过渡（视频本身由 JS 决定不自动播） */
   .moment-video-frame { transition: none; }
 }
+
+/* ── 私聊输入区：协调的两枚图标按钮（表情 / + 更多）2026-10-15 ──
+   使用者原话："照片发送表情包按钮看着太粗糙" ⇒ 不再用 emoji 当图标：
+   两枚按钮**同一套自绘 SVG、同尺寸、同描边、同间距**，颜色跟随主题。 */
+.chat-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color .15s ease, color .15s ease;
+}
+.chat-icon-btn:hover { background: var(--btn-secondary-hover); color: var(--text-primary); }
+.chat-icon-btn[aria-expanded="true"] { background: var(--btn-secondary-bg); color: var(--text-primary); }
+.chat-icon-btn svg { display: block; }
+@media (prefers-reduced-motion: reduce) { .chat-icon-btn { transition: none; } }
+
+/* 「+」多功能面板：占位式（把消息区顶上去），和表情面板互斥 */
+.chat-more-panel {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px 8px;
+  margin: 8px 0 0;
+  padding: 14px 12px calc(14px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+}
+.chat-more-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.chat-more-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  border: 1px solid var(--border-standard);
+  background: var(--bg-input);
+  color: var(--text-primary);
+}
+.chat-more-item:hover .chat-more-icon { background: var(--btn-secondary-hover); }
+.chat-more-label { font-size: 0.78rem; color: var(--text-secondary); }
+
+/* 待发送的文件（贴在输入栏，和图片预览同一位置语义） */
+.chat-file-preview {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 46vw;
+  padding: 6px 10px;
+  border: 1px solid var(--border-standard);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 0.84rem;
+}
+.chat-file-preview-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 22vw; }
+.chat-file-preview-size { color: var(--text-muted); flex: 0 0 auto; }
+
+/* 气泡里的文件卡片（文件名/大小在密文里，服务器看不到） */
+.chat-file-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-standard);
+  border-radius: 12px;
+  background: var(--bg-input);
+  max-width: 100%;
+}
+.chat-file-icon { display: flex; color: var(--text-secondary); flex: 0 0 auto; }
+.chat-file-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.chat-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46vw; }
+.chat-file-size { font-size: 0.78rem; color: var(--text-muted); }
+.chat-file-download {
+  flex: 0 0 auto;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  font-size: 0.8rem;
+  text-decoration: none;
+}
+.chat-file-download[aria-disabled="true"] { opacity: .6; }
+.chat-upload-hint { margin: 4px 0; font-size: 0.82rem; }

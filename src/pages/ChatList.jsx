@@ -90,8 +90,12 @@ export default function ChatList() {
           if (!last.ciphertext || !last.iv) return
           try {
             const text = await decryptForPeer(partnerId, last)
-            // 表情消息在列表里只显示「[表情]」（不把 [[s:xxx]] 这种内部标记露给使用者）
-            decryptedLast[partnerId] = stickerIdFromContent(text) ? '[表情]' : text
+            // 表情/文件消息在列表里只显示「[表情]」「[文件]」（不把 [[s:xxx]]、
+            // {"v":1,"kind":"file",…} 这种内部标记露给使用者）
+            const fileEnvelope = typeof text === 'string' && text.startsWith('{"v":1,"kind":"file"')
+            decryptedLast[partnerId] = stickerIdFromContent(text)
+              ? '[表情]'
+              : (fileEnvelope ? '[文件]' : text)
           } catch {
             decryptedLast[partnerId] = null
           }
@@ -103,6 +107,12 @@ export default function ChatList() {
             ? (decryptedLast[p.id] ?? '🔒 消息')
             : (latestByPartner[p.id]?.content ?? null),
           lastImage: latestByPartner[p.id]?.image_url ?? null,
+          // 附件是文件还是图片？看**解密后的正文**（文件名/类型都藏在密文里，
+          // 所以服务端只知道"有个附件"，由本机解密后才决定显示 [文件] 还是 [图片]）
+          lastFile: (() => {
+            const t = decryptedLast[p.id]
+            return typeof t === 'string' && t.startsWith('{"v":1,"kind":"file"')
+          })(),
           lastRecalled: !!latestByPartner[p.id]?.recalled_at,
           lastTime: latestByPartner[p.id]?.created_at ?? null,
           unread: unreadCounts[p.id] || 0,
@@ -164,7 +174,9 @@ export default function ChatList() {
                   </span>
                   {(c.lastMsg || c.lastImage || c.lastRecalled) && (
                     <span className="chat-list-preview">
-                      {c.lastRecalled ? '[已撤回]' : c.lastImage ? '[图片]' : truncate(c.lastMsg)}
+                      {c.lastRecalled
+                        ? '[已撤回]'
+                        : (c.lastFile ? '[文件]' : (c.lastImage ? '[图片]' : truncate(c.lastMsg)))}
                     </span>
                   )}
                 </span>
