@@ -109,10 +109,9 @@ export default function ChatList() {
           lastImage: latestByPartner[p.id]?.image_url ?? null,
           // 附件是文件还是图片？看**解密后的正文**（文件名/类型都藏在密文里，
           // 所以服务端只知道"有个附件"，由本机解密后才决定显示 [文件] 还是 [图片]）
-          lastFile: (() => {
-            const t = decryptedLast[p.id]
-            return typeof t === 'string' && t.startsWith('{"v":1,"kind":"file"')
-          })(),
+          // ⚠️ 上面已经把文件信封**转成** '[文件]' 了，这里要按转换后的值判断
+          //    （第一版按原始 JSON 前缀判断，永远为 false —— 实测踩到）
+          lastFile: decryptedLast[p.id] === '[文件]',
           lastRecalled: !!latestByPartner[p.id]?.recalled_at,
           lastTime: latestByPartner[p.id]?.created_at ?? null,
           unread: unreadCounts[p.id] || 0,
