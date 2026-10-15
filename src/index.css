@@ -413,11 +413,12 @@ button:disabled {
 
 /* 表情面板（点开才挂载；不常驻） */
 .sticker-picker {
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: 64px;
-  max-height: 46vh;
+  /* 占位面板（2026-10-15 改成微信形态）：不再浮在消息上，而是把消息区顶上去，
+     并且和「+」面板一样是**在流内**的。 */
+  position: static;
+  max-height: 42vh;
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
   padding: 10px;
   border: 1px solid var(--border-color);
@@ -3972,3 +3973,33 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
 }
 .chat-file-download[aria-disabled="true"] { opacity: .6; }
 .chat-upload-hint { margin: 4px 0; font-size: 0.82rem; }
+
+/* ── 表情面板：内容区 + 底部分类栏（微信形态） ── */
+.sticker-picker-body { flex: 1 1 auto; overflow-y: auto; padding: 10px 2px; min-height: 120px; }
+.sticker-empty { text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 28px 0; }
+.sticker-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 6px 4px calc(6px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+}
+.sticker-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 56px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.72rem;
+}
+.sticker-tab.on { background: var(--btn-secondary-bg); color: var(--text-primary); }
+.sticker-tab-icon { font-size: 1.05rem; line-height: 1.1; }
+.sticker-tab-label { line-height: 1.1; }
+.sticker-tab-close { margin-left: auto; }
