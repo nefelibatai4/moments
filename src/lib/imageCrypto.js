@@ -130,12 +130,28 @@ export async function fetchAndDecryptImage(signedUrl, key) {
   return null
 }
 
+/**
+ * 每个对象的"尝试次数"与"这辈子都解不开"名单（**跨渲染、跨挂载累计**）。
+ *
+ * ⚠️ 为什么必须有这两样（2026-10-15 实测）：解不开的图（例如"在我加入圈子之前加密的
+ *    动态图"、或钥匙还没交付时）会让重试永远失败；只要有任何东西让它重渲染一次，
+ *    就会再下一次，实测**每打开一次应用同一个对象被请求 34~54 次、30 MB+**
+ *    —— 这既是流量账单的头号来源，也是纯浪费的电。
+ *    现在：① 明确"没有钥匙"就当场放弃（这不是网络抖动，重试没有意义）；
+ *          ② 每个对象每个会话最多试 3 次，从机制上封顶。
+ */
+const attemptCounts = new Map()
+const noKeyLocators = new Set()
+const MAX_ATTEMPTS_PER_OBJECT = 3
+
 /** 登出/换账号时释放内存里所有 `blob:` 地址（否则会把上一个人的内容留在内存里） */
 export function clearImageCache() {
   for (const url of urlCache.values()) {
     try { URL.revokeObjectURL(url) } catch { /* 忽略 */ }
   }
   urlCache.clear()
+  attemptCounts.clear()
+  noKeyLocators.clear()
 }
 
 function remember(locator, url) {
@@ -167,14 +183,24 @@ export function useContentImageUrls(locators, { resolveKey }) {
   useEffect(() => {
     let cancelled = false
     const storageOnes = list.filter((l) => storagePathFromUrl(l))
-    const pending = storageOnes.filter((l) => !urlCache.has(l))
+    const pending = storageOnes.filter((l) => (
+      !urlCache.has(l)
+      && !noKeyLocators.has(l)
+      && (attemptCounts.get(l) ?? 0) < MAX_ATTEMPTS_PER_OBJECT
+    ))
     if (pending.length === 0) return undefined
     let stillPending = false
     ;(async () => {
       const key = await resolveKey().catch(() => null)
+      // 没有钥匙 = 这张图这次（以及这个会话里）根本解不开 → 别去下载，直接记账走人
+      if (!key) {
+        for (const l of pending) noKeyLocators.add(l)
+        return
+      }
       for (const locator of pending) {
         if (cancelled) return
         if (urlCache.has(locator)) continue
+        attemptCounts.set(locator, (attemptCounts.get(locator) ?? 0) + 1)
         try {
           // ⚠️ 先只用**批量签名**的结果（一屏多图必须合并成一次请求，这是既有的性能约定）。
           //    只有当重试都试过了还拿不到地址（批量那次真的失败了），才单独补签一个 ——
@@ -189,8 +215,10 @@ export function useContentImageUrls(locators, { resolveKey }) {
           if (!cancelled) setVersion((v) => v + 1)
         } catch { stillPending = true }
       }
-      // 有界重试（1s / 3s / 8s）：网络抖一下、或后台正在"原地补加密"时正好取图，都能自愈
-      if (!cancelled && stillPending && retry < 3) {
+      // 有界重试（1s / 3s / 8s）：网络抖一下、或后台正在"原地补加密"时正好取图，都能自愈。
+      // 但**额度用完就不再排**（否则重挂载一次就再来一轮，等于没有上限）。
+      const hasBudget = pending.some((l) => (attemptCounts.get(l) ?? 0) < MAX_ATTEMPTS_PER_OBJECT)
+      if (!cancelled && stillPending && hasBudget && retry < 3) {
         const wait = [1000, 3000, 8000][retry] ?? 8000
         setTimeout(() => { if (!cancelled) setRetry((r) => r + 1) }, wait)
       }
