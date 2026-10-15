@@ -58,7 +58,8 @@
 
   <div class="step">
     <h2>② 相册里选「视频」</h2>
-    <p><code>accept="video/*"</code> —— 想知道实况照片会不会被列成一段几秒的视频</p>
+    <p><code>accept="video/*"</code> —— 想知道实况照片会不会被列成一段几秒的视频。<br>
+      <b>请挑那张实况照片本身</b>；如果列表里<b>根本找不到</b>你的实况照片，也请告诉我（这本身就是答案）。</p>
     <label class="pick">点这里选同一张实况照片
       <input id="f2" type="file" accept="video/*">
     </label>
@@ -66,7 +67,7 @@
 
   <div class="step">
     <h2>③ 相册里照片和视频都能选</h2>
-    <p><code>accept="image/*,video/*" multiple</code> —— 想知道会不会**一次给出两个文件**</p>
+    <p><code>accept="image/*,video/*" multiple</code> —— 想知道会不会<b>一次给出两个文件</b>（照片 + 视频）</p>
     <label class="pick">点这里，试着选同一张实况照片
       <input id="f3" type="file" accept="image/*,video/*" multiple>
     </label>
@@ -120,6 +121,20 @@
     return '认不出来（头 ' + hex.slice(0, 16) + ' / ' + ascii.slice(0, 12) + '）'
   }
 
+  /**
+   * 静帧里还留着"这是实况照片"的标记吗？
+   * 实况照片导出成 JPEG 时，Apple 会在 EXIF MakerNote 里写一个**资产标识**（UUID 形式），
+   * 配对的那段视频里也有同一个标识。如果有，我们就能在网页里**认出"这是一张实况照片"**
+   * 并提示使用者"再把动的那段选一次"，不需要原生 App。
+   */
+  async function livePhotoMarker(file) {
+    const buf = new Uint8Array(await file.slice(0, 256 * 1024).arrayBuffer())
+    const text = String.fromCharCode(...buf)
+    const uuid = text.match(/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/)
+    const apple = /com\.apple/.test(text)
+    return { uuid: uuid ? uuid[0] : null, apple }
+  }
+
   /** 视频能不能在这个浏览器里播 + 分辨率/时长（HEVC 会在这里露馅） */
   function probeVideo(file) {
     return new Promise((resolve) => {
@@ -165,6 +180,8 @@
         } else if (kind.includes('静帧') || kind.includes('HEIC')) {
           const r = await probeImage(f)
           log(`      显示得出来吗：${r.ok ? '✅ ' + r.extra : '❌ ' + r.extra}`)
+          const mk = await livePhotoMarker(f)
+          log(`      带实况照片标记吗：${mk.uuid ? '✅ 有资产标识 ' + mk.uuid : (mk.apple ? '⚠️ 有 com.apple 字样但没找到标识' : '✗ 没有（就是一张普通照片）')}`)
           if (!firstImage) { firstImage = { url: r.url, name: f.name }; tryDemo() }
         } else if (kind.includes('ZIP')) {
           log('      这是一个 zip 包 —— 可以用 JSZip 拆开拿到里面的 HEIC/JPEG + MOV')
