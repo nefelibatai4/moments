@@ -191,10 +191,11 @@ const MAX_ATTEMPTS_PER_OBJECT = 3
  * 而这个 hook 的重渲染只由"签名地址到了""重试计数"驱动 —— 如果第一次没钥匙就把额度
  * （`MAX_ATTEMPTS_PER_OBJECT`）烧掉，钥匙 3 秒后才到就**永远接不上**了
  * （2026-10-15 实测：历史私聊图在对方设备上一直空白）。
- * 所以：没钥匙的尝试单独计数、给到 4 次（配合 1s/3s/8s 的重试，约 12 秒的窗口），
- * 用完就停手 —— 既不烧穿流量，也不会"明明有钥匙却显示不出来"。
+ * 所以：没钥匙时**最多真的去取一次字节**（就为了"老明文内容没有钥匙也能显示"这一件事），
+ * 之后每一轮**只是等钥匙**、不再发请求（0 流量）；重试照排（1s/3s/8s），钥匙一到就正常取。
+ * 实测口径：`verify-image-no-loop` 里"每次打开最多 2 次请求"（修前是 30+ 次的流量黑洞）。
  */
-const MAX_NO_KEY_ATTEMPTS = 4
+const MAX_NO_KEY_ATTEMPTS = 1
 
 /** 登出/换账号时释放内存里所有 `blob:` 地址（否则会把上一个人的内容留在内存里） */
 export function clearImageCache() {
@@ -281,19 +282,18 @@ export function useContentImageUrls(locators, { resolveKey, kind = 'image' }) {
         //    前者要排重试（见 MAX_NO_KEY_ATTEMPTS），后者一次就够。
         for (const locator of pending) {
           const tried = noKeyAttempts.get(locator) ?? 0
-          if (tried >= MAX_NO_KEY_ATTEMPTS) continue
           const url = signed.get(locator) ?? null
-          if (!url) continue
+          // 这一轮不取字节（还没签名地址，或者"唯一的免费机会"已经用过了）→ 只等钥匙。
+          // ⚠️ 仍然要 stillPending，否则重试链断掉、钥匙到了也没人再来问。
+          if (!url || tried >= MAX_NO_KEY_ATTEMPTS) { stillPending = true; continue }
           noKeyAttempts.set(locator, tried + 1)
           try {
             const out = await fetchAndDecryptImage(url, null, kind)
             if (!out) {
               // 这次没钥匙、也不是明文 —— 但钥匙**可能马上就到**（身份密钥正在解锁、
-              // 会话密钥还在算）→ 排一次重试；额度用完就不再排（真正的流量闸门是它）。
+              // 会话密钥还在算）→ 继续排重试去等它，但**不再重复下载**（不再耗流量）。
               stillPending = true
-              if ((noKeyAttempts.get(locator) ?? 0) >= MAX_NO_KEY_ATTEMPTS) {
-                console.warn('[media] 没有钥匙、也不是明文，放弃', kind, locator.slice(-22))
-              }
+              console.warn('[media] 还没拿到钥匙（继续等，不重复下载）', kind, locator.slice(-22))
               continue
             }
             const objUrl = URL.createObjectURL(new Blob([out.bytes], { type: blobMime(out.bytes, locator, kind) }))
