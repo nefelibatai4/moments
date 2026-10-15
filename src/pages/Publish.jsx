@@ -8,13 +8,57 @@ import { CARD_COLORS } from '../lib/cardColors'
 import { objectLocator } from '../lib/signedUrls'
 import { MOODS } from '../lib/moods'
 import { circleReady, createMomentKey, encryptCircleText } from '../lib/crypto'
-import { uploadEncryptedImage } from '../lib/imageCrypto'
+import { uploadEncryptedBytes, uploadEncryptedImage } from '../lib/imageCrypto'
+
+/**
+ * 读视频的时长/分辨率，并抽首帧当封面（全部在本机完成）。
+ * ⚠️ 抽帧要往后挪一点点：不少视频第一帧是黑的，封面会难看。
+ */
+async function prepareVideo(file) {
+  const url = URL.createObjectURL(file)
+  const el = document.createElement('video')
+  el.preload = 'metadata'
+  el.muted = true
+  el.playsInline = true
+  el.src = url
+  try {
+    await new Promise((resolve, reject) => {
+      el.onloadedmetadata = resolve
+      el.onerror = () => reject(new Error('这个浏览器打不开这段视频（iPhone 的 HEVC 常见；换一段 H.264 试试）'))
+      setTimeout(() => reject(new Error('读取视频信息超时')), 12000)
+    })
+    const w = el.videoWidth
+    const h = el.videoHeight
+    const ms = Math.round((el.duration || 0) * 1000)
+    if (!w || !h) throw new Error('读不到视频尺寸')
+    await new Promise((resolve) => {
+      el.onseeked = resolve
+      el.currentTime = Math.min(0.15, (el.duration || 1) / 3)
+      setTimeout(resolve, 4000)     // 有的容器不给 seeked，兜底别卡死
+    })
+    const scale = Math.min(1, 1280 / Math.max(w, h))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(w * scale))
+    canvas.height = Math.max(1, Math.round(h * scale))
+    canvas.getContext('2d').drawImage(el, 0, 0, canvas.width, canvas.height)
+    const posterBlob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82))
+    if (!posterBlob) throw new Error('封面生成失败')
+    return { w, h, ms, posterBlob }
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
 
 // 超过这个字数，动态页默认折叠（只露前几行）；写的时候完全不拦。
 // 这个数字取"原来那个 maxLength"（1000），保证老习惯不变、老内容形态不变。
 const FOLD_AT = 1000
 // 防误操作的硬顶（不是内容限制）：整篇论文粘进来会让时间线一屏放不下、解密也变慢。
 const SAFETY_MAX = 20000
+// 短视频的护栏（2026-10-15 使用者："保留视频自动播放"）。浏览器**没法压缩视频**，
+// 传上去多大就是多大 —— 所以只能在入口把住：一条动态一段、限时长、限体积。
+// 依据：3~10 秒的 H.264 大概 2~5 MB；20 秒是"还能忍"的上限。
+const VIDEO_MAX_MS = 20_000
+const VIDEO_MAX_BYTES = 25 * 1024 * 1024
 
 export default function Publish() {
   const session = useAuth()
@@ -30,6 +74,9 @@ export default function Publish() {
   const [error, setError] = useState(null)
   const [uploadHint, setUploadHint] = useState(null)
   const [cardColor, setCardColor] = useState('default')
+  // 短视频：一条动态最多一段；poster 是本地抽出来的首帧（必须，不然"只看一格静图"
+  // 也要先把整段视频下下来，流量和体验都受不了）
+  const [video, setVideo] = useState(null)
 
   function handleGetLocation() {
     if (!navigator.geolocation) {
@@ -49,14 +96,44 @@ export default function Publish() {
     )
   }
 
+  /**
+   * 选了一段视频：先在**本机**读出时长/分辨率，并抽出首帧当封面。
+   * ⚠️ 这里也是"能不能发"的第一道关：Chrome 解不开 HEVC（iPhone 直出的常见编码），
+   *    解不开就在这里当场说清楚，而不是等传上去发现没法播。
+   */
+  async function handleVideoChange(e) {
+    const file = e.target.files?.[0]
+    e.target.value = ''            // 允许"选错了再选同一个文件"
+    if (!file) return
+    setError(null)
+    if (!file.type.startsWith('video/')) { setError('这看起来不是视频文件'); return }
+    if (file.size > VIDEO_MAX_BYTES) {
+      setError(`这段视频 ${(file.size / 1024 / 1024).toFixed(1)} MB，超过 ${VIDEO_MAX_BYTES / 1024 / 1024} MB 了`)
+      return
+    }
+    setUploadHint('读取视频…')
+    try {
+      const meta = await prepareVideo(file)
+      if (meta.ms > VIDEO_MAX_MS) {
+        setError(`这段视频 ${(meta.ms / 1000).toFixed(1)} 秒，超过 ${VIDEO_MAX_MS / 1000} 秒了`)
+        setUploadHint(null)
+        return
+      }
+      setVideo({ file, ...meta, previewUrl: URL.createObjectURL(file), posterUrl: URL.createObjectURL(meta.posterBlob) })
+    } catch (err) {
+      setError(err.message)
+    }
+    setUploadHint(null)
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     if (content.length > SAFETY_MAX) {
       setError(`太长了（上限 ${SAFETY_MAX} 字），分几条发吧`)
       return
     }
-    if (!content.trim() && files.length === 0) {
-      setError('请输入文字或选择图片')
+    if (!content.trim() && files.length === 0 && !video) {
+      setError('请输入文字、选择图片或视频')
       return
     }
     setSubmitting(true)
@@ -109,10 +186,40 @@ export default function Publish() {
         // 桶已私有：存**定位串**（本身不可访问），渲染时统一换签名地址（见 lib/signedUrls.js）
         imageUrls.push(objectLocator('moment-images', path))
       }
+      // 视频：和图片一样，用这条动态的 CEK 加密上传（连首帧封面一起）。
+      // 解密出来的字节是原样视频，所以 MIME 按后缀给（见 lib/imageCrypto.js）。
+      let videoEntry = null
+      if (video) {
+        setUploadHint('加密上传视频…')
+        const vPath = safeStorageKey(session.user.id, video.file.name)
+        const vUp = cek ? await uploadEncryptedBytes(vPath, video.file, cek) : { ok: false, reason: 'no-key' }
+        if (!vUp.ok) {
+          console.warn('[video] 没能加密，按明文上传:', vUp.reason)
+          const { error: vErr } = await supabase.storage
+            .from('moment-images')
+            .upload(vPath, video.file, { contentType: video.file.type || 'video/mp4' })
+          if (vErr) throw vErr
+        }
+        const posterFile = new File([video.posterBlob], `poster-${Date.now()}.jpg`, { type: 'image/jpeg' })
+        const pPath = safeStorageKey(session.user.id, posterFile.name)
+        const pUp = cek ? await uploadEncryptedBytes(pPath, posterFile, cek) : { ok: false, reason: 'no-key' }
+        if (!pUp.ok) {
+          const { error: pErr } = await supabase.storage
+            .from('moment-images')
+            .upload(pPath, posterFile, { contentType: 'image/jpeg' })
+          if (pErr) throw pErr
+        }
+        videoEntry = {
+          video: objectLocator('moment-images', vPath),
+          poster: objectLocator('moment-images', pPath),
+          w: video.w, h: video.h, ms: video.ms,
+        }
+      }
       setUploadHint(null)
 
-      // 回写：图片定位串 + 正文密文（图片的密文钥匙就是这条 CEK，不需要额外记录）
+      // 回写：图片/视频定位串 + 正文密文（媒体用的钥匙就是这条 CEK，不需要额外记录）
       const patch = { images: imageUrls.length > 0 ? imageUrls : null }
+      if (videoEntry) patch.videos = [videoEntry]
       if (text && cek) {
         const sealed = await encryptCircleText(cek, text)
         if (sealed) Object.assign(patch, sealed, { content: null })
@@ -159,6 +266,45 @@ export default function Publish() {
         multiple
         onChange={(e) => setFiles(Array.from(e.target.files))}
       />
+
+      {/* 短视频（2026-10-15）：一条动态最多一段。
+          ⚠️ 只用原生 `<label>` 包一个**可见**的 input：iOS 上 hidden input + 程序化 click 会失灵。 */}
+      <div className="publish-video-row">
+        <label className="publish-video-pick">
+          {video ? '换一段视频' : '🎬 加一段视频'}
+          <input type="file" accept="video/*" onChange={handleVideoChange} />
+        </label>
+        {video && (
+          <div className="publish-video-info">
+            <video
+              className="publish-video-thumb"
+              src={video.previewUrl}
+              poster={video.posterUrl}
+              muted
+              playsInline
+              preload="metadata"
+            />
+            <span className="status-text">
+              {(video.ms / 1000).toFixed(1)} 秒 · {video.w}×{video.h} ·
+              {' '}{(video.file.size / 1024 / 1024).toFixed(1)} MB
+            </span>
+            <button
+              type="button"
+              className="publish-video-remove"
+              onClick={() => {
+                URL.revokeObjectURL(video.previewUrl)
+                URL.revokeObjectURL(video.posterUrl)
+                setVideo(null)
+              }}
+            >
+              去掉
+            </button>
+          </div>
+        )}
+        <p className="status-text publish-video-hint">
+          最长 {VIDEO_MAX_MS / 1000} 秒、{VIDEO_MAX_BYTES / 1024 / 1024} MB 以内；发出去后在动态里会自动播放（静音）。
+        </p>
+      </div>
       <div className="location-row">
         <button type="button" onClick={handleGetLocation} disabled={locating}>
           {location ? `📍 已添加位置` : locating ? '定位中…' : '📍 添加当前位置'}

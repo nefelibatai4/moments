@@ -53,6 +53,39 @@ export function looksLikeImage(bytes) {
   return false
 }
 
+/**
+ * 头几个字节像不像视频（用来区分"老明文视频"与"密文"）。
+ * ⚠️ 不能直接用 `looksLikeImage`：它把 `....ftyp` 一族（HEIC **和** MP4/MOV）都算图片，
+ *    对视频来说会把 HEIC 误判成视频、把 MP4 误判成图片，两边都不对。
+ */
+export function looksLikeVideo(bytes) {
+  const b = bytes
+  if (!b || b.length < 12) return false
+  // ISO BMFF 家族：....ftyp<brand> —— mp4 / mov / m4v 都是；排掉 heic/heix/mif1/msf1（那是图片）
+  if (b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) {
+    const brand = String.fromCharCode(b[8], b[9], b[10], b[11]).toLowerCase()
+    if (['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1', 'avif'].includes(brand)) return false
+    return true
+  }
+  // WebM / Matroska：1A 45 DF A3
+  if (b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3) return true
+  return false
+}
+
+/** 视频按文件后缀给 MIME（解密出来的是原始字节，`<video>` 需要知道类型） */
+function videoMimeFromPath(locator) {
+  const path = String(locator).split('?')[0].toLowerCase()
+  if (path.endsWith('.mov')) return 'video/quicktime'
+  if (path.endsWith('.webm')) return 'video/webm'
+  if (path.endsWith('.m4v')) return 'video/x-m4v'
+  return 'video/mp4'
+}
+
+/** 交给 `Blob` 的 MIME：图片按字节嗅探，视频按后缀（浏览器对视频的 MIME 更挑） */
+function blobMime(bytes, locator, kind) {
+  return kind === 'video' ? videoMimeFromPath(locator) : mimeOf(bytes)
+}
+
 function mimeOf(bytes) {
   if (bytes[0] === 0xff && bytes[1] === 0xd8) return 'image/jpeg'
   if (bytes[0] === 0x89 && bytes[1] === 0x50) return 'image/png'
@@ -76,9 +109,10 @@ export async function encryptImageBytes(key, bytes) {
  * 桶里的字节 → 明文图片字节。
  * @returns {Promise<{bytes: Uint8Array, encrypted: boolean}|null>} 认不出来就返回 null
  */
-export async function decryptImageBytes(key, raw) {
+export async function decryptImageBytes(key, raw, kind = 'image') {
+  const sniff = kind === 'video' ? looksLikeVideo : looksLikeImage
   const bytes = raw instanceof Uint8Array ? raw : new Uint8Array(raw)
-  if (looksLikeImage(bytes)) return { bytes, encrypted: false }   // 加密上线前的老明文图
+  if (sniff(bytes)) return { bytes, encrypted: false }   // 加密上线前的老明文
   if (!key || bytes.length <= IV_LEN) return null
   try {
     const plain = new Uint8Array(await crypto.subtle.decrypt(
@@ -86,13 +120,13 @@ export async function decryptImageBytes(key, raw) {
       key,
       bytes.slice(IV_LEN),
     ))
-    if (looksLikeImage(plain)) return { bytes: plain, encrypted: true }
+    if (sniff(plain)) return { bytes: plain, encrypted: true }
   } catch { /* 解不开：钥匙不对或不是密文 */ }
   return null
 }
 
-/** 加密后上传（拿不到钥匙就返回 false，由调用方决定要不要退回明文） */
-export async function uploadEncryptedImage(path, file, key) {
+/** 加密后上传。图片与视频共用（都是"字节进、密文出"，区别只在调用方的 path/MIME） */
+export async function uploadEncryptedBytes(path, file, key) {
   if (!key) return { ok: false, reason: 'no-key' }
   try {
     const sealed = await encryptImageBytes(key, new Uint8Array(await file.arrayBuffer()))
@@ -108,8 +142,11 @@ export async function uploadEncryptedImage(path, file, key) {
   }
 }
 
-/** 下载 + 解密一个对象路径（`key` 为 null 时只处理老明文图） */
-export async function fetchAndDecryptImage(signedUrl, key) {
+/** 图片的加密上传（历史名字，等价于 uploadEncryptedBytes） */
+export const uploadEncryptedImage = uploadEncryptedBytes
+
+/** 下载 + 解密一个对象路径（`key` 为 null 时只处理老明文；`kind='video'` 时按视频嗅探） */
+export async function fetchAndDecryptImage(signedUrl, key, kind = 'image') {
   // ⚠️ 后台"补加密"会**原地覆盖**同一个对象：对方正好在这时取图就可能拿到一半/失败。
   //    所以这里失败重试一次（600ms 后），而不是让这张图永久空着。
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -117,13 +154,17 @@ export async function fetchAndDecryptImage(signedUrl, key) {
       const res = await fetch(signedUrl, { credentials: 'omit' })
       if (res.ok) {
         const raw = new Uint8Array(await res.arrayBuffer())
-        const out = await decryptImageBytes(key, raw)
+        const out = await decryptImageBytes(key, raw, kind)
         if (out) return out
+        if (attempt === 1) {
+          const head = [...raw.slice(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join('')
+          console.warn('[media] 下载到了但解不开', kind, 'len=' + raw.length, 'head=' + head, 'hasKey=' + !!key)
+        }
       } else if (attempt === 1) {
-        console.warn('[image] 下载失败:', res.status, signedUrl.slice(0, 80))
+        console.warn('[media] 下载失败:', res.status, signedUrl.slice(0, 80))
       }
     } catch (err) {
-      if (attempt === 1) console.warn('[image] 下载异常:', err?.message)
+      if (attempt === 1) console.warn('[media] 下载异常:', err?.message)
     }
     if (attempt === 0) await new Promise((r) => setTimeout(r, 600))
   }
@@ -140,9 +181,20 @@ export async function fetchAndDecryptImage(signedUrl, key) {
  *    现在：① 明确"没有钥匙"就当场放弃（这不是网络抖动，重试没有意义）；
  *          ② 每个对象每个会话最多试 3 次，从机制上封顶。
  */
-const attemptCounts = new Map()
-const noKeyLocators = new Set()
+const attemptCounts = new Map()          // 真正"带钥匙去取"的次数（防流量黑洞）
+const noKeyAttempts = new Map()          // "还没钥匙"时试了几次（给钥匙一点时间到，但也要封顶）
 const MAX_ATTEMPTS_PER_OBJECT = 3
+/**
+ * 没有钥匙时最多试几次。
+ *
+ * 为什么要单独一个额度：身份密钥/会话密钥/CEK 都是**页面打开后才慢慢就绪**的，
+ * 而这个 hook 的重渲染只由"签名地址到了""重试计数"驱动 —— 如果第一次没钥匙就把额度
+ * （`MAX_ATTEMPTS_PER_OBJECT`）烧掉，钥匙 3 秒后才到就**永远接不上**了
+ * （2026-10-15 实测：历史私聊图在对方设备上一直空白）。
+ * 所以：没钥匙的尝试单独计数、给到 4 次（配合 1s/3s/8s 的重试，约 12 秒的窗口），
+ * 用完就停手 —— 既不烧穿流量，也不会"明明有钥匙却显示不出来"。
+ */
+const MAX_NO_KEY_ATTEMPTS = 4
 
 /** 登出/换账号时释放内存里所有 `blob:` 地址（否则会把上一个人的内容留在内存里） */
 export function clearImageCache() {
@@ -151,11 +203,22 @@ export function clearImageCache() {
   }
   urlCache.clear()
   attemptCounts.clear()
-  noKeyLocators.clear()
+  noKeyAttempts.clear()
 }
+
+/**
+ * 解密成功的广播：**任何**一个实例解出来，所有在渲染这个对象的实例都要重画。
+ *
+ * ⚠️ 为什么必须有（2026-10-15 实测）：同一条内容可能同时挂在两个组件实例上
+ *    （卡片 + 灯箱、时间线重挂载、StrictMode 双挂载…）。以前只有"自己解出来的那个实例"
+ *    会 `setVersion` 重渲染，另一个实例的 `urlCache.has()` 是在它自己那次渲染里读的 →
+ *    它就**永远停在封面/占位**，哪怕数据早就在缓存里了。视频那条尤其明显。
+ */
+const cacheListeners = new Set()
 
 function remember(locator, url) {
   urlCache.set(locator, url)
+  for (const cb of cacheListeners) { try { cb(locator) } catch { /* 订阅方自己的错 */ } }
   while (urlCache.size > MAX_CACHED) {
     const oldest = urlCache.keys().next().value
     const dead = urlCache.get(oldest)
@@ -171,7 +234,7 @@ function remember(locator, url) {
  * @param {string[]} locators 存的那串定位符（`bucket:path`）
  * @param {{ resolveKey: () => Promise<CryptoKey|null> }} opts 怎么拿钥匙（由调用方按语境给）
  */
-export function useContentImageUrls(locators, { resolveKey }) {
+export function useContentImageUrls(locators, { resolveKey, kind = 'image' }) {
   const list = useMemo(() => (locators ?? []).filter(Boolean), [locators])
   const signed = useSignedUrls(list, BUCKET)
   // ⚠️ 依赖用"定位符 → 签名地址"的字符串指纹，而不是 Map/数组本身：
@@ -180,21 +243,65 @@ export function useContentImageUrls(locators, { resolveKey }) {
   const [version, setVersion] = useState(0)
   const [retry, setRetry] = useState(0)
 
+  // 别人解出来也要通知我重画（见 remember 的说明）
+  useEffect(() => {
+    const cb = () => setVersion((v) => v + 1)
+    cacheListeners.add(cb)
+    return () => { cacheListeners.delete(cb) }
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     const storageOnes = list.filter((l) => storagePathFromUrl(l))
     const pending = storageOnes.filter((l) => (
       !urlCache.has(l)
-      && !noKeyLocators.has(l)
       && (attemptCounts.get(l) ?? 0) < MAX_ATTEMPTS_PER_OBJECT
     ))
     if (pending.length === 0) return undefined
     let stillPending = false
     ;(async () => {
+      // 有界重试（1s / 3s / 8s）：网络抖一下、或后台正在"原地补加密"时正好取图，都能自愈。
+      // 但**额度用完就不再排**（否则重挂载一次就再来一轮，等于没有上限）。
+      const scheduleRetry = () => {
+        const hasBudget = pending.some((l) => (attemptCounts.get(l) ?? 0) < MAX_ATTEMPTS_PER_OBJECT)
+        if (!cancelled && stillPending && hasBudget && retry < 3) {
+          const wait = [1000, 3000, 8000][retry] ?? 8000
+          setTimeout(() => { if (!cancelled) setRetry((r) => r + 1) }, wait)
+        }
+      }
+
       const key = await resolveKey().catch(() => null)
-      // 没有钥匙 = 这张图这次（以及这个会话里）根本解不开 → 别去下载，直接记账走人
       if (!key) {
-        for (const l of pending) noKeyLocators.add(l)
+        // ⚠️ 「没有钥匙」**不等于**「看不到」：加密上线前的老明文图/视频就是这样，
+        //    没有钥匙也照样能显示。所以这里给**一次**机会，但只给一次：
+        //      · 取回来是明文 → 正常显示（向后兼容，历史内容不会变成空气）；
+        //      · 取回来是密文 → 说明这条内容没给我包钥匙 → 认了，**不重试**
+        //        （这正是"加入圈子之前的动态"那种情况；也只有这样才不会变成一个流量黑洞）。
+        //    同时把"还没拿到钥匙（身份密钥刚在解锁、CEK 还在路上）"和上面这种区分开：
+        //    前者要排重试（见 MAX_NO_KEY_ATTEMPTS），后者一次就够。
+        for (const locator of pending) {
+          const tried = noKeyAttempts.get(locator) ?? 0
+          if (tried >= MAX_NO_KEY_ATTEMPTS) continue
+          const url = signed.get(locator) ?? null
+          if (!url) continue
+          noKeyAttempts.set(locator, tried + 1)
+          try {
+            const out = await fetchAndDecryptImage(url, null, kind)
+            if (!out) {
+              // 这次没钥匙、也不是明文 —— 但钥匙**可能马上就到**（身份密钥正在解锁、
+              // 会话密钥还在算）→ 排一次重试；额度用完就不再排（真正的流量闸门是它）。
+              stillPending = true
+              if ((noKeyAttempts.get(locator) ?? 0) >= MAX_NO_KEY_ATTEMPTS) {
+                console.warn('[media] 没有钥匙、也不是明文，放弃', kind, locator.slice(-22))
+              }
+              continue
+            }
+            const objUrl = URL.createObjectURL(new Blob([out.bytes], { type: blobMime(out.bytes, locator, kind) }))
+            remember(locator, objUrl)
+            if (!cancelled) setVersion((v) => v + 1)
+          } catch { stillPending = true }
+        }
+        scheduleRetry()
         return
       }
       for (const locator of pending) {
@@ -208,20 +315,21 @@ export function useContentImageUrls(locators, { resolveKey }) {
           const url = signed.get(locator)
             ?? (retry >= 3 ? await resolveSignedUrl(BUCKET, locator).catch(() => null) : null)
           if (!url) { stillPending = true; continue }
-          const out = await fetchAndDecryptImage(url, key)
-          if (!out) { stillPending = true; continue }
-          const objUrl = URL.createObjectURL(new Blob([out.bytes], { type: mimeOf(out.bytes) }))
+          const out = await fetchAndDecryptImage(url, key, kind)
+          if (!out) {
+            stillPending = true
+            // 只在这个对象已经用完额度时喊一次：线上排查"图/视频为什么不出来"就靠它
+            if ((attemptCounts.get(locator) ?? 0) >= MAX_ATTEMPTS_PER_OBJECT) {
+              console.warn('[media] 解不开（已放弃）', kind, locator.slice(-24))
+            }
+            continue
+          }
+          const objUrl = URL.createObjectURL(new Blob([out.bytes], { type: blobMime(out.bytes, locator, kind) }))
           remember(locator, objUrl)
           if (!cancelled) setVersion((v) => v + 1)
         } catch { stillPending = true }
       }
-      // 有界重试（1s / 3s / 8s）：网络抖一下、或后台正在"原地补加密"时正好取图，都能自愈。
-      // 但**额度用完就不再排**（否则重挂载一次就再来一轮，等于没有上限）。
-      const hasBudget = pending.some((l) => (attemptCounts.get(l) ?? 0) < MAX_ATTEMPTS_PER_OBJECT)
-      if (!cancelled && stillPending && hasBudget && retry < 3) {
-        const wait = [1000, 3000, 8000][retry] ?? 8000
-        setTimeout(() => { if (!cancelled) setRetry((r) => r + 1) }, wait)
-      }
+      scheduleRetry()
     })()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps

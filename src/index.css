@@ -3779,3 +3779,99 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
 }
 .publish-count.over, .publish-count-hint.over { color: var(--accent-red); }
 .publish-count-hint { color: var(--text-muted); }
+
+/* ── 发布页：短视频（2026-10-15） ── */
+.publish-video-row { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 8px; }
+.publish-video-pick {
+  display: inline-block;
+  align-self: flex-start;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-standard);
+  background: var(--btn-secondary-bg);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.publish-video-pick input { display: block; margin-top: 6px; font-size: 0.85rem; }
+.publish-video-info { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.publish-video-thumb {
+  width: 96px;
+  height: 128px;
+  object-fit: cover;
+  border-radius: 10px;
+  background: #000;
+  border: 1px solid var(--border-standard);
+}
+.publish-video-remove {
+  padding: 4px 10px; font-size: 0.82rem; border-radius: 8px;
+  border: 1px solid var(--border-standard); background: none; color: var(--text-secondary); cursor: pointer;
+}
+.publish-video-hint { font-size: 0.8rem; margin: 0; }
+
+/* ── 动态里的短视频（2026-10-15）：封面先出，可见才自动播（静音循环） ── */
+.moment-video { margin: 4px 0 10px; }
+.moment-video-frame {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 0;
+  border: none;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #000;
+  cursor: pointer;
+  line-height: 0;
+}
+.moment-video-frame img,
+.moment-video-frame video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.moment-video-frame video { position: absolute; inset: 0; }
+/* 封面在下面、视频在上面：没解密出来时视频没有 src，看到的就是封面 */
+.moment-video-frame img { position: relative; z-index: 1; }
+.moment-video-frame video[data-video-loaded="1"] { z-index: 2; }
+.moment-video-placeholder { display: block; width: 100%; padding-top: 56.25%; background: var(--bg-input); }
+.moment-video-badge {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 3;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+.moment-video-hint { margin: 6px 0 0; font-size: 0.78rem; color: var(--text-muted); text-align: center; }
+.moment-video-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.92);
+}
+.moment-video-full { max-width: 96vw; max-height: 86vh; }
+.moment-video-close {
+  position: fixed;
+  top: calc(12px + var(--safe-top));
+  right: 12px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* 减少动效时不做任何过渡（视频本身由 JS 决定不自动播） */
+  .moment-video-frame { transition: none; }
+}

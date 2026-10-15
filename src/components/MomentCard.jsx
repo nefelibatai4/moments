@@ -13,6 +13,7 @@ import SignedImage from './SignedImage'
 import { encryptCircleText, momentKey } from '../lib/crypto'
 import { moodByKey } from '../lib/moods'
 import MoodRain from './MoodRain'
+import MomentVideo from './MomentVideo'
 
 /**
  * 评论和点赞的数据源在 Timeline（单一数据源），这样实时订阅拿到新数据后
@@ -353,6 +354,14 @@ export default function MomentCard({
       ) : moment.ciphertext ? (
         <p className="moment-content moment-locked">🔒 这条动态在这台设备上读不到</p>
       ) : null}
+
+      {/* 短视频（一条动态最多一段）：封面先出，滚到可见才下载/自动播放（见 MomentVideo.jsx） */}
+      {moment.videos?.[0] && (
+        <MomentVideo
+          item={moment.videos[0]}
+          resolveKey={() => momentKey(moment.id, moment.user_id)}
+        />
+      )}
 
       {allImages.length > 0 && (
         <div className={`moment-images ${allImages.length === 1 ? 'single' : 'grid'}`}>

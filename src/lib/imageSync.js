@@ -25,7 +25,21 @@ import { resolveSignedUrl, storagePathFromUrl } from './signedUrls'
  */
 
 const MAX_IMAGES_PER_RUN = 40
+/**
+ * 只处理"足够老"的内容（默认 60 秒）。
+ *
+ * 为什么（2026-10-15 实测踩到）：补加密是**原地覆盖**对象。刚上传的图片可能
+ *   ① 发布流程还没走完（正要写数据库行）；② 对方/自己正在读它。
+ * 于是会出现"读到的字节一半是新的"这种竞态（读路径有重试兜底，但不该制造它）。
+ * 历史数据本来就是几小时/几天前的，晚一分钟处理没有任何损失。
+ */
+const MIN_AGE_MS = 60 * 1000
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+const tooFresh = (createdAt) => {
+  const t = createdAt ? Date.parse(createdAt) : 0
+  return !!t && Date.now() - t < MIN_AGE_MS
+}
 
 let running = false
 
@@ -38,13 +52,14 @@ export async function sweepImagePlaintext(me) {
     // ① 自己动态里的图（钥匙是那条动态的 CEK）
     const { data: myMoments } = await supabase
       .from('moments')
-      .select('id, images')
+      .select('id, images, created_at')
       .eq('user_id', me)
       .not('images', 'is', null)
       .order('created_at', { ascending: false })
       .limit(10)
     for (const m of myMoments ?? []) {
       if (moments >= MAX_IMAGES_PER_RUN) break
+      if (tooFresh(m.created_at)) continue      // 刚发的先不动（见 MIN_AGE_MS 的说明）
       const cek = await momentKey(m.id, me)
       if (!cek) continue        // 还没生成 CEK（正文扫尾还没跑到）→ 下次再说
       for (const locator of m.images ?? []) {
@@ -56,7 +71,7 @@ export async function sweepImagePlaintext(me) {
     // ② 自己发出去的私聊图（钥匙是那段会话的会话密钥）
     const { data: myMsgs } = await supabase
       .from('messages')
-      .select('id, image_url, recipient_id')
+      .select('id, image_url, recipient_id, created_at')
       .eq('sender_id', me)
       .not('image_url', 'is', null)
       .order('created_at', { ascending: false })
@@ -64,6 +79,7 @@ export async function sweepImagePlaintext(me) {
     const keyCache = new Map()
     for (const msg of myMsgs ?? []) {
       if (messages >= MAX_IMAGES_PER_RUN) break
+      if (tooFresh(msg.created_at)) continue    // 同上
       if (!keyCache.has(msg.recipient_id)) {
         keyCache.set(msg.recipient_id, await conversationKey(msg.recipient_id).catch(() => null))
       }
