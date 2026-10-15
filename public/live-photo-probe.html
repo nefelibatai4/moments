@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>实况照片探测</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 16px calc(16px + env(safe-area-inset-left)) calc(24px + env(safe-area-inset-bottom));
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+    background: #07080a; color: #f9f9f9;
+  }
+  h1 { font-size: 1.2rem; margin: 0 0 6px; }
+  .note { color: #9c9c9d; font-size: 0.9rem; margin: 0 0 16px; }
+  .step { border: 1px solid rgba(255,255,255,.1); border-radius: 12px; padding: 12px; margin-bottom: 12px; background: #101111; }
+  .step h2 { font-size: 1rem; margin: 0 0 4px; }
+  .step p { margin: 0 0 10px; color: #9c9c9d; font-size: 0.85rem; }
+  .pick {
+    display: block; width: 100%; box-sizing: border-box;
+    padding: 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,.18);
+    background: rgba(255,255,255,.06); color: #f9f9f9; font-size: 0.95rem;
+  }
+  .pick input { display: block; width: 100%; margin-top: 6px; font-size: 0.9rem; }
+  pre {
+    white-space: pre-wrap; word-break: break-all; font-size: 0.82rem; line-height: 1.5;
+    background: #07080a; border: 1px solid rgba(255,255,255,.1); border-radius: 10px;
+    padding: 12px; min-height: 60px; margin: 0 0 12px;
+  }
+  button {
+    width: 100%; padding: 12px; font-size: 0.95rem; border-radius: 10px; border: none;
+    background: rgba(255,255,255,.815); color: #18191a; font-weight: 600;
+  }
+  h3 { font-size: 0.95rem; margin: 18px 0 8px; }
+  .live-demo { position: relative; width: 100%; max-width: 320px; margin: 0 auto; border-radius: 12px; overflow: hidden; background: #000; aspect-ratio: 3 / 4; }
+  .live-demo img, .live-demo video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .live-demo img { z-index: 2; transition: opacity .18s ease; }
+  .live-demo video { z-index: 1; }
+  .live-demo.playing img { opacity: 0; }
+  .demo-hint { text-align: center; color: #9c9c9d; font-size: 0.82rem; margin-top: 8px; }
+</style>
+</head>
+<body>
+  <h1>实况照片探测</h1>
+  <p class="note">
+    在 iPhone 的 Safari 里打开这一页，按顺序各试一次（每次选一张**实况照片**），
+    最后按「复制结果」把文字发给我。这个页面不上传任何东西，全部在手机上完成。
+  </p>
+
+  <div class="step">
+    <h2>① 相册里选「照片」</h2>
+    <p>现在的做法：<code>accept="image/*"</code></p>
+    <label class="pick">点这里选一张实况照片
+      <input id="f1" type="file" accept="image/*">
+    </label>
+  </div>
+
+  <div class="step">
+    <h2>② 相册里选「视频」</h2>
+    <p><code>accept="video/*"</code> —— 想知道实况照片会不会被列成一段几秒的视频</p>
+    <label class="pick">点这里选同一张实况照片
+      <input id="f2" type="file" accept="video/*">
+    </label>
+  </div>
+
+  <div class="step">
+    <h2>③ 相册里照片和视频都能选</h2>
+    <p><code>accept="image/*,video/*" multiple</code> —— 想知道会不会**一次给出两个文件**</p>
+    <label class="pick">点这里，试着选同一张实况照片
+      <input id="f3" type="file" accept="image/*,video/*" multiple>
+    </label>
+  </div>
+
+  <div class="step">
+    <h2>④ 从「文件」里选 .livp</h2>
+    <p>如果你曾经把实况照片导出成 <code>.livp</code>（它其实是个 zip），这一步能确认网页能不能自己拆开</p>
+    <label class="pick">点这里选一个 .livp（没有就跳过）
+      <input id="f4" type="file">
+    </label>
+  </div>
+
+  <h3>结果（按「复制结果」发我）</h3>
+  <pre id="out">（还没有结果）</pre>
+  <button id="copy" type="button">复制结果</button>
+
+  <h3>顺带看一眼播放效果</h3>
+  <p class="note">如果第 ③ 步同时拿到了一张照片和一段视频，这里会自动组装成"长按播放"的实况照片效果（就是我打算做进 Moments 的样子）。</p>
+  <div class="live-demo" id="demo" hidden>
+    <img id="demoImg" alt="">
+    <video id="demoVid" playsinline muted loop preload="metadata"></video>
+  </div>
+  <p class="demo-hint" id="demoHint" hidden>按住上面的图片不放，就会播（松手回到静帧）</p>
+
+<script>
+(function () {
+  const out = document.getElementById('out')
+  const lines = []
+  let firstImage = null   // { url, name }
+  let firstVideo = null   // { url, name }
+
+  function log(s) { lines.push(s); out.textContent = lines.join('\n') }
+
+  log('UA: ' + navigator.userAgent)
+
+  // 只读文件头就能分出来的类型（比 file.type 可靠：iOS 经常给空 type）
+  async function sniff(file) {
+    const buf = new Uint8Array(await file.slice(0, 16).arrayBuffer())
+    const hex = [...buf].map((b) => b.toString(16).padStart(2, '0')).join('')
+    const ascii = String.fromCharCode(...buf).replace(/[^\x20-\x7e]/g, '.')
+    if (hex.startsWith('ffd8ff')) return 'JPEG（静帧）'
+    if (hex.startsWith('89504e47')) return 'PNG（静帧）'
+    if (hex.startsWith('504b0304')) return 'ZIP（.livp 实况照片包）'
+    if (ascii.includes('ftyp')) {
+      if (ascii.includes('qt')) return 'QuickTime MOV（很可能就是配对的那段）'
+      if (ascii.includes('heic') || ascii.includes('heix') || ascii.includes('mif1') || ascii.includes('msf1')) return 'HEIC（静帧）'
+      if (ascii.includes('isom') || ascii.includes('mp42') || ascii.includes('avc1')) return 'MP4（视频）'
+      return 'MP4/MOV 家族（' + ascii.slice(4, 12) + '）'
+    }
+    return '认不出来（头 ' + hex.slice(0, 16) + ' / ' + ascii.slice(0, 12) + '）'
+  }
+
+  /** 视频能不能在这个浏览器里播 + 分辨率/时长（HEVC 会在这里露馅） */
+  function probeVideo(file) {
+    return new Promise((resolve) => {
+      const url = URL.createObjectURL(file)
+      const v = document.createElement('video')
+      let done = false
+      const finish = (ok, extra) => { if (!done) { done = true; resolve({ ok, extra, url }) } }
+      v.onloadedmetadata = () => finish(true, `${v.videoWidth}×${v.videoHeight} · ${v.duration.toFixed(1)} 秒`)
+      v.onerror = () => finish(false, '这个浏览器播不了（多半是 HEVC/H.265 编码）')
+      setTimeout(() => finish(false, '6 秒内没读出元数据'), 6000)
+      v.preload = 'metadata'
+      v.src = url
+    })
+  }
+
+  function probeImage(file) {
+    return new Promise((resolve) => {
+      const url = URL.createObjectURL(file)
+      const img = new Image()
+      let done = false
+      const finish = (ok, extra) => { if (!done) { done = true; resolve({ ok, extra, url }) } }
+      img.onload = () => finish(true, `${img.naturalWidth}×${img.naturalHeight}`)
+      img.onerror = () => finish(false, '这个浏览器解不开这张图')
+      setTimeout(() => finish(false, '6 秒内没读出尺寸'), 6000)
+      img.src = url
+    })
+  }
+
+  function wire(inputId, label) {
+    const el = document.getElementById(inputId)
+    el.addEventListener('change', async () => {
+      const files = [...(el.files || [])]
+      log('')
+      log(`【${label}】选了 ${files.length} 个文件`)
+      if (!files.length) return
+      for (const f of files) {
+        const kind = await sniff(f)
+        log(`  · ${f.name || '(无名)'} | type="${f.type || '(空)'}" | ${(f.size / 1024).toFixed(0)} KB | ${kind}`)
+        if (kind.includes('视频') || kind.includes('MOV') || kind.includes('MP4')) {
+          const r = await probeVideo(f)
+          log(`      播得动吗：${r.ok ? '✅ ' + r.extra : '❌ ' + r.extra}`)
+          if (!firstVideo) { firstVideo = { url: r.url, name: f.name }; tryDemo() }
+        } else if (kind.includes('静帧') || kind.includes('HEIC')) {
+          const r = await probeImage(f)
+          log(`      显示得出来吗：${r.ok ? '✅ ' + r.extra : '❌ ' + r.extra}`)
+          if (!firstImage) { firstImage = { url: r.url, name: f.name }; tryDemo() }
+        } else if (kind.includes('ZIP')) {
+          log('      这是一个 zip 包 —— 可以用 JSZip 拆开拿到里面的 HEIC/JPEG + MOV')
+        }
+      }
+      log('  （如果一张实况照片同时出现在上面两类里，说明"一次拿到照片+视频"这条路是通的）')
+    })
+  }
+
+  function tryDemo() {
+    if (!firstImage || !firstVideo) return
+    const demo = document.getElementById('demo')
+    document.getElementById('demoImg').src = firstImage.url
+    const v = document.getElementById('demoVid')
+    v.src = firstVideo.url
+    demo.hidden = false
+    document.getElementById('demoHint').hidden = false
+    let timer = null
+    const play = async () => {
+      try { v.currentTime = 0; await v.play() } catch { /* 用户手势里失败就算了 */ }
+      demo.classList.add('playing')
+      clearTimeout(timer)
+      timer = setTimeout(stop, 3000)
+    }
+    const stop = () => { try { v.pause() } catch {}; demo.classList.remove('playing') }
+    demo.addEventListener('pointerdown', play)
+    demo.addEventListener('pointerup', stop)
+    demo.addEventListener('pointercancel', stop)
+    demo.addEventListener('pointerleave', stop)
+  }
+
+  wire('f1', '① accept=image/*')
+  wire('f2', '② accept=video/*')
+  wire('f3', '③ accept=image/*,video/* 多选')
+  wire('f4', '④ 从文件里选 .livp')
+
+  document.getElementById('copy').addEventListener('click', async () => {
+    const text = out.textContent
+    try {
+      await navigator.clipboard.writeText(text)
+      document.getElementById('copy').textContent = '已复制 ✓ 发给我就行'
+    } catch {
+      // iOS 上 clipboard 偶尔要用户手选一次，这里兜底：帮他把文字全选
+      const range = document.createRange()
+      range.selectNodeContents(out)
+      const sel = window.getSelection()
+      sel.removeAllRanges(); sel.addRange(range)
+      document.getElementById('copy').textContent = '已全选，长按复制'
+    }
+  })
+})()
+</script>
+</body>
+</html>
