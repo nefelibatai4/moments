@@ -35,9 +35,21 @@ export async function loadStickers() {
   if (inflight) return inflight
   inflight = (async () => {
     try {
-      const res = await fetch(MANIFEST_URL, { cache: 'force-cache' })
-      if (!res.ok) return null
-      const data = await res.json()
+      // ⚠️ 清单**不能**只用 force-cache：加了新分类（比如「电报」）之后，
+      //    浏览器会一直拿旧清单 → 面板里永远看不到新分类（使用者 2026-10-15 实测踩到）。
+      //    改成"先跟服务器核对（清单只有几 KB），失败再退到缓存"——离线照样能用。
+      let data = null
+      try {
+        const fresh = await fetch(MANIFEST_URL, { cache: 'no-cache' })
+        if (fresh.ok) data = await fresh.json()
+      } catch { /* 离线：走下面的缓存 */ }
+      if (!data) {
+        try {
+          const cachedRes = await fetch(MANIFEST_URL, { cache: 'force-cache' })
+          if (cachedRes.ok) data = await cachedRes.json()
+        } catch { /* 都没有就降级为文字 */ }
+      }
+      if (!data) return null
       const cellDefault = data?.cell ?? 120
       // 给每项补上可直接用的地址（雪碧图 + 静态首帧）
       const decorate = (it) => ({
