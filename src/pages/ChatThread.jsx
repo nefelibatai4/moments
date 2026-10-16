@@ -8,6 +8,7 @@ import ImageLightbox from '../components/ImageLightbox'
 import SignedImage from '../components/SignedImage'
 import { objectLocator, resolveSignedUrl, storagePathFromUrl } from '../lib/signedUrls'
 import { fetchAndDecryptImage, uploadEncryptedImage, useContentImageUrls } from '../lib/imageCrypto'
+import { compressVideo } from '../lib/compressVideo'
 import { stickerContent, stickerIdFromContent } from '../lib/stickers'
 import StickerMessage from '../components/StickerMessage'
 import StickerPicker from '../components/StickerPicker'
@@ -24,6 +25,8 @@ const EDIT_WINDOW_MS = 2 * 60 * 1000
 // 聊天历史每次加载的条数
 // 文件上限 25MB（使用者 2026-10-15 定的）：和照片一个量级，主要受 1GB 存储额度约束
 const FILE_MAX_BYTES = 25 * 1024 * 1024
+// 视频上限与动态那边一致（50MB，超过会先在本机压缩）
+const VIDEO_MAX_BYTES = 50 * 1024 * 1024
 const PAGE_SIZE = 50
 // 触屏设备没有 Shift 键。桌面端 Enter 直接发送没问题，但触屏上一旦拦掉 Enter，
 // 用户就永远打不出换行——所以触屏让 Enter 保持默认（换行），发送交给右边的按钮。
@@ -158,6 +161,15 @@ function PhotoEntryIcon() {
     </svg>
   )
 }
+function VideoEntryIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor"
+      strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="6" width="12" height="12" rx="3" />
+      <path d="M15 11l6-3.5v9L15 13z" />
+    </svg>
+  )
+}
 function FileEntryIcon() {
   return (
     <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor"
@@ -170,11 +182,13 @@ function FileEntryIcon() {
 
 /** 文件消息：正文是这段 JSON（**跟着文本一起加密**），定位串仍在 image_url 里 */
 const FILE_ENVELOPE = { v: 1, kind: 'file' }
-function fileEnvelopeOf(text) {
-  if (typeof text !== 'string' || !text.startsWith('{"v":1,"kind":"file"')) return null
+const VIDEO_ENVELOPE = { v: 1, kind: 'video' }
+/** 附件信封：文件 / 视频共用（都藏在密文里，服务器看不到文件名与类型） */
+function attachmentEnvelopeOf(text) {
+  if (typeof text !== 'string' || !text.startsWith('{"v":1,"kind":"')) return null
   try {
     const o = JSON.parse(text)
-    return o && o.kind === 'file' && o.name ? o : null
+    return o && (o.kind === 'file' || o.kind === 'video') && o.name ? o : null
   } catch { return null }
 }
 function humanSize(n) {
@@ -182,6 +196,51 @@ function humanSize(n) {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
   return `${(n / 1024 / 1024).toFixed(1)} MB`
+}
+
+/**
+ * 私聊里的视频：**可见才去解密下载**（和动态那条一个口径：不能一屏全下），
+ * 拿到 blob 地址后用原生控件播放（默认静音，点一下可以开声音）。
+ */
+function ChatVideo({ locator, name, resolveKey }) {
+  const [href, setHref] = useState(null)
+  const boxRef = useRef(null)
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    const el = boxRef.current
+    if (!el || typeof IntersectionObserver !== 'function') { setVisible(true); return undefined }
+    const io = new IntersectionObserver((entries) => entries.forEach((e) => setVisible(e.isIntersecting)), { threshold: 0.25 })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [])
+  useEffect(() => {
+    if (!locator || !visible || href) return undefined
+    let cancelled = false
+    ;(async () => {
+      for (let round = 0; round < 4 && !cancelled; round += 1) {
+        if (round > 0) await new Promise((r) => setTimeout(r, [800, 2000, 5000][round - 1] ?? 5000))
+        if (cancelled) return
+        try {
+          const key = await resolveKey().catch(() => null)
+          if (!key) continue
+          const url = await resolveSignedUrl('moment-images', locator).catch(() => null)
+          if (!url) continue
+          const out = await fetchAndDecryptImage(url, key, 'file')
+          if (!out || cancelled) continue
+          setHref(URL.createObjectURL(new Blob([out.bytes], { type: 'video/mp4' })))
+          return
+        } catch { /* 下一轮再试 */ }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [locator, visible, href, resolveKey])
+  return (
+    <span className="chat-video" ref={boxRef} data-chat-video="1">
+      {href
+        ? <video src={href} controls muted playsInline preload="metadata" className="chat-video-el" title={name} />
+        : <span className="chat-video-placeholder">视频加载中…</span>}
+    </span>
+  )
 }
 
 /**
@@ -240,6 +299,7 @@ export default function ChatThread() {
   const [moreOpen, setMoreOpen] = useState(false)
   // 待发送的文件（与图片互斥，只占一个"附件位"）
   const [fileToSend, setFileToSend] = useState(null)
+  const [videoToSend, setVideoToSend] = useState(null)
   const [uploadHint, setUploadHint] = useState(null)
   // 消息操作菜单（⋯）展开在哪条消息上；null = 全收起
   const [menuFor, setMenuFor] = useState(null)
@@ -505,7 +565,7 @@ export default function ChatThread() {
 
   async function handleSubmit(e) {
     e.preventDefault()
-    if ((!content.trim() && !imageFile && !fileToSend) || sending) return
+    if ((!content.trim() && !imageFile && !fileToSend && !videoToSend) || sending) return
     setSending(true)
     setError(null)
     try {
@@ -531,6 +591,20 @@ export default function ChatThread() {
       // 文件：和图片同一扇门（会话密钥加密后上传），但正文里放一个**信封**：
       // 文件名/大小/类型都藏在密文里 —— 服务器只看到一个不可读的定位串，
       // 连"你发的是体检报告.pdf"都看不到。
+      if (videoToSend) {
+        setUploadHint('加密上传视频…')
+        const path = safeStorageKey(me, videoToSend.name)
+        const ck = await conversationKey(userId)
+        const up = await uploadEncryptedImage(path, videoToSend, ck)
+        if (!up.ok) {
+          console.warn('[video] 这段视频没能加密，按明文上传:', up.reason)
+          const { error: uploadError } = await supabase.storage
+            .from('moment-images')
+            .upload(path, videoToSend, { contentType: videoToSend.type || 'video/mp4' })
+          if (uploadError) throw uploadError
+        }
+        imageUrl = objectLocator('moment-images', path)
+      }
       if (fileToSend) {
         setUploadHint('加密上传文件…')
         const path = safeStorageKey(me, fileToSend.name)
@@ -549,9 +623,11 @@ export default function ChatThread() {
 
       // 文本加密后再入库（库里只留密文）。拿不到密钥时（本机没解锁 / 对方还没公钥）
       // 退回明文发送：宁可这一刻漏加密，也不能让使用者发不出消息；控制台留一行便于排查。
-      const text = fileToSend
-        ? JSON.stringify({ ...FILE_ENVELOPE, name: fileToSend.name, size: fileToSend.size, mime: fileToSend.type || '' })
-        : content.trim()
+      const text = videoToSend
+        ? JSON.stringify({ ...VIDEO_ENVELOPE, name: videoToSend.name, size: videoToSend.size, mime: videoToSend.type || '' })
+        : (fileToSend
+          ? JSON.stringify({ ...FILE_ENVELOPE, name: fileToSend.name, size: fileToSend.size, mime: fileToSend.type || '' })
+          : content.trim())
       let body = { content: text || null }
       if (text) {
         const sealed = await encryptForPeer(userId, text)
@@ -571,6 +647,7 @@ export default function ChatThread() {
       setContent('')
       setImageFile(null)
       setFileToSend(null)
+      setVideoToSend(null)
       setReplyTarget(null)
     } catch (err) {
       setError(err.message)
@@ -954,7 +1031,10 @@ export default function ChatThread() {
                     ) : (
                       <>
                         {(() => {
-                          const fe = fileEnvelopeOf(m.content)
+                          const fe = attachmentEnvelopeOf(m.content)
+                          if (fe?.kind === 'video') {
+                            return <ChatVideo locator={m.image_url} name={fe.name} resolveKey={() => conversationKey(userId)} />
+                          }
                           if (fe) {
                             return (
                               <span className="chat-file-card" data-chat-file="1">
@@ -1045,6 +1125,35 @@ export default function ChatThread() {
               }}
             />
           </label>
+          <label className="chat-more-item" title={`视频（最大 ${VIDEO_MAX_BYTES / 1024 / 1024}MB，会自动压缩）`}>
+            <span className="chat-more-icon"><VideoEntryIcon /></span>
+            <span className="chat-more-label">视频</span>
+            <input
+              type="file"
+              accept="video/*"
+              hidden
+              onChange={async (e) => {
+                const f = e.target.files?.[0]
+                e.target.value = ''
+                if (!f) return
+                if (f.size > VIDEO_MAX_BYTES) {
+                  setError(`这段视频 ${humanSize(f.size)}，超过 ${VIDEO_MAX_BYTES / 1024 / 1024}MB 了`)
+                  return
+                }
+                setError(null)
+                setUploadHint('压缩视频…（本机进行，不上传）')
+                // 和动态那边同一条压缩逻辑：超过 2MB 就重编码（顺带把 HEVC 转 H.264）
+                const res = f.size > 2 * 1024 * 1024
+                  ? await compressVideo(f, { onProgress: (r) => setUploadHint(`压缩视频… ${Math.round(r * 100)}%`) })
+                  : { blob: f, name: f.name, type: f.type || 'video/mp4', compressed: false }
+                setUploadHint(null)
+                setImageFile(null)
+                setFileToSend(null)
+                setVideoToSend(new File([res.blob], res.name, { type: res.type }))
+                setMoreOpen(false)
+              }}
+            />
+          </label>
           <label className="chat-more-item" title={`文件（最大 ${FILE_MAX_BYTES / 1024 / 1024}MB）`}>
             <span className="chat-more-icon"><FileEntryIcon /></span>
             <span className="chat-more-label">文件</span>
@@ -1094,6 +1203,14 @@ export default function ChatThread() {
         >
           <PlusIcon />
         </button>
+        {videoToSend && (
+          <span className="chat-file-preview" data-video-preview="1">
+            <VideoEntryIcon />
+            <span className="chat-file-preview-name" title={videoToSend.name}>{videoToSend.name}</span>
+            <span className="chat-file-preview-size">{humanSize(videoToSend.size)}</span>
+            <button type="button" className="chat-attach-remove" onClick={() => setVideoToSend(null)} aria-label="移除视频">×</button>
+          </span>
+        )}
         {fileToSend && (
           <span className="chat-file-preview" data-file-preview="1">
             <FileEntryIcon />
@@ -1139,7 +1256,7 @@ export default function ChatThread() {
             }
           }}
         />
-        <button type="submit" disabled={sending || (!content.trim() && !imageFile && !fileToSend)}>
+        <button type="submit" disabled={sending || (!content.trim() && !imageFile && !fileToSend && !videoToSend)}>
           {sending ? '…' : '发送'}
         </button>
       </form>

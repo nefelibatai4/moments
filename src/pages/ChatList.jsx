@@ -92,10 +92,11 @@ export default function ChatList() {
             const text = await decryptForPeer(partnerId, last)
             // 表情/文件消息在列表里只显示「[表情]」「[文件]」（不把 [[s:xxx]]、
             // {"v":1,"kind":"file",…} 这种内部标记露给使用者）
+            const isVideo = typeof text === 'string' && text.startsWith('{"v":1,"kind":"video"')
             const fileEnvelope = typeof text === 'string' && text.startsWith('{"v":1,"kind":"file"')
             decryptedLast[partnerId] = stickerIdFromContent(text)
               ? '[表情]'
-              : (fileEnvelope ? '[文件]' : text)
+              : (isVideo ? '[视频]' : (fileEnvelope ? '[文件]' : text))
           } catch {
             decryptedLast[partnerId] = null
           }
@@ -112,6 +113,7 @@ export default function ChatList() {
           // ⚠️ 上面已经把文件信封**转成** '[文件]' 了，这里要按转换后的值判断
           //    （第一版按原始 JSON 前缀判断，永远为 false —— 实测踩到）
           lastFile: decryptedLast[p.id] === '[文件]',
+          lastVideo: decryptedLast[p.id] === '[视频]',
           lastRecalled: !!latestByPartner[p.id]?.recalled_at,
           lastTime: latestByPartner[p.id]?.created_at ?? null,
           unread: unreadCounts[p.id] || 0,
@@ -175,7 +177,8 @@ export default function ChatList() {
                     <span className="chat-list-preview">
                       {c.lastRecalled
                         ? '[已撤回]'
-                        : (c.lastFile ? '[文件]' : (c.lastImage ? '[图片]' : truncate(c.lastMsg)))}
+                        : (c.lastVideo ? '[视频]'
+                          : (c.lastFile ? '[文件]' : (c.lastImage ? '[图片]' : truncate(c.lastMsg))))}
                     </span>
                   )}
                 </span>

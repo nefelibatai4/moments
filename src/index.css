@@ -4008,3 +4008,11 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
 .sticker-tab-icon { font-size: 1.05rem; line-height: 1.1; }
 .sticker-tab-label { line-height: 1.1; }
 .sticker-tab-close { margin-left: auto; }
+
+/* 私聊气泡里的视频（可见才解密下载；默认静音，控件交给浏览器） */
+.chat-video { display: block; max-width: 260px; }
+.chat-video-el { width: 100%; border-radius: 12px; background: #000; display: block; }
+.chat-video-placeholder {
+  display: block; padding: 28px 12px; border-radius: 12px;
+  border: 1px dashed var(--border-standard); color: var(--text-muted); font-size: 0.82rem; text-align: center;
+}
