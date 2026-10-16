@@ -9,6 +9,7 @@ import { objectLocator } from '../lib/signedUrls'
 import { MOODS } from '../lib/moods'
 import { circleReady, createMomentKey, encryptCircleText } from '../lib/crypto'
 import { uploadEncryptedBytes, uploadEncryptedImage } from '../lib/imageCrypto'
+import { compressVideo } from '../lib/compressVideo'
 
 /**
  * 读视频的时长/分辨率，并抽首帧当封面（全部在本机完成）。
@@ -113,6 +114,9 @@ export default function Publish() {
       setError(`这段视频 ${(file.size / 1024 / 1024).toFixed(1)} MB，超过 ${VIDEO_MAX_BYTES / 1024 / 1024} MB 了`)
       return
     }
+    // 超过这个大小就压一遍（2026-10-15 使用者批准）：56MB → 5MB 上下，顺带把
+    // iPhone 的 HEVC 转成 H.264（电脑端也能播）。压不动就保留原片，绝不越压越大。
+    const COMPRESS_OVER = 6 * 1024 * 1024
     setUploadHint('读取视频…')
     try {
       const meta = await prepareVideo(file)
@@ -121,7 +125,25 @@ export default function Publish() {
         setUploadHint(null)
         return
       }
-      setVideo({ file, ...meta, previewUrl: URL.createObjectURL(file), posterUrl: URL.createObjectURL(meta.posterBlob) })
+      let uploadFile = file
+      let compressedInfo = null
+      if (file.size > COMPRESS_OVER) {
+        const res = await compressVideo(file, {
+          onProgress: (r) => setUploadHint(`压缩视频… ${Math.round(r * 100)}%（本机进行，不上传）`),
+        })
+        if (res.compressed) {
+          uploadFile = new File([res.blob], res.name, { type: res.type })
+          compressedInfo = { from: file.size, to: uploadFile.size }
+        }
+      }
+      setUploadHint(null)
+      setVideo({
+        file: uploadFile,
+        ...meta,
+        compressedInfo,
+        previewUrl: URL.createObjectURL(file),
+        posterUrl: URL.createObjectURL(meta.posterBlob),
+      })
     } catch (err) {
       setError(err.message)
     }
@@ -289,6 +311,9 @@ export default function Publish() {
             <span className="status-text">
               {(video.ms / 1000).toFixed(1)} 秒 · {video.w}×{video.h} ·
               {' '}{(video.file.size / 1024 / 1024).toFixed(1)} MB
+              {video.compressedInfo && (
+                <> · 已压缩（原 {(video.compressedInfo.from / 1024 / 1024).toFixed(0)} MB）</>
+              )}
             </span>
             <button
               type="button"
