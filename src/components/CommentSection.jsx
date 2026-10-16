@@ -138,7 +138,10 @@ export default function CommentSection({
 
     if (insertError) setError(insertError.message)
     else if (data) {
-      onCommentAdded(data)
+      // ⚠️ 密文行回来时 `content` 是 null —— 如果直接把服务器那一行丢上去，界面上要等
+      //    "时间线重新取数 + 再解密一遍"才显示（实测 5~8 秒，使用者会以为没发出去）。
+      //    作者本人当然知道自己写了什么，把明文一起带上，立刻就能看到（对方那边照旧解密）。
+      onCommentAdded(sealed ? { ...data, content: text } : data)
       setContent('')
     }
     setSubmitting(false)
@@ -169,7 +172,8 @@ export default function CommentSection({
 
     if (insertError) setError(insertError.message)
     else if (data) {
-      onCommentAdded(data)
+      // 同上：密文行先把我自己写的明文带上，界面立刻可见
+      onCommentAdded(anonSealed ? { ...data, content: anonText } : data)
       setAnonContent('')
       setAnonNickname('')
     }
