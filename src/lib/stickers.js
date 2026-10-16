@@ -38,15 +38,27 @@ export async function loadStickers() {
       const res = await fetch(MANIFEST_URL, { cache: 'force-cache' })
       if (!res.ok) return null
       const data = await res.json()
+      const cellDefault = data?.cell ?? 120
       // 给每项补上可直接用的地址（雪碧图 + 静态首帧）
-      const items = (Array.isArray(data?.items) ? data.items : []).map((it) => ({
+      const decorate = (it) => ({
         ...it,
-        cell: it.cell ?? data?.cell ?? 120,
+        cell: it.cell ?? cellDefault,
         sheetSrc: `${BASE}stickers/${it.sheet}`,
         posterSrc: `${BASE}stickers/${it.poster}`,
+      })
+      // 2026-10-15：清单支持**多个分类**（packs）。没有 packs 的老清单照样能用
+      // （当成唯一一个分类），`items`/`byId` 保留给旧调用方（第一个分类）。
+      const rawPacks = Array.isArray(data?.packs) && data.packs.length
+        ? data.packs
+        : [{ key: 'default', label: '表情', items: data?.items ?? [] }]
+      const packs = rawPacks.map((pk) => ({
+        key: pk.key ?? 'default',
+        label: pk.label ?? '表情',
+        items: (Array.isArray(pk.items) ? pk.items : []).map(decorate),
       }))
-      const byId = new Map(items.map((it) => [it.id, it]))
-      cached = { cell: data?.cell ?? 120, items, byId }
+      const items = packs[0]?.items ?? []
+      const byId = new Map(packs.flatMap((pk) => pk.items).map((it) => [it.id, it]))
+      cached = { cell: cellDefault, items, packs, byId }
       return cached
     } catch {
       return null

@@ -26,7 +26,8 @@ export default function StickerPicker({ onPick, onClose }) {
   const [pack, setPack] = useState(null)
   const [recent, setRecent] = useState(() => readRecent())
   // 默认开「最近使用」；没记录时落到「全部」，免得一进来是空面板
-  const [tab, setTab] = useState(() => (readRecent().length > 0 ? 'recent' : 'all'))
+  // 默认开「最近」；没有记录时落到第一个分类（key 由清单决定，见 lib/stickers.js）
+  const [tab, setTab] = useState(() => (readRecent().length > 0 ? 'recent' : ''))
 
   useEffect(() => {
     let cancelled = false
@@ -40,10 +41,14 @@ export default function StickerPicker({ onPick, onClose }) {
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const byId = useMemo(() => new Map((pack?.items ?? []).map((it) => [it.id, it])), [pack])
+  const byId = useMemo(() => new Map((pack?.packs ?? []).flatMap((p) => p.items).map((it) => [it.id, it])), [pack])
+  const packs = pack?.packs ?? []
+  const activePack = packs.find((p) => p.key === tab) ?? packs[0]
   const shown = tab === 'recent'
     ? recent.map((id) => byId.get(id)).filter(Boolean)
-    : (pack?.items ?? [])
+    : (activePack?.items ?? [])
+  // 「最近」是虚拟分类；其余按 packs 里的 key 高亮（tab 为空时视为第一个分类）
+  const activeKey = tab === 'recent' ? 'recent' : (activePack?.key ?? '')
 
   function pick(id) {
     const next = [id, ...readRecent().filter((x) => x !== id)].slice(0, RECENT_MAX)
@@ -92,17 +97,23 @@ export default function StickerPicker({ onPick, onClose }) {
           <span className="sticker-tab-icon" aria-hidden="true">🕘</span>
           <span className="sticker-tab-label">最近</span>
         </button>
-        <button
-          type="button"
-          role="tab"
-          className={`sticker-tab${tab === 'all' ? ' on' : ''}`}
-          aria-selected={tab === 'all'}
-          data-sticker-tab="all"
-          onClick={() => setTab('all')}
-        >
-          <span className="sticker-tab-icon" aria-hidden="true">😊</span>
-          <span className="sticker-tab-label">表情</span>
-        </button>
+        {packs.map((pk) => (
+          <button
+            key={pk.key}
+            type="button"
+            role="tab"
+            className={`sticker-tab${activeKey === pk.key ? ' on' : ''}`}
+            aria-selected={activeKey === pk.key}
+            data-sticker-tab={pk.key}
+            title={pk.label}
+            onClick={() => setTab(pk.key)}
+          >
+            <span className="sticker-tab-icon" aria-hidden="true">
+              {pk.key === 'noto' ? '🛰' : '😊'}
+            </span>
+            <span className="sticker-tab-label">{pk.label}</span>
+          </button>
+        ))}
         <button
           type="button"
           className="sticker-tab sticker-tab-close"

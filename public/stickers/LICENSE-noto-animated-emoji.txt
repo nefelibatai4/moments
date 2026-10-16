@@ -1,0 +1,4 @@
+Noto Animated Emoji（Google）
+https://googlefonts.github.io/noto-emoji-animation/
+License: Apache License 2.0 — 允许自由使用、修改与再分发（随包分发合法）。
+素材来源：https://fonts.gstatic.com/s/e/notoemoji/latest/<codepoint>/512.webp
