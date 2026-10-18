@@ -8,6 +8,8 @@ import { initTheme } from './lib/theme.js'
 import { initSurface } from './lib/surface.js'
 import { initExtensionBridge } from './lib/extensionBridge.js'
 import { registerServiceWorker } from './lib/serviceWorker.js'
+import { SHUTDOWN_ENABLED } from './lib/shutdown.js'
+import ClosingCountdown from './pages/ClosingCountdown.jsx'
 
 // 两个都要在首屏渲染前定好，否则会闪一下（主题闪白 / 毛玻璃面板闪出不透明底色）
 initTheme()
@@ -22,12 +24,22 @@ registerServiceWorker()
 
 const basename = import.meta.env.BASE_URL.replace(/\/$/, '') || '/'
 
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <BrowserRouter basename={basename}>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
-    </BrowserRouter>
-  </StrictMode>,
-)
+// 网站关闭倒计时（临时状态）：只渲染这一个页面 ——
+// 不挂路由、不挂 AuthProvider，因此**不会**发起任何鉴权/数据请求，后端数据一条不动。
+if (SHUTDOWN_ENABLED) {
+  createRoot(document.getElementById('root')).render(
+    <StrictMode>
+      <ClosingCountdown />
+    </StrictMode>,
+  )
+} else {
+  createRoot(document.getElementById('root')).render(
+    <StrictMode>
+      <BrowserRouter basename={basename}>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </BrowserRouter>
+    </StrictMode>,
+  )
+}

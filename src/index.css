@@ -4016,3 +4016,73 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
   display: block; padding: 28px 12px; border-radius: 12px;
   border: 1px dashed var(--border-standard); color: var(--text-muted); font-size: 0.82rem; text-align: center;
 }
+
+/* ── 网站关闭倒计时（临时状态，2026-10-18） ───────────────────────────
+   整页只有这一块：不滚动、不显示导航。深色底 + 等宽数字，
+   两个人在任何设备上看到的是同一个时间（时区写死 +08:00）。 */
+.closing-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px calc(32px + env(safe-area-inset-bottom));
+  background: radial-gradient(120% 90% at 50% 0%, #1a1c22 0%, #0d0e11 55%, #07080a 100%);
+  color: #e9e6e1;
+  text-align: center;
+  overflow: hidden;
+}
+
+.closing-inner {
+  max-width: 680px;
+  width: 100%;
+}
+
+.closing-title {
+  margin: 0 0 28px;
+  font-size: clamp(22px, 5vw, 30px);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: rgba(233, 230, 225, 0.92);
+}
+
+.closing-clock {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: clamp(10px, 3vw, 28px);
+  margin: 0 0 26px;
+  font-variant-numeric: tabular-nums;
+}
+
+.closing-unit {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.closing-num {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: clamp(40px, 13vw, 84px);
+  line-height: 1;
+  font-weight: 300;
+  color: #f4f1ec;
+  text-shadow: 0 0 34px rgba(255, 255, 255, 0.08);
+}
+
+.closing-label {
+  font-size: clamp(11px, 2.6vw, 14px);
+  color: rgba(233, 230, 225, 0.45);
+  letter-spacing: 0.08em;
+}
+
+.closing-sub {
+  margin: 0;
+  font-size: clamp(12px, 3vw, 14px);
+  line-height: 1.9;
+  color: rgba(233, 230, 225, 0.55);
+}
+
+.closing-sub time {
+  color: rgba(233, 230, 225, 0.78);
+}
