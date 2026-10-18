@@ -16,8 +16,8 @@
 //     所以哪怕体积很小也不走「小图跳过」的捷径。解码走 <img> 兜底——
 //     iOS Safari 能在 <img> 里解 HEIC，但 createImageBitmap 不一定行。
 
-const DEFAULT_MAX_DIM = 1600
-const DEFAULT_QUALITY = 0.82
+const DEFAULT_MAX_DIM = 1280
+const DEFAULT_QUALITY = 0.8
 // 尺寸没超标且体积已经很小，就没必要重编码
 const SKIP_BELOW_BYTES = 300 * 1024
 // 嗅探动图只看文件头这么多字节（ANIM/acTL 都在最前面）

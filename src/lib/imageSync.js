@@ -2,6 +2,7 @@ import { supabase } from '../supabaseClient'
 import { conversationKey, momentKey } from './crypto'
 import { decryptImageBytes, encryptImageBytes } from './imageCrypto'
 import { resolveSignedUrl, storagePathFromUrl } from './signedUrls'
+import { dropRaw } from './mediaCache'
 
 /**
  * 历史明文图片的"补加密"（阶段 3 的收尾，2026-10-13）。
@@ -119,6 +120,8 @@ async function sealOne(locator, key) {
       console.warn('[image] 覆盖成密文失败:', error.message)
       return false
     }
+    // 原地覆盖了同一路径 → 本机密文缓存作废（否则对方会一直看到明文那版）
+    dropRaw(path).catch(() => {})
     return true
   } catch (err) {
     console.warn('[image] 单张补加密失败:', err?.message)

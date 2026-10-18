@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import { resolveSignedUrl, storagePathFromUrl, useSignedUrls } from './signedUrls'
+import { clearRawCache, dropRaw, getRaw, putRaw } from './mediaCache'
 
 /**
  * 图片的端到端加密（阶段 3，2026-10-13）。
@@ -150,6 +151,8 @@ export async function uploadEncryptedBytes(path, file, key) {
         contentType: 'application/octet-stream',
       })
     if (error) return { ok: false, reason: error.message }
+    // 原地覆盖了同一路径 → 本机密文缓存立刻作废
+    dropRaw(path).catch(() => {})
     return { ok: true }
   } catch (err) {
     return { ok: false, reason: err?.message }
@@ -161,6 +164,17 @@ export const uploadEncryptedImage = uploadEncryptedBytes
 
 /** 下载 + 解密一个对象路径（`key` 为 null 时只处理老明文；`kind='video'` 时按视频嗅探） */
 export async function fetchAndDecryptImage(signedUrl, key, kind = 'image') {
+  const cachePath = storagePathFromUrl(signedUrl)
+  // 先看本机有没有**密文**（同一张图重复打开 → 0 字节流量；这是流量账单的头号来源）
+  if (cachePath) {
+    const cached = await getRaw(cachePath)
+    if (cached) {
+      const out = await decryptImageBytes(key, cached, kind)
+      if (out) return out
+      // 缓存里这份解不开（例如对象被换过）→ 作废，走网络
+      dropRaw(cachePath).catch(() => {})
+    }
+  }
   // ⚠️ 后台"补加密"会**原地覆盖**同一个对象：对方正好在这时取图就可能拿到一半/失败。
   //    所以这里失败重试一次（600ms 后），而不是让这张图永久空着。
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -169,7 +183,10 @@ export async function fetchAndDecryptImage(signedUrl, key, kind = 'image') {
       if (res.ok) {
         const raw = new Uint8Array(await res.arrayBuffer())
         const out = await decryptImageBytes(key, raw, kind)
-        if (out) return out
+        if (out) {
+          if (cachePath) putRaw(cachePath, raw).catch(() => {})
+          return out
+        }
         if (attempt === 1) {
           const head = [...raw.slice(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join('')
           console.warn('[media] 下载到了但解不开', kind, 'len=' + raw.length, 'head=' + head, 'hasKey=' + !!key)
@@ -219,6 +236,8 @@ export function clearImageCache() {
   urlCache.clear()
   attemptCounts.clear()
   noKeyAttempts.clear()
+  // 本机缓存的密文也一起清（换账号/退出登录时不该留在设备上）
+  clearRawCache().catch(() => {})
 }
 
 /**
