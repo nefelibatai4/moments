@@ -11,7 +11,8 @@
 |---|---|
 | 线上 | https://nefelibatai4.github.io/moments/ |
 | 技术栈 | Vite + React 19（纯 SPA）／Supabase（Postgres + Auth + Storage + Realtime）／GitHub Pages 托管／PWA + Capacitor iOS |
-| 数据库 | Supabase `public` schema，10 张表（2026-09-30：新增 `app_settings` 注册口令、`auth_attempts` 失败限速；删除 `invite_codes`——邀请码机制已退场） |
+| 数据库 | Supabase `public` schema，**17 张表**（2026-10-12 起加了端到端加密相关：`user_keys`/`key_escrow`/`moment_keys`/`key_recovery_requests`/`key_escrow_access_log`；以及 `device_locations`/`ip_geo_cache`） |
+| 当前状态 | ⛔ **2026-10-18 起站点处于「关闭倒计时」状态**（使用者要求；到 2026-10-20 00:00 +08:00）——前端只渲染倒计时，**后端数据一条不动**。恢复：`src/lib/shutdown.js` 里 `SHUTDOWN_ENABLED = false`。细节见私有库 `docs/HANDOFF.md` §1 |
 
 ## ⚠️ 硬约束
 
@@ -47,6 +48,7 @@ git@github.com:nefelibatai4/moments-workspace.git
 
 | # | 文件 | 为什么 |
 |---|------|--------|
+| 0 | `~/moments-workspace/docs/HANDOFF.md` | **一页纸总览**：当前状态（站点是否在关闭倒计时）、这一轮做了什么、怎么回退、坑的索引、运维手册、待办 |
 | 1 | `~/moments-workspace/docs/STATUS.md` | **当前进度、下一步、待办** |
 | 2 | `~/moments-workspace/docs/ARCHITECTURE.md` | 技术栈、数据库结构、文件地图 |
 | 3 | `~/moments-workspace/docs/SECURITY.md` | 权限模型。**动数据前必读** |
@@ -80,3 +82,4 @@ npm run cap:sync  # 构建并同步到 iOS 工程（改动 iOS 包时必需）
 2. 踩了新坑就追加到 `docs/PITFALLS.md` 并编号。
 3. 改了数据库就确认 `db-backups/CHANGELOG.md` 有完整记录与回退方法。
 4. 确认没有密钥进入本公开仓库。
+5. 若站点状态有变化（例如关闭倒计时恢复），同步改 `docs/HANDOFF.md` §1 与本文的「当前状态」。
