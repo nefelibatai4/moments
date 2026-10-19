@@ -4086,3 +4086,27 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
 .closing-sub time {
   color: rgba(233, 230, 225, 0.78);
 }
+
+/* 关闭之后的「运行时长」三行 */
+.closing-range {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 0 0 14px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: clamp(13px, 3.4vw, 16px);
+  letter-spacing: 0.06em;
+  color: rgba(233, 230, 225, 0.66);
+}
+
+.closing-dash {
+  color: rgba(233, 230, 225, 0.28);
+}
+
+.closing-days {
+  margin: 0;
+  font-size: clamp(12px, 3vw, 13px);
+  letter-spacing: 0.14em;
+  color: rgba(233, 230, 225, 0.42);
+}

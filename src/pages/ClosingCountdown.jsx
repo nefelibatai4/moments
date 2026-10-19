@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { SHUTDOWN_AT, isShutdownPassed } from '../lib/shutdown'
+import { SHUTDOWN_AT, TOGETHER_START, daysTogether, isShutdownPassed } from '../lib/shutdown'
 
 // 网站关闭倒计时（2026-10-18 使用者要求的临时状态）
 //
@@ -19,6 +19,12 @@ function parts(msLeft) {
 }
 
 const pad = (n) => String(n).padStart(2, '0')
+
+// 2026.06.27 这种写法比"2026 年 6 月 27 日"更安静，也不占行
+function fmtDate(d) {
+  const t = new Date(d.getTime() + 8 * 3600 * 1000)   // SHUTDOWN_AT/TOGETHER_START 都是 +08:00
+  return `${t.getUTCFullYear()}.${pad(t.getUTCMonth() + 1)}.${pad(t.getUTCDate())}`
+}
 
 export default function ClosingCountdown() {
   const [now, setNow] = useState(() => Date.now())
@@ -46,7 +52,22 @@ export default function ClosingCountdown() {
         </h1>
 
         {done ? (
-          <p className="closing-sub">感谢你来过。</p>
+          <>
+            {/* 关闭之后只留三行：标题 / 起止日期 / 一共多少天。
+                这三行就是"网站运行了多久"，也就是他们在一起的时间 —— 刻意不加别的修饰。 */}
+            <p className="closing-range" data-closing-range>
+              <time dateTime={TOGETHER_START.toISOString()} data-closing-since>
+                {fmtDate(TOGETHER_START)}
+              </time>
+              <span className="closing-dash" aria-hidden="true">—</span>
+              <time dateTime={SHUTDOWN_AT.toISOString()} data-closing-until>
+                {fmtDate(SHUTDOWN_AT)}
+              </time>
+            </p>
+            <p className="closing-days" data-closing-days>
+              共 {daysTogether()} 天
+            </p>
+          </>
         ) : (
           <>
             <div className="closing-clock" role="timer" aria-live="off" data-closing-clock>
