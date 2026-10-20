@@ -4110,3 +4110,105 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
   letter-spacing: 0.14em;
   color: rgba(233, 230, 225, 0.42);
 }
+
+/* ── 开屏动画（2026-10-18 准备，未启用：详见 src/lib/splash.js） ──────────
+   暖白底 + 细横线先展开 + 逐字上浮。中文用系统宋体，字距放宽，
+   目的是"门口的一句欢迎"，不是加载页。整屏可点掉。 */
+.splash-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(70% 55% at 50% 42%, rgba(255, 214, 170, 0.28) 0%, rgba(255, 214, 170, 0) 62%),
+    linear-gradient(168deg, #fdf9f3 0%, #f8efe3 52%, #f3e7d7 100%);
+  transition: opacity 620ms ease, filter 620ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.splash-screen.is-leaving {
+  opacity: 0;
+  filter: blur(6px);
+  pointer-events: none;
+}
+
+.splash-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 24px;
+}
+
+.splash-rule {
+  display: block;
+  width: 0;
+  height: 1px;
+  margin-bottom: 26px;
+  background: linear-gradient(90deg, rgba(120, 92, 66, 0) 0%, rgba(120, 92, 66, 0.55) 50%, rgba(120, 92, 66, 0) 100%);
+  animation: splash-rule 900ms cubic-bezier(0.22, 0.61, 0.36, 1) 80ms forwards;
+}
+
+@keyframes splash-rule {
+  from { width: 0; opacity: 0; }
+  to   { width: min(180px, 42vw); opacity: 1; }
+}
+
+.splash-title {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-family: "Songti SC", "Noto Serif SC", "Source Han Serif SC", "STSong", serif;
+  font-size: clamp(26px, 7.6vw, 40px);
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: 0.14em;
+  color: #3b322a;
+  text-indent: 0.14em; /* 抵消末字多出来的字距，视觉居中 */
+}
+
+.splash-line {
+  display: inline-flex;
+  justify-content: center;
+}
+
+.splash-char {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(10px);
+  filter: blur(3px);
+  animation: splash-char 760ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+@keyframes splash-char {
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
+}
+
+.splash-sub {
+  margin: 18px 0 0;
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  color: rgba(59, 50, 42, 0.48);
+  opacity: 0;
+  animation: splash-char 700ms cubic-bezier(0.22, 0.61, 0.36, 1) 1100ms forwards;
+}
+
+/* 系统开了「减少动态效果」：不逐字、不位移，只淡淡出现再淡出 */
+.splash-screen.is-reduced .splash-rule {
+  width: min(180px, 42vw);
+  opacity: 1;
+  animation: none;
+}
+.splash-screen.is-reduced .splash-char {
+  opacity: 1;
+  transform: none;
+  filter: none;
+  animation: none;
+}
+.splash-screen.is-reduced .splash-sub {
+  opacity: 1;
+  animation: none;
+}
