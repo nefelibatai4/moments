@@ -11,6 +11,7 @@ import LocationConsent from '../components/LocationConsent'
 import SignedImage from '../components/SignedImage'
 import { objectLocator, invalidateSignedUrl, resolveSignedUrl } from '../lib/signedUrls'
 import { fulfillRecoveryRequest, onUnlockChange, recoveryStatus, unlockStateVersion } from '../lib/crypto'
+import UsageCard from '../components/UsageCard'
 
 // 扩展只能在桌面版 Chrome 里安装：iOS 壳里没有「解压 + 装扩展」这个概念。
 // 原生端不显示下载按钮，但也不让它静默消失（那样会被当成 bug），改显示一句该去哪做。
@@ -359,6 +360,8 @@ export default function Profile() {
           </>
         )}
       </div>
+
+      <UsageCard />
 
       <PanelBackgroundSettings />
 

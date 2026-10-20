@@ -13,6 +13,7 @@ import ClosingCountdown from './pages/ClosingCountdown.jsx'
 import SplashScreen from './components/SplashScreen.jsx'
 import Maintenance from './pages/Maintenance.jsx'
 import { MAINTENANCE_ENABLED, probeBackend } from './lib/maintenance.js'
+import { installTrafficMeter } from './lib/traffic.js'
 
 // 两个都要在首屏渲染前定好，否则会闪一下（主题闪白 / 毛玻璃面板闪出不透明底色）
 initTheme()
@@ -24,6 +25,9 @@ initExtensionBridge()
 // Service Worker：外壳缓存靠它（推送订阅是登录后再单独走 subscribeToPush）。
 // 以前只有"开了推送的人"才注册 SW，所以外壳缓存等于没覆盖到人。
 registerServiceWorker()
+
+// 流量计量（2026-10-20）：包一层 fetch，把响应字节数记在本机（【我】→ 流量与存储）
+installTrafficMeter()
 
 const basename = import.meta.env.BASE_URL.replace(/\/$/, '') || '/'
 
