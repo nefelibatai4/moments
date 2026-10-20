@@ -11,7 +11,6 @@ import { registerServiceWorker } from './lib/serviceWorker.js'
 import { SHUTDOWN_ENABLED } from './lib/shutdown.js'
 import ClosingCountdown from './pages/ClosingCountdown.jsx'
 import SplashScreen from './components/SplashScreen.jsx'
-import { shouldShowSplash } from './lib/splash.js'
 
 // 两个都要在首屏渲染前定好，否则会闪一下（主题闪白 / 毛玻璃面板闪出不透明底色）
 initTheme()
@@ -28,13 +27,15 @@ const basename = import.meta.env.BASE_URL.replace(/\/$/, '') || '/'
 
 // 开屏动画是**覆盖层**：底下照常渲染（站点关闭倒计时或正常应用），
 // 它淡出后自己消失，不参与路由、不请求数据。`?splash=1` 可以随时预览。
+// 开屏动画的**预览**入口（`?splash=1`）：任何人都能看，不消耗时段。
+// 真正的启用是"只给指定账号看"，在 App 里按登录账号判断（见 splash.js 的 SPLASH_FOR_IDS）。
 function Boot({ children }) {
   const preview = new URLSearchParams(window.location.search).has('splash')
-  const [splash, setSplash] = useState(() => shouldShowSplash({ preview }))
+  const [splash, setSplash] = useState(preview)
   return (
     <>
       {children}
-      {splash ? <SplashScreen preview={preview} onDone={() => setSplash(false)} /> : null}
+      {preview && splash ? <SplashScreen preview onDone={() => setSplash(false)} /> : null}
     </>
   )
 }

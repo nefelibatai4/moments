@@ -1,5 +1,5 @@
 import { Routes, Route, Link, useNavigate } from 'react-router-dom'
-import { lazy, Suspense, useEffect } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import Timeline from './pages/Timeline'
 import RequireAuth from './components/RequireAuth'
 import NavIcon from './components/NavIcon'
@@ -11,6 +11,8 @@ import { touchSession } from './lib/userPresence'
 import { useViewportHeight } from './lib/useViewportHeight'
 import ViewportDebug from './components/ViewportDebug'
 import UnlockPrompt from './components/UnlockPrompt'
+import SplashScreen from './components/SplashScreen'
+import { isSplashTarget, shouldShowSplash } from './lib/splash'
 
 // 按路由做代码分割：首屏只需要 React + 路由 + Supabase + 时间线，
 // 其余页面在真正导航过去时才下载。这样首屏 JS 明显变小。
@@ -54,8 +56,21 @@ export default function App() {
   // 已激活才算"登录后"：导航/竖栏/底栏只在此时出现（登录页收起，见 index.css）
   const authed = Boolean(session && approved)
 
+  // 开屏「欢迎姜女士回家」：**只给指定账号**，每个 6 小时时段只放一次（详见 lib/splash.js）。
+  // 用 ref 兜一层：StrictMode 双挂载 / 状态刷新都不该让它反复出现。
+  const [welcome, setWelcome] = useState(false)
+  const welcomeTried = useRef(false)
+  useEffect(() => {
+    if (welcomeTried.current || !authed) return
+    if (!isSplashTarget(session.user)) return
+    if (new URLSearchParams(window.location.search).has('splash')) return   // 预览已由 main.jsx 负责
+    welcomeTried.current = true
+    if (shouldShowSplash({ user: session.user })) setWelcome(true)
+  }, [authed, session])
+
   return (
     <div className={`app-container${authed ? ' authed' : ''}`}>
+      {welcome ? <SplashScreen onDone={() => setWelcome(false)} /> : null}
       {/* ⚠️ 这里刻意**不改 DOM 结构**：同一套 `header > h1 + 指示器 + nav > a`
           由 CSS 按使用场景摆成三种样子（插件顶部横排 / 桌面左侧竖栏 / 手机底部 tab）。
           好处：① 插件形态完全不受影响；② 测试里的 `header nav a`、`.app-header`、
