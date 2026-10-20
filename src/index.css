@@ -4167,12 +4167,23 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
   line-height: 1.5;
   letter-spacing: 0.14em;
   color: #3b322a;
-  text-indent: 0.14em; /* 抵消末字多出来的字距，视觉居中 */
+  text-indent: 0.14em; /* 抵消末字多出来的字距，视觉居中（第一行另有自己的字距，见下） */
 }
 
 .splash-line {
   display: inline-flex;
   justify-content: center;
+}
+
+/* 两行排版：第一行（"欢迎"）收小、字距更开，做出"引子 → 正句"的层次 */
+.splash-title .splash-line:first-child .splash-char {
+  font-size: 0.66em;
+  letter-spacing: 0.3em;
+  color: rgba(59, 50, 42, 0.82);
+}
+
+.splash-title .splash-line:first-child {
+  margin-bottom: 2px;
 }
 
 .splash-char {

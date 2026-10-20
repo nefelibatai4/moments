@@ -11,8 +11,11 @@ export const SPLASH_ENABLED = false
 /** 主文案（排版按一行处理；分成两行也能读，见 SplashScreen 里的 SPLASH_SPLIT） */
 export const SPLASH_TEXT = '欢迎姜女士回家'
 
-/** 主文案是否拆成两行（"欢迎" / "姜女士回家"）。一行更安静，两行更郑重 */
-export const SPLASH_SPLIT = false
+/** 主文案是否拆成两行（"欢迎" / "姜女士回家"）。使用者 2026-10-18 选了**两行** */
+export const SPLASH_SPLIT = true
+
+/** 两行时**每行写死**（不能按字数均分：那是"欢迎姜 / 女士回家"，断句就错了） */
+export const SPLASH_LINES = ['欢迎', '姜女士回家']
 
 /** 主文案下方的那行小字；留空就不显示 */
 export const SPLASH_SUB = ''

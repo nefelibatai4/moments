@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { SPLASH_HOLD_MS, SPLASH_SPLIT, SPLASH_SUB, SPLASH_TEXT, markSplashSeen } from '../lib/splash'
+import { SPLASH_HOLD_MS, SPLASH_LINES, SPLASH_SPLIT, SPLASH_SUB, SPLASH_TEXT, markSplashSeen } from '../lib/splash'
 
 // 开屏动画：暖白底 + 一条细横线先展开，字再逐字浮上来，停一下，整屏淡出。
 //
@@ -18,11 +18,9 @@ export default function SplashScreen({ onDone }) {
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches
   }, [])
 
-  const lines = useMemo(() => {
-    if (!SPLASH_SPLIT) return [SPLASH_TEXT]
-    const cut = Math.max(1, Math.floor(SPLASH_TEXT.length / 2))
-    return [SPLASH_TEXT.slice(0, cut), SPLASH_TEXT.slice(cut)]
-  }, [])
+  // ⚠️ 两行时**按语义**断（"欢迎" / "姜女士回家"），不能按字数均分 ——
+  // 均分会断成"欢迎姜 / 女士回家"（第一版就是这么错的）。
+  const lines = useMemo(() => (SPLASH_SPLIT ? SPLASH_LINES : [SPLASH_TEXT]), [])
 
   // 逐字：每个字一个 span，靠 CSS 的 animation-delay 错开
   const chars = useMemo(() => {

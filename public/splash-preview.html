@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>开屏动画预览 · 欢迎姜女士回家</title>
+<!--
+  这是**预览页**，只给使用者看效果用；不影响应用本身（应用里的开关是 src/lib/splash.js）。
+  三种排版在这里都能试：A 一行 / B 两行（当前选用的）/ C 两行 + 一行小字。
+-->
+<style>
+  :root {
+    --ink: #3b322a;
+    --ink-soft: rgba(59, 50, 42, 0.82);
+    --ink-faint: rgba(59, 50, 42, 0.46);
+    --serif: "Songti SC", "Noto Serif SC", "Source Han Serif SC", "STSong", serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: #0f1113;
+    color: #e9e6e1;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── 舞台（就是应用里那块全屏） ───────────────────────────── */
+  .stage {
+    position: relative;
+    flex: 1;
+    min-height: 62vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background:
+      radial-gradient(70% 55% at 50% 42%, rgba(255, 214, 170, 0.28) 0%, rgba(255, 214, 170, 0) 62%),
+      linear-gradient(168deg, #fdf9f3 0%, #f8efe3 52%, #f3e7d7 100%);
+    transition: opacity 620ms ease, filter 620ms ease;
+  }
+  .stage.is-leaving { opacity: 0; filter: blur(6px); }
+
+  .inner { display: flex; flex-direction: column; align-items: center; padding: 0 24px; }
+
+  .rule {
+    display: block; width: 0; height: 1px; margin-bottom: 26px;
+    background: linear-gradient(90deg, rgba(120,92,66,0) 0%, rgba(120,92,66,.55) 50%, rgba(120,92,66,0) 100%);
+    animation: rule 900ms cubic-bezier(.22,.61,.36,1) 80ms forwards;
+  }
+  @keyframes rule { from { width: 0; opacity: 0 } to { width: min(180px, 42vw); opacity: 1 } }
+
+  .title {
+    margin: 0; display: flex; flex-direction: column; align-items: center; gap: 6px;
+    font-family: var(--serif); font-size: clamp(26px, 7.6vw, 40px);
+    font-weight: 500; line-height: 1.5; letter-spacing: .14em;
+    color: var(--ink); text-indent: .14em;
+  }
+  .line { display: inline-flex; justify-content: center; }
+  .ch {
+    display: inline-block; opacity: 0; transform: translateY(10px); filter: blur(3px);
+    animation: ch 760ms cubic-bezier(.22,.61,.36,1) forwards;
+  }
+  @keyframes ch { to { opacity: 1; transform: translateY(0); filter: blur(0) } }
+
+  /* 第一行（"欢迎"）收小、字距更开：引子 → 正句 */
+  .title .line:first-child .ch { font-size: .66em; letter-spacing: .3em; color: var(--ink-soft); }
+  .title .line:first-child { margin-bottom: 2px; }
+
+  .sub {
+    margin: 18px 0 0; font-size: 13px; letter-spacing: .2em; color: var(--ink-faint);
+    opacity: 0; animation: ch 700ms cubic-bezier(.22,.61,.36,1) 1100ms forwards;
+  }
+
+  .stage.is-reduced .rule { width: min(180px, 42vw); opacity: 1; animation: none; }
+  .stage.is-reduced .ch { opacity: 1; transform: none; filter: none; animation: none; }
+  .stage.is-reduced .sub { opacity: 1; animation: none; }
+
+  /* ── 控制条（预览专用，不是开屏的一部分） ───────────────── */
+  .bar {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+    gap: 8px; padding: 14px 14px calc(16px + env(safe-area-inset-bottom));
+    background: #0f1113; border-top: 1px solid rgba(255,255,255,.08);
+  }
+  .bar button {
+    appearance: none; border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.04);
+    color: #d9d5cf; font-size: 13px; padding: 8px 14px; border-radius: 999px; cursor: pointer;
+    font-family: inherit;
+  }
+  .bar button[aria-pressed="true"] { background: #e9e6e1; color: #17191c; border-color: #e9e6e1; }
+  .bar .hint { width: 100%; text-align: center; font-size: 12px; color: rgba(233,230,225,.42); margin: 2px 0 0; }
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage">
+  <div class="inner">
+    <span class="rule" aria-hidden="true"></span>
+    <h1 class="title" id="title"></h1>
+    <p class="sub" id="sub" hidden></p>
+  </div>
+</div>
+
+<div class="bar">
+  <button id="btnA" type="button">A 一行</button>
+  <button id="btnB" type="button">B 两行</button>
+  <button id="btnC" type="button">C 两行 + 小字</button>
+  <button id="replay" type="button">↻ 重播</button>
+  <p class="hint">点画面任意处也能跳过；这是预览页，应用里尚未启用。</p>
+</div>
+
+<script>
+  const VARIANTS = {
+    A: { lines: ['欢迎姜女士回家'], sub: '' },
+    B: { lines: ['欢迎', '姜女士回家'], sub: '' },
+    C: { lines: ['欢迎', '姜女士回家'], sub: '灯一直亮着' },
+  };
+  const STAGGER = 90;
+  const HOLD = 2400;
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const stage = document.getElementById('stage');
+  const title = document.getElementById('title');
+  const sub = document.getElementById('sub');
+  let timer = null;
+  let leaving = false;
+
+  function render(key) {
+    const v = VARIANTS[key];
+    stage.classList.remove('is-leaving', 'is-reduced');
+    if (reduced) stage.classList.add('is-reduced');
+    title.innerHTML = '';
+    sub.hidden = !v.sub;
+    sub.textContent = v.sub || '';
+
+    let index = 0;
+    v.lines.forEach((line) => {
+      const row = document.createElement('span');
+      row.className = 'line';
+      Array.from(line).forEach((c) => {
+        const s = document.createElement('span');
+        s.className = 'ch';
+        s.textContent = c;
+        s.style.animationDelay = (index * STAGGER) + 'ms';
+        index += 1;
+        row.appendChild(s);
+      });
+      title.appendChild(row);
+      index += 1;
+    });
+
+    // 第一行字形稍小：只有两行时才成立
+    const rows = title.querySelectorAll('.line');
+    if (rows.length < 2) rows[0].style.fontSize = '1em';
+
+    clearTimeout(timer);
+    leaving = false;
+    timer = setTimeout(() => {
+      leaving = true;
+      stage.classList.add('is-leaving');
+      setTimeout(() => {
+        stage.classList.remove('is-leaving');
+        render(document.querySelector('.bar button[aria-pressed="true"]').dataset.k);
+      }, 900);
+    }, reduced ? 900 : HOLD + 620);
+  }
+
+  function setActive(key) {
+    document.querySelectorAll('.bar button[data-k]').forEach((b) => {
+      b.setAttribute('aria-pressed', String(b.dataset.k === key));
+    });
+    render(key);
+  }
+
+  ['A', 'B', 'C'].forEach((k) => {
+    const b = document.getElementById('btn' + k);
+    b.dataset.k = k;
+    b.setAttribute('aria-pressed', String(k === 'B'));
+    b.addEventListener('click', () => setActive(k));
+  });
+  document.getElementById('replay').addEventListener('click', () => {
+    setActive(document.querySelector('.bar button[aria-pressed="true"]').dataset.k);
+  });
+  stage.addEventListener('click', () => {
+    if (leaving) return;
+    leaving = true;
+    clearTimeout(timer);
+    stage.classList.add('is-leaving');
+    setTimeout(() => {
+      stage.classList.remove('is-leaving');
+      setActive(document.querySelector('.bar button[aria-pressed="true"]').dataset.k);
+    }, 260);
+  });
+
+  render('B');   // 默认就是当前选用的 B
+</script>
+</body>
+</html>
