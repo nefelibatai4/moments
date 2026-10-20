@@ -29,11 +29,12 @@ const basename = import.meta.env.BASE_URL.replace(/\/$/, '') || '/'
 // 开屏动画是**覆盖层**：底下照常渲染（站点关闭倒计时或正常应用），
 // 它淡出后自己消失，不参与路由、不请求数据。`?splash=1` 可以随时预览。
 function Boot({ children }) {
-  const [splash, setSplash] = useState(() => shouldShowSplash())
+  const preview = new URLSearchParams(window.location.search).has('splash')
+  const [splash, setSplash] = useState(() => shouldShowSplash({ preview }))
   return (
     <>
       {children}
-      {splash ? <SplashScreen onDone={() => setSplash(false)} /> : null}
+      {splash ? <SplashScreen preview={preview} onDone={() => setSplash(false)} /> : null}
     </>
   )
 }

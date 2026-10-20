@@ -1,17 +1,24 @@
-// 开屏动画（2026-10-18 使用者要求：先做好，等他喊"启用"再打开）
+// 开屏动画「欢迎姜女士回家」（2026-10-18 使用者要求：做好，等他喊"启用"再打开）
+//
+// 出现规则（使用者 2026-10-18）：
+//   **从 0 点开始，每 6 小时算一个时段**（00–06 / 06–12 / 12–18 / 18–24），
+//   **每个时段只在他登录后的第一次出现**，同一时段里再刷、再点都不重复。
+//   —— 也就是"上午见到一次、下午见到一次"这个手感。
+//
+// 为什么记在 `localStorage` 而不是 `sessionStorage`：关掉浏览器再来应算"同一次"，
+// 只有跨过时段边界才该再放一次。
 //
 // 用法：
 //   · 真正启用 → `SPLASH_ENABLED = true`，push 后约 30 秒生效。
-//   · 只想看看长什么样（不用改代码）→ 打开 `?splash=1`，线上也能预览。
-//   · 每次打开应用只放一次（`sessionStorage` 记住）——刷新不重复，关掉再开才再来一次。
+//   · 只想看看长什么样（不用改代码、也不消耗时段）→ `?splash=1`。
 //
 // 刻意不做的事：不请求任何数据、不阻塞路由、随时可点掉。它是"门口的一句欢迎"，不是关卡。
 export const SPLASH_ENABLED = false
 
-/** 主文案（排版按一行处理；分成两行也能读，见 SplashScreen 里的 SPLASH_SPLIT） */
+/** 主文案（一行版） */
 export const SPLASH_TEXT = '欢迎姜女士回家'
 
-/** 主文案是否拆成两行（"欢迎" / "姜女士回家"）。使用者 2026-10-18 选了**两行** */
+/** 是否拆成两行。使用者 2026-10-18 选了**两行** */
 export const SPLASH_SPLIT = true
 
 /** 两行时**每行写死**（不能按字数均分：那是"欢迎姜 / 女士回家"，断句就错了） */
@@ -23,26 +30,45 @@ export const SPLASH_SUB = ''
 /** 整段动画时长（毫秒）；到点就开始淡出，约 0.6 秒后彻底移除 */
 export const SPLASH_HOLD_MS = 2400
 
-const SEEN_KEY = 'moments_splash_seen_v1'
+/** 时段长度（小时）。改 12 = 上午/下午各一次；改 24 = 每天一次 */
+export const SPLASH_BUCKET_HOURS = 6
 
-/** 这次打开该不该放 */
-export function shouldShowSplash() {
-  if (typeof window === 'undefined') return false
-  const preview = new URLSearchParams(window.location.search).has('splash')
-  if (!preview && !SPLASH_ENABLED) return false
-  try {
-    // 预览时不受"看过"限制，方便反复看效果
-    if (!preview && window.sessionStorage.getItem(SEEN_KEY) === '1') return false
-  } catch {
-    /* 隐私模式没有 sessionStorage，就当没看过 */
-  }
-  return true
+const BUCKET_KEY = 'moments_splash_bucket_v1'
+
+const pad = (n) => String(n).padStart(2, '0')
+
+/**
+ * 当前时段标识，例如 `20261018-2`（= 2026-10-18 的 12:00–18:00 那一段）。
+ * 一律按 +08:00 算，不跟随设备时区 —— 换设备、换时区看到的是同一个时段。
+ */
+export function currentBucketId(now = Date.now()) {
+  const t = new Date(now + 8 * 3600 * 1000)
+  const day = `${t.getUTCFullYear()}${pad(t.getUTCMonth() + 1)}${pad(t.getUTCDate())}`
+  const hour = t.getUTCHours()
+  return `${day}-${Math.floor(hour / SPLASH_BUCKET_HOURS)}`
 }
 
-/** 放完之后记一笔（同一次打开不再重复） */
-export function markSplashSeen() {
+/**
+ * 这次打开该不该放。
+ * @param {{ enabled?: boolean, preview?: boolean, now?: number }} [opts]
+ *   `enabled` 默认取开关常量；测试可显式传 true 验证时段逻辑（不动线上开关）。
+ */
+export function shouldShowSplash({ enabled = SPLASH_ENABLED, preview, now = Date.now() } = {}) {
+  if (typeof window === 'undefined') return false
+  const isPreview = preview ?? new URLSearchParams(window.location.search).has('splash')
+  if (isPreview) return true        // 预览不受开关与时段限制，也不消耗时段
+  if (!enabled) return false
   try {
-    window.sessionStorage.setItem(SEEN_KEY, '1')
+    return window.localStorage.getItem(BUCKET_KEY) !== currentBucketId(now)
+  } catch {
+    return true                     // 隐私模式没有 localStorage：宁可多放一次
+  }
+}
+
+/** 放完之后记一笔"这个时段已经放过了"（预览不记账） */
+export function markSplashSeen({ now = Date.now() } = {}) {
+  try {
+    window.localStorage.setItem(BUCKET_KEY, currentBucketId(now))
   } catch {
     /* 忽略 */
   }

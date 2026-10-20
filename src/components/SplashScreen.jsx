@@ -9,7 +9,7 @@ import { SPLASH_HOLD_MS, SPLASH_LINES, SPLASH_SPLIT, SPLASH_SUB, SPLASH_TEXT, ma
 
 const STAGGER_MS = 90
 
-export default function SplashScreen({ onDone }) {
+export default function SplashScreen({ onDone, preview = false }) {
   const [leaving, setLeaving] = useState(false)
   const timers = useRef([])
 
@@ -39,12 +39,13 @@ export default function SplashScreen({ onDone }) {
   }, [lines])
 
   useEffect(() => {
-    markSplashSeen()
+    // 预览不记账：看完 `?splash=1` 不会把真正的那个时段用掉
+    if (!preview) markSplashSeen()
     const hold = reduced ? 900 : SPLASH_HOLD_MS
     timers.current.push(setTimeout(() => setLeaving(true), hold))
     timers.current.push(setTimeout(() => onDone?.(), hold + (reduced ? 200 : 620)))
     return () => timers.current.forEach(clearTimeout)
-  }, [onDone, reduced])
+  }, [onDone, preview, reduced])
 
   const skip = () => {
     if (leaving) return
