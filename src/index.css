@@ -4223,3 +4223,101 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
   opacity: 1;
   animation: none;
 }
+
+/* ── 维护中（2026-10-20，后端额度被限制时） ─────────────────────────
+   刻意做成"安静的通知"而不是报错页：暖白底、一句人话、预计时间、倒计时。 */
+.maint-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 22px calc(32px + env(safe-area-inset-bottom));
+  background:
+    radial-gradient(70% 55% at 50% 30%, rgba(255, 214, 170, 0.22) 0%, rgba(255, 214, 170, 0) 62%),
+    linear-gradient(168deg, #fdf9f3 0%, #f8efe3 52%, #f3e7d7 100%);
+  color: #3b322a;
+  text-align: center;
+  overflow-y: auto;
+  z-index: 40;
+}
+
+.maint-inner { max-width: 520px; width: 100%; }
+
+.maint-badge {
+  display: inline-block;
+  margin: 0 0 18px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  color: rgba(59, 50, 42, 0.62);
+  background: rgba(59, 50, 42, 0.06);
+  border: 1px solid rgba(59, 50, 42, 0.08);
+}
+
+.maint-title {
+  margin: 0 0 10px;
+  font-family: "Songti SC", "Noto Serif SC", "STSong", serif;
+  font-size: clamp(22px, 5.4vw, 28px);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+}
+
+.maint-reason {
+  margin: 0 0 26px;
+  font-size: 14px;
+  line-height: 1.8;
+  color: rgba(59, 50, 42, 0.66);
+}
+
+.maint-clock {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: clamp(10px, 3vw, 24px);
+  margin: 0 0 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.maint-unit { display: flex; align-items: baseline; gap: 5px; }
+
+.maint-num {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: clamp(34px, 11vw, 56px);
+  font-weight: 300;
+  line-height: 1;
+  color: #3b322a;
+}
+
+.maint-label { font-size: clamp(11px, 2.6vw, 13px); color: rgba(59, 50, 42, 0.44); }
+
+.maint-note {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: rgba(59, 50, 42, 0.58);
+}
+
+.maint-note time { color: rgba(59, 50, 42, 0.82); }
+
+.maint-fine {
+  margin: 6px 0 22px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: rgba(59, 50, 42, 0.4);
+}
+
+.maint-retry {
+  appearance: none;
+  border: 1px solid rgba(59, 50, 42, 0.18);
+  background: rgba(255, 255, 255, 0.6);
+  color: #3b322a;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 9px 20px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.maint-retry:disabled { opacity: 0.55; cursor: default; }

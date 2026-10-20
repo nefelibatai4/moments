@@ -1,4 +1,4 @@
-import { StrictMode, useState } from 'react'
+import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import './index.css'
@@ -11,6 +11,8 @@ import { registerServiceWorker } from './lib/serviceWorker.js'
 import { SHUTDOWN_ENABLED } from './lib/shutdown.js'
 import ClosingCountdown from './pages/ClosingCountdown.jsx'
 import SplashScreen from './components/SplashScreen.jsx'
+import Maintenance from './pages/Maintenance.jsx'
+import { MAINTENANCE_ENABLED, probeBackend } from './lib/maintenance.js'
 
 // 两个都要在首屏渲染前定好，否则会闪一下（主题闪白 / 毛玻璃面板闪出不透明底色）
 initTheme()
@@ -32,10 +34,45 @@ const basename = import.meta.env.BASE_URL.replace(/\/$/, '') || '/'
 function Boot({ children }) {
   const preview = new URLSearchParams(window.location.search).has('splash')
   const [splash, setSplash] = useState(preview)
+
+  // 维护中（2026-10-20）：先探一次后端（几百字节）。
+  //   200 → 照常进应用（服务商解封后不需要改代码重发）
+  //   402 → 显示维护页，页内每 30 秒再探，恢复后自动进入
+  const [state, setState] = useState(() => (MAINTENANCE_ENABLED ? 'checking' : 'ok'))
+  const [status, setStatus] = useState(null)
+  useEffect(() => {
+    if (!MAINTENANCE_ENABLED) return undefined
+    let alive = true
+    probeBackend().then((r) => {
+      if (!alive) return
+      setStatus(r.status)
+      setState(r.ok ? 'ok' : 'down')
+    })
+    return () => { alive = false }
+  }, [])
+
+  const overlay = preview && splash ? <SplashScreen preview onDone={() => setSplash(false)} /> : null
+
+  if (state === 'checking') {
+    return (
+      <>
+        <div className="maint-screen" data-maintenance data-maintenance-status="checking" />
+        {overlay}
+      </>
+    )
+  }
+  if (state === 'down') {
+    return (
+      <>
+        <Maintenance initialStatus={status} onRecovered={() => setState('ok')} />
+        {overlay}
+      </>
+    )
+  }
   return (
     <>
       {children}
-      {preview && splash ? <SplashScreen preview onDone={() => setSplash(false)} /> : null}
+      {overlay}
     </>
   )
 }
