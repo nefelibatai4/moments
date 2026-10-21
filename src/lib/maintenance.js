@@ -14,8 +14,12 @@
 //   ② 到了预计时间还没恢复 → 文案变成"正在等待恢复"，继续等，不装作没事。
 export const MAINTENANCE_ENABLED = true
 
-/** 预计恢复时间（后台账单周期归零：UTC 2026-10-21 00:00） */
-export const MAINTENANCE_UNTIL = Date.parse('2026-10-21T08:00:00+08:00')
+// 预计恢复时间：后台 Billing 页原文 ——
+//   "wait until the start of your next billing period. Note that there may be a short delay
+//    of up to 1 hour for the restrictions to be lifted. Wait for the period to reset at your
+//    next billing period which is Oct 22."
+// 也就是 **2026-10-22** 进入新周期，解除最多再延迟 1 小时 → 按 09:00（+08:00）估。
+export const MAINTENANCE_UNTIL = Date.parse('2026-10-22T09:00:00+08:00')
 
 /** 探活间隔（毫秒） */
 export const PROBE_INTERVAL_MS = 30_000

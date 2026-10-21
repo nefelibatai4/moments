@@ -48,6 +48,13 @@ export default function Maintenance({ onRecovered, initialStatus = null }) {
     return () => clearInterval(t)
   }, [onRecovered])
 
+  // 文案里的时间从常量算（别写死，改时间就只改一处）
+  const untilLabel = useMemo(() => {
+    const d = new Date(MAINTENANCE_UNTIL + 8 * 3600 * 1000)
+    return `${d.getUTCFullYear()} 年 ${d.getUTCMonth() + 1} 月 ${d.getUTCDate()} 日 ` +
+      `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`
+  }, [])
+
   const left = MAINTENANCE_UNTIL - now
   const overshoot = left <= 0
   const { days, hours, minutes, seconds } = parts(left)
@@ -102,7 +109,7 @@ export default function Maintenance({ onRecovered, initialStatus = null }) {
             </div>
             <p className="maint-note">
               预计 <time dateTime={new Date(MAINTENANCE_UNTIL).toISOString()} data-maint-until>
-                2026 年 10 月 21 日 08:00
+                {untilLabel}
               </time>{' '}
               恢复，恢复后自动进入，无需刷新
             </p>
