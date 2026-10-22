@@ -39,9 +39,10 @@ function Boot({ children }) {
   const preview = new URLSearchParams(window.location.search).has('splash')
   const [splash, setSplash] = useState(preview)
 
-  // 维护中（2026-10-20）：先探一次后端（几百字节）。
-  //   200 → 照常进应用（服务商解封后不需要改代码重发）
-  //   402 → 显示维护页，页内每 30 秒再探，恢复后自动进入
+  // 维护中（2026-10-20）：后台探一次（几百字节），确认不可用就用整页覆盖层盖住。
+  // ⚠️ 2026-10-22 使用者反馈"点插件后先看到一个黄色加载页" —— 那是原先在**探活期间**渲染的
+  //    维护页底图（米黄渐变）。现在改成：**永远先渲染正常应用**，只在确认不可用时盖上维护页，
+  //    所以不会再有任何"黄屏闪过"。
   const [state, setState] = useState(() => (MAINTENANCE_ENABLED ? 'checking' : 'ok'))
   const [status, setStatus] = useState(null)
   useEffect(() => {
@@ -57,28 +58,14 @@ function Boot({ children }) {
 
   const overlay = preview && splash ? <SplashScreen preview onDone={() => setSplash(false)} /> : null
 
-  if (state === 'checking') {
-    return (
-      <>
-        <div className="maint-screen" data-maintenance data-maintenance-status="checking" />
-        {overlay}
-      </>
-    )
-  }
-  if (state === 'down') {
-    return (
-      <>
-        <Maintenance initialStatus={status} onRecovered={() => setState('ok')} />
-        {overlay}
-      </>
-    )
-  }
   return (
     <>
       {children}
+      {state === 'down' ? <Maintenance initialStatus={status} onRecovered={() => setState('ok')} /> : null}
       {overlay}
     </>
   )
+
 }
 
 // 网站关闭倒计时（临时状态）：只渲染这一个页面 ——
