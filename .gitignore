@@ -62,3 +62,4 @@ lerna-debug.log*
 # 与本项目无关的多根工作区配置（指向 ../SQL开发项目 和 ../admin-query-skill）
 # 文件本身有用，保留在磁盘上，只是不该出现在仓库里
 SQL开发项目.code-workspace
+extension/.key.pem

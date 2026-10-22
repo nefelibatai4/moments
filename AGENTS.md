@@ -21,7 +21,7 @@
 2. **下列路径被 `.gitignore` 排除是刻意的，不是遗漏**——它们只在本机，线上没有副本：
    `.env`、`supabase/`、`scripts/`、`db-backups/`、`Moments全量交接文档.md`。
    不要"帮忙"把它们加进**本公开仓库**的版本控制。
-   （2026-09-24 起：这些本机文件在**私有仓库** `~/moments-workspace/local-files/` 有副本，
+   （2026-09-24 起：这些本机文件在**私有仓库** `~/VSCood开发项目/moments-workspace/local-files/` 有副本，
    换机器时用那里的 `restore.cjs` 放回；详见该仓库 `docs/MIGRATION-WINDOWS.md`。）
 3. **测试数据必须清理**：`scripts/` 下的验证脚本会创建临时账号（域名固定 `@example.com`）。
    一律用 `bash scripts/run-all-tests.sh` 跑（跑前跑后各清一次 + 审计，有残留以非 0 退出）；
@@ -33,28 +33,38 @@
 5. **涉及「RLS 策略收紧」的迁移，必须等新版前端上线后再执行**；加性变更可以先行。
 6. **改完必须验证**：`npm run lint`（要 0 error）+ `npm run build` + 跑验证脚本，再 push。
 
+## 📍 路径说明（2026-10-22）
+
+本仓库当前在本机位于 **`~/VSCood开发项目/moments`**（私有库在 `~/VSCood开发项目/moments-workspace`）。
+**它可能会被再次移动**，所以：
+
+- 文档里出现的绝对路径只当"上次看到的位置"，**以你实际打开的仓库为准**；
+- `scripts/` 下的脚本一律用 `__dirname/..` 相对定位，不依赖绝对路径（不要新增写死路径）；
+- 换位置后唯一需要手动处理的是**浏览器里的未打包扩展**：`chrome://extensions` 里"加载已解压的扩展程序"
+  要重新指向 `<本仓库>/extension`。扩展已加固定 `key`，**ID 不会随路径变化**（详见 `extension/README.md`）。
+
 ## 完整交接内容在私有知识库
 
 完整文档、进度追踪、运维手册、密钥都在**私有仓库**里（本公开仓库不含它们）：
 
 ```
 git@github.com:nefelibatai4/moments-workspace.git
-本机路径：~/moments-workspace
+本机路径：~/VSCood开发项目/moments-workspace
 ```
 
-**如果 `~/moments-workspace` 不存在**：说明当前机器还没克隆，请向用户索取访问方式，不要凭猜测作答。
+**如果 `~/VSCood开发项目/moments-workspace` 不存在**：说明当前机器还没克隆，请向用户索取访问方式，不要凭猜测作答。
 
 ### 必读顺序
 
 | # | 文件 | 为什么 |
 |---|------|--------|
-| 0 | `~/moments-workspace/docs/HANDOFF.md` | **一页纸总览**：当前状态（站点是否在关闭倒计时）、这一轮做了什么、怎么回退、坑的索引、运维手册、待办 |
-| 1 | `~/moments-workspace/docs/STATUS.md` | **当前进度、下一步、待办** |
-| 2 | `~/moments-workspace/docs/ARCHITECTURE.md` | 技术栈、数据库结构、文件地图 |
-| 3 | `~/moments-workspace/docs/SECURITY.md` | 权限模型。**动数据前必读** |
-| 4 | `~/moments-workspace/docs/OPERATIONS.md` | 部署、验证、回滚、密钥轮换 |
-| 5 | `~/moments-workspace/docs/PITFALLS.md` | 踩坑记录 |
-| 6 | `~/moments-workspace/secrets/secrets.md` | 密钥明文，**仅在需要实际操作时读** |
+| 0 | `~/VSCood开发项目/moments-workspace/docs/HANDOFF.md` | **一页纸总览**：当前状态（站点是否在关闭倒计时）、这一轮做了什么、怎么回退、坑的索引、运维手册、待办 |
+| 1 | `~/VSCood开发项目/moments-workspace/docs/STATUS.md` | **当前进度、下一步、待办** |
+| 2 | `~/VSCood开发项目/moments-workspace/docs/ARCHITECTURE.md` | 技术栈、数据库结构、文件地图 |
+| 3 | `~/VSCood开发项目/moments-workspace/docs/SECURITY.md` | 权限模型。**动数据前必读** |
+| 4 | `~/VSCood开发项目/moments-workspace/docs/OPERATIONS.md` | 部署、验证、回滚、密钥轮换 |
+| 5 | `~/VSCood开发项目/moments-workspace/docs/PITFALLS.md` | 踩坑记录 |
+| 6 | `~/VSCood开发项目/moments-workspace/secrets/secrets.md` | 密钥明文，**仅在需要实际操作时读** |
 
 ## 关键认知（先记住这一条）
 
@@ -78,7 +88,7 @@ npm run cap:sync  # 构建并同步到 iOS 工程（改动 iOS 包时必需）
 
 ## 收工前请做
 
-1. 更新 `~/moments-workspace/docs/STATUS.md`（做完的移入已完成为，写清下一步）。
+1. 更新 `~/VSCood开发项目/moments-workspace/docs/STATUS.md`（做完的移入已完成为，写清下一步）。
 2. 踩了新坑就追加到 `docs/PITFALLS.md` 并编号。
 3. 改了数据库就确认 `db-backups/CHANGELOG.md` 有完整记录与回退方法。
 4. 确认没有密钥进入本公开仓库。

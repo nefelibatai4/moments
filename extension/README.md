@@ -16,7 +16,7 @@ Chrome 无法从网页直接安装扩展，需要走「加载已解压的扩展�
 1. 打开 `chrome://extensions/`
 2. 右上角打开 **开发者模式**
 3. 点 **加载已解压的扩展程序**
-4. 选择扩展目录：开发时是 `~/moments/extension`；
+4. 选择扩展目录：开发时是 `~/VSCood开发项目/moments/extension`；
    从 Moments 网页【我】页面下载的压缩包，解压后是 `moments-extension/`，选它即可
 
 装好后建议点一下工具栏的拼图图标，把 Moments **固定**到工具栏——不固定的话角标看不见。
@@ -184,3 +184,20 @@ color 映射不漂移、CSP 页面照样能加载、"网页加载不出来"时�
 脚本里另有一条断言盯着**真扩展**的 manifest 授权保持最小。
 
 **注意：它会创建 `@example.com` 测试账号，跑完要用 `node scripts/cleanup-test-data.cjs` 清理。**
+
+
+## 固定扩展 ID（2026-10-22）
+
+`manifest.json` 里加了 `key` 字段，所以**无论文件夹怎么移动，扩展 ID 都不变**：
+
+```
+oabameiajckjjolmpkjhfpcfpbdbmanj
+```
+
+好处：`chrome.storage.local` 里的设置（面板高度、主题等）不会因为移动目录而丢。
+
+- 私钥在 `extension/.key.pem`（**已 gitignore，绝不提交**），将来打 `.crx` / 上架时要用它；
+- 想换 ID：重新生成一对密钥，把公钥（DER → base64）写进 `manifest.json` 的 `key`，
+  然后用它替换 `.key.pem`；
+- 移动目录后仍需在 `chrome://extensions` 里**移除旧的、重新"加载已解压的扩展程序"**指向新路径
+  （路径本身 Chrome 会记住，ID 不变只代表"身份"不变）。

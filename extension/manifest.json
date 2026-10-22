@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "Moments 私密圈",
   "version": "0.3.3",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4nGCRqYzPRJn4SsOdrSf6nwFKfX8H+2TVh6KjaIU0l2R8jy3QbiJZ+SnOEQ8NBoqiTgfa4vYS+OoSRHgg9rLYA9l+PzB4A1Snqt3qX6cCGmrgkJBph3dcy3+BOrOYtom4WCP9DcogPOrmEGg0yR6ljPvj5JOv8TGHtegwc89DsfNn0I51wTDerQBXpCmn2aiNfITptW6w2wiSqjkZ8vdVYXlkZMlWxn+5PLakkZYj7FI6ZJ6ZnLb4ujKW1bdILrX7XbOOuq+kTv7PQ8Pq31VpQbs7Cc6m2kpZwp7/gKF2I9aLTEOK45S3jyVIXhg6vES8nDQH2LFoSaVR6sB5Gzx+wIDAQAB",
   "description": "未读私信角标 + 毛玻璃快捷面板，不用切换标签页就能看动态、回私信",
   "permissions": [
     "storage",
