@@ -16,12 +16,36 @@
 
 const DB_NAME = 'moments-media-cipher-v1'
 const STORE = 'raw'
-const MAX_BYTES = 80 * 1024 * 1024
+
+// 两个独立的池子（2026-10-22）：图片和视频分开算预算。
+// 以前共用一个 80 MB 的池子 —— 一段 50 MB 的视频进来会把所有图片挤出去，
+// 下次看图又要全量重下（等于把刚省下的流量又花出去）。
+export const DEFAULT_LIMITS = {
+  imageBytes: 150 * 1024 * 1024,
+  videoBytes: 200 * 1024 * 1024,
+  // 超过这个大小的对象算"视频池"（视频、大附件），避免挤占图片
+  videoThreshold: 6 * 1024 * 1024,
+}
+
+let limits = { ...DEFAULT_LIMITS }
+
+/** 只在验收脚本里用：把额度调小，才能在小内存下验证淘汰行为 */
+export function setCacheLimits(next = {}) {
+  limits = { ...limits, ...next }
+  return limits
+}
+
+export function cacheLimits() {
+  return { ...limits }
+}
 
 let dbPromise = null
 let unavailable = false
-// 内存里记一份"键 → 字节数"，用于 LRU 淘汰（省一次全表扫描）
-const sizes = new Map()
+// 内存里记"键 → 字节数"，按池分开，用于各自的 LRU 淘汰
+const sizes = { image: new Map(), video: new Map() }
+
+const poolOf = (bytes) => (bytes >= limits.videoThreshold ? 'video' : 'image')
+const poolMax = (pool) => (pool === 'video' ? limits.videoBytes : limits.imageBytes)
 
 function openDb() {
   if (unavailable || typeof indexedDB === 'undefined') return Promise.resolve(null)
@@ -66,8 +90,10 @@ export async function getRaw(path) {
       req.onerror = () => resolve(null)
     })
     if (!row?.bytes) return null
-    // 读取时顺手更新"最近使用"（LRU 用）
-    sizes.set(path, row.bytes.byteLength)
+    // 读取时顺手更新"最近使用"（LRU 用）：先删再插，Map 的插入顺序就是最近使用顺序
+    const pool = row.pool === 'video' || row.pool === 'image' ? row.pool : poolOf(row.bytes.byteLength)
+    for (const p of ['image', 'video']) sizes[p].delete(path)
+    sizes[pool].set(path, row.bytes.byteLength)
     return new Uint8Array(row.bytes)
   } catch {
     return null
@@ -80,13 +106,15 @@ export async function putRaw(path, bytes) {
   try {
     const db = await openDb()
     if (!db) return false
+    const pool = poolOf(bytes.byteLength)
     await new Promise((resolve) => {
-      const req = tx(db, 'readwrite').put({ path, bytes: bytes.buffer.slice(0), at: Date.now() })
+      const req = tx(db, 'readwrite').put({ path, bytes: bytes.buffer.slice(0), at: Date.now(), pool })
       req.onsuccess = () => resolve()
       req.onerror = () => resolve()
     })
-    sizes.set(path, bytes.byteLength)
-    await trim(db)
+    for (const p of ['image', 'video']) sizes[p].delete(path)
+    sizes[pool].set(path, bytes.byteLength)
+    await trim(db, pool)
     return true
   } catch {
     return false
@@ -96,7 +124,8 @@ export async function putRaw(path, bytes) {
 /** 原地覆盖了同一个对象 → 立刻作废（下次显示会重新下载） */
 export async function dropRaw(path) {
   if (!path) return
-  sizes.delete(path)
+  sizes.image.delete(path)
+  sizes.video.delete(path)
   try {
     const db = await openDb()
     if (!db) return
@@ -112,7 +141,8 @@ export async function dropRaw(path) {
 
 /** 退出登录 / 换账号时清空（密文也是使用者的数据，不该留着） */
 export async function clearRawCache() {
-  sizes.clear()
+  sizes.image.clear()
+  sizes.video.clear()
   try {
     const db = await openDb()
     if (!db) return
@@ -126,15 +156,19 @@ export async function clearRawCache() {
   }
 }
 
-async function trim(db) {
+/**
+ * 只淘汰指定池子里的东西 —— 视频再大也不会把图片挤出去。
+ * 淘汰到 90% 以下就停（留一点余量，避免每写一条都要淘汰）。
+ */
+async function trim(db, pool) {
+  const map = sizes[pool]
+  const max = poolMax(pool)
   let total = 0
-  for (const n of sizes.values()) total += n
-  if (total <= MAX_BYTES) return
-  // 最久没用的先删：sizes 是 Map，读取时会重新 set → 天然是"最近使用在后"
-  const keys = [...sizes.keys()]
-  for (const k of keys) {
-    if (total <= MAX_BYTES * 0.9) break
-    sizes.delete(k)
+  for (const n of map.values()) total += n
+  if (total <= max) return
+  for (const k of [...map.keys()]) {
+    if (total <= max * 0.9) break
+    map.delete(k)
     total -= (await sizeOf(db, k)) ?? 0
     await new Promise((resolve) => {
       const req = tx(db, 'readwrite').delete(k)
@@ -153,16 +187,23 @@ async function sizeOf(db, path) {
   return row?.bytes?.byteLength ?? null
 }
 
-/** 诊断用：缓存了多少条、多少字节 */
+/** 诊断用：缓存了多少条、多少字节（按池分开） */
 export async function cacheStats() {
   const db = await openDb()
-  if (!db) return { available: false, items: 0, bytes: 0 }
+  if (!db) return { available: false, items: 0, bytes: 0, image: { items: 0, bytes: 0 }, video: { items: 0, bytes: 0 } }
   const rows = await new Promise((resolve) => {
     const req = tx(db, 'readonly').getAll()
     req.onsuccess = () => resolve(req.result ?? [])
     req.onerror = () => resolve([])
   })
   let bytes = 0
-  for (const r of rows) bytes += r?.bytes?.byteLength ?? 0
-  return { available: true, items: rows.length, bytes }
+  const per = { image: { items: 0, bytes: 0 }, video: { items: 0, bytes: 0 } }
+  for (const r of rows) {
+    const n = r?.bytes?.byteLength ?? 0
+    bytes += n
+    const pool = r?.pool === 'video' || r?.pool === 'image' ? r.pool : poolOf(n)
+    per[pool].items += 1
+    per[pool].bytes += n
+  }
+  return { available: true, items: rows.length, bytes, ...per }
 }
