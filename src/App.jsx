@@ -61,12 +61,15 @@ export default function App() {
   const [welcome, setWelcome] = useState(false)
   const welcomeTried = useRef(false)
   useEffect(() => {
-    if (welcomeTried.current || !authed) return
+    // ⚠️ 只依赖"会话已恢复"，**不等 approved**（2026-10-22 实测：硬刷新时激活状态要等几秒，
+    //    等它会让她下次打开应用看不到欢迎页，而"登录那一刻"却能看到 —— 两条路径不一致）。
+    //    目标账号是固定 uid，本来就已激活，所以这里以会话为准。
+    if (welcomeTried.current || !session?.user) return
     if (!isSplashTarget(session.user)) return
     if (new URLSearchParams(window.location.search).has('splash')) return   // 预览已由 main.jsx 负责
     welcomeTried.current = true
     if (shouldShowSplash({ user: session.user })) setWelcome(true)
-  }, [authed, session])
+  }, [session])
 
   return (
     <div className={`app-container${authed ? ' authed' : ''}`}>
