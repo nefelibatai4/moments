@@ -28,7 +28,17 @@ export function useUnreadCount(userId) {
         .is('read_at', null)
         .is('recalled_at', null) // 已撤回的不算未读
 
-      if (!cancelled && !error) setRawCount(n ?? 0)
+      if (!cancelled && !error) {
+        const next = n ?? 0
+        setRawCount(next)
+        // 归零时通知插件立刻把工具栏角标清掉（不等它自己 1 分钟一次的轮询）。
+        // 只在面板里发（整页时没有扩展在听，发了也无害，但没必要）。
+        if (next === 0 && document.documentElement.getAttribute('data-surface')) {
+          try {
+            window.postMessage({ source: 'moments-app', type: 'unread-cleared' }, '*')
+          } catch { /* 忽略 */ }
+        }
+      }
     }
 
     function scheduleRefresh() {

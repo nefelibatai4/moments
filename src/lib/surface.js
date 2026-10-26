@@ -45,3 +45,13 @@ export function getSurface() {
     return null
   }
 }
+
+/** 当前是否跑在插件的面板外壳里（浮层 / 兜底小窗）——与整页行为不同的地方用它判断 */
+export function isPanelSurface() {
+  try {
+    const v = document.documentElement.getAttribute('data-surface')
+    return v === 'glass' || v === 'panel'
+  } catch {
+    return false
+  }
+}

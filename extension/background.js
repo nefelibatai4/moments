@@ -194,6 +194,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     refresh().then(() => sendResponse({ ok: true }))
     return true
   }
+  if (msg && msg.type === 'unread:cleared') {
+    // 面板里读完消息（未读归零）→ 立刻清角标，别让使用者盯着一个过期的红点
+    paintBadge(0)
+      .then(() => setStatus({ unread: 0, lastChecked: Date.now() }))
+      .finally(() => sendResponse({ ok: true }))
+    return true
+  }
   if (msg && msg.type === 'panel:settings') {
     // content.js 转交来的网页设置：存下来，浮层通过 storage.onChanged 自动跟上
     setPanelSettings(msg.settings, msg.theme).finally(() => sendResponse({ ok: true }))

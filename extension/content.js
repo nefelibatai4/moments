@@ -158,6 +158,11 @@
     if (e.source !== window) return
     const data = e.data
     if (!data || data.source !== 'moments-app') return
+    // 网页那边读完消息、未读归零时会发这条 —— 立刻让后台把角标清掉
+    if (data.type === 'unread-cleared') {
+      try { chrome.runtime.sendMessage({ type: 'unread:cleared' }) } catch { /* 扩展上下文失效 */ }
+      return
+    }
     if (data.type !== 'panel-bg' && data.type !== 'theme-change') return
     onPanelSettingChangedByUser()
   })

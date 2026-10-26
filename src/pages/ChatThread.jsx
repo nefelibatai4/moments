@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
+import { isPanelSurface } from '../lib/surface'
 import { useAuth } from '../lib/AuthContext'
 import { safeStorageKey } from '../lib/sanitizeFilename'
 import { compressImage } from '../lib/compressImage'
@@ -343,6 +344,10 @@ export default function ChatThread() {
     let cancelled = false
 
     function isPageActive() {
+      // ⚠️ 2026-10-22 使用者报"插件里读完消息、角标不消"：面板是把本站嵌进别人网页的 iframe，
+      //    那种上下文里 `document.hasFocus()` 经常是 false（焦点在宿主网页），于是"标记已读"
+      //    永远不触发，未读角标就一直挂着。面板里只要能看见，就认为使用者看到了。
+      if (isPanelSurface()) return document.visibilityState === 'visible'
       return document.visibilityState === 'visible' && document.hasFocus()
     }
 
