@@ -356,8 +356,20 @@
   }, FRAME_READY_TIMEOUT_MS)
 
   // ---------------------------------------------------------------- 起
-  applyStyle()
-  document.documentElement.appendChild(root)
+  //
+  // ⚠️ 2026-10-22 使用者反馈"每次打开插件先黑一下、然后白屏"：根因是这里**先挂载、再取设置** ——
+  //    挂载时用的是默认深色（theme='dark'），几毫秒后设置回来才改成浅色 → 一帧黑→白。
+  //    现在改成：**先等设置回来再挂到 DOM**（拿不到就 150ms 后兜底挂），第一帧就是对的颜色。
+  //    顺带把"第一帧的深浅"记在 `data-first-live` 上，验收脚本据此断言"从不以错误颜色出现"。
+  let mounted = false
+  function mount() {
+    if (mounted) return
+    mounted = true
+    applyStyle()
+    const dark = settings.tint === 'theme' ? theme !== 'light' : settings.tint === 'dark'
+    sheet.dataset.firstLive = dark ? 'dark' : 'light'
+    document.documentElement.appendChild(root)
+  }
   document.addEventListener('keydown', onKeyDown, true)
   try {
     chrome.runtime.onMessage.addListener(onMessage)
@@ -373,14 +385,18 @@
       if (res && Number.isFinite(res.height)) {
         setHeight(Math.min(maxHeight(), Math.max(MIN_HEIGHT, res.height)))
       }
-      applyStyle()
+      mount()
       if (!iframe.src) iframe.src = SITE_URL
     })
   } catch {
+    mount()
     iframe.src = SITE_URL
   }
-  // 兜底：拿不到设置也不能一直不加载网页
-  setTimeout(() => { if (!iframe.src) iframe.src = SITE_URL }, 150)
+  // 兜底：拿不到设置也不能一直不挂载 / 不加载网页
+  setTimeout(() => {
+    mount()
+    if (!iframe.src) iframe.src = SITE_URL
+  }, 150)
 
   log('浮层已挂载')
 })()
