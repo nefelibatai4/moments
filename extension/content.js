@@ -17,6 +17,14 @@
   const KEY = `sb-${PROJECT_REF}-auth-token`
   // 与 src/lib/panelBackground.js 的 PANEL_BG_KEY 必须一致
   const PANEL_BG_KEY = 'moments_panel_bg'
+  // 设备缓存的"已解锁"材料（见 src/lib/crypto.js 的 cacheDekOnDevice）：
+  //   moments_device_secret_v1 = 本机随机密钥（加密下面那份用）
+  //   moments_dek_cache_v1     = { uid, iv, ct } 加密后的钥匙包
+  // ⚠️ 面板是第三方 iframe，Chrome 按**顶层网站**给存储分区 → 每个网站的面板都是另一份 localStorage，
+  //    所以在这边解锁过、换个网站打开插件又要再输一次密码（使用者 2026-10-28 的抱怨）。
+  //    这里把这份缓存经扩展转一手，让同一浏览器的各分区都能拿到（它本来就是加密的）。
+  const DEK_CACHE_KEY = 'moments_dek_cache_v1'
+  const DEVICE_SECRET_KEY = 'moments_device_secret_v1'
 
   // 是不是"面板里的那一层网页"（浮层 / 兜底小窗都是 iframe）。
   // 提前声明：下面好几处逻辑都要据此决定"能不能把本地值当权威上报"。
@@ -71,6 +79,55 @@
     lastPushed = raw
     send({ type: 'session:push', session: parsed })
   }
+
+  // ---------------------------------------------------------------- 已解锁材料的中转
+
+  function readKeyCache() {
+    try {
+      const dom = localStorage.getItem(DEVICE_SECRET_KEY)
+      const raw = localStorage.getItem(DEK_CACHE_KEY)
+      if (!dom || !raw) return null
+      const parsed = JSON.parse(raw)
+      if (!parsed || !parsed.uid || !parsed.iv || !parsed.ct) return null
+      return { uid: parsed.uid, iv: parsed.iv, ct: parsed.ct, dom, at: Date.now() }
+    } catch {
+      return null
+    }
+  }
+
+  let lastKeyCacheSig = null
+
+  function pushKeyCache() {
+    const kc = readKeyCache()
+    if (!kc) return
+    const sig = `${kc.uid}|${kc.ct}|${kc.at}`
+    if (sig === lastKeyCacheSig) return
+    lastKeyCacheSig = sig
+    send({ type: 'keycache:push', keyCache: kc })
+  }
+
+  /** 只在面板帧里做：把扩展手里的那份写进**这个分区**的 localStorage。
+   *  应用启动时会自己 loadCachedDek()，所以写进去就等于"这个网站的面板也解锁了"。 */
+  function adoptKeyCache() {
+    if (!isPanelFrame) return
+    try {
+      chrome.runtime.sendMessage({ type: 'keycache:get' }, (res) => {
+        const kc = res && res.keyCache
+        if (!kc || !kc.ct || !kc.dom) return
+        try {
+          // 本分区已经有（可能是在面板里刚输过密码）就不覆盖
+          if (localStorage.getItem(DEK_CACHE_KEY) && localStorage.getItem(DEVICE_SECRET_KEY)) return
+          localStorage.setItem(DEVICE_SECRET_KEY, kc.dom)
+          localStorage.setItem(DEK_CACHE_KEY, JSON.stringify({ uid: kc.uid, iv: kc.iv, ct: kc.ct }))
+          // 告诉应用"现在有缓存了，去静默解锁一次"（见 src/lib/extensionBridge.js）
+          window.postMessage({ source: 'moments-ext', type: 'keycache-ready' }, '*')
+          lastKeyCacheSig = `${kc.uid}|${kc.ct}|${kc.at}`
+        } catch { /* 存储被拦：退化成"再输一次密码"，不影响其它功能 */ }
+      })
+    } catch { /* 扩展上下文失效 */ }
+  }
+
+  adoptKeyCache()
 
   // ---------------------------------------------------------------- 面板背景设置
 
@@ -139,6 +196,7 @@
   // 所以这里用一个低频轮询兜住本标签页内的变化。读两个 localStorage key 很便宜。
   setInterval(() => {
     push()
+    pushKeyCache()
     pushPanelSettingsIfAuthoritative()
     pushGlobalState()
   }, 10000)
@@ -211,6 +269,7 @@
     } catch { /* 扩展上下文失效，忽略 */ }
   }
 
+  pushKeyCache()
   pushGlobalState(true)
 
   // 网页那边有可能比我们晚注册监听（打包产物是后加载的），它主动要的时候再发一次。

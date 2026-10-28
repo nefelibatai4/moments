@@ -194,6 +194,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     refresh().then(() => sendResponse({ ok: true }))
     return true
   }
+  if (msg && msg.type === 'keycache:push') {
+    // 某个网页上下文解锁过 → 把这套"设备缓存"记在扩展里，供别的存储分区（别的网站的面板）取用
+    chrome.storage.local.set({ keyCache: msg.keyCache }).finally(() => sendResponse({ ok: true }))
+    return true
+  }
+  if (msg && msg.type === 'keycache:get') {
+    chrome.storage.local.get('keyCache').then(({ keyCache }) => sendResponse({ keyCache: keyCache || null }))
+    return true
+  }
   if (msg && msg.type === 'unread:cleared') {
     // 面板里读完消息（未读归零）→ 立刻清角标，别让使用者盯着一个过期的红点
     paintBadge(0)

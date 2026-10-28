@@ -42,7 +42,23 @@ async function adoptSession(session) {
 }
 
 function handle(message) {
-  if (!message || message.source !== SOURCE || message.type !== 'state') return
+  if (!message || message.source !== SOURCE) return
+
+  // 扩展刚把"已解锁材料"写进这个存储分区 → 静默解锁一次（不打扰使用者）
+  if (message.type === 'keycache-ready') {
+    ;(async () => {
+      try {
+        const { data } = await supabase.auth.getSession()
+        const uid = data?.session?.user?.id
+        if (!uid) return
+        const { loadCachedDek } = await import('./crypto')
+        await loadCachedDek(uid)
+      } catch { /* 解不开就退回"再输一次密码"，有橙色入口兜着 */ }
+    })()
+    return
+  }
+
+  if (message.type !== 'state') return
 
   // 主题：以扩展手里的为准（那是"使用者在【我】里选的那个"）
   if (message.theme) {
