@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../supabaseClient'
-import { resolveSignedUrl, storagePathFromUrl, useSignedUrls } from './signedUrls'
+import { invalidateSignedUrl, resolveSignedUrl, storagePathFromUrl, useSignedUrls } from './signedUrls'
 import { clearRawCache, dropRaw, getRaw, putRaw } from './mediaCache'
 
 /**
@@ -177,9 +177,29 @@ export async function fetchAndDecryptImage(signedUrl, key, kind = 'image') {
   }
   // ⚠️ 后台"补加密"会**原地覆盖**同一个对象：对方正好在这时取图就可能拿到一半/失败。
   //    所以这里失败重试一次（600ms 后），而不是让这张图永久空着。
+  //
+  // ⚠️ 2026-10-28 使用者问"今天没停服，为什么几个小时前发的照片还是空白" —— 查出来是
+  //    **签名地址过期**：签名只活 1 小时，而面板可能开着一整天。过期后请求返回 400，
+  //    被当成"解不开"计入重试额度；额度用完这张图就再也不取，直到重新打开应用。
+  //    现在：400/403（签名失效）→ 作废这条签名、**重新签一次**再取，且不算"解不开"。
+  let currentUrl = signedUrl
+  let resigned = false
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const res = await fetch(signedUrl, { credentials: 'omit' })
+      const res = await fetch(currentUrl, { credentials: 'omit' })
+      if ((res.status === 400 || res.status === 403) && cachePath && !resigned) {
+        // 签名失效：重签一次，同一个 attempt 里继续（不吃"解不开"的额度）
+        resigned = true
+        try {
+          invalidateSignedUrl(BUCKET, cachePath)
+          const fresh = await resolveSignedUrl(BUCKET, cachePath)
+          if (fresh) {
+            currentUrl = fresh
+            attempt -= 1
+            continue
+          }
+        } catch { /* 重签失败就按普通失败处理 */ }
+      }
       if (res.ok) {
         const raw = new Uint8Array(await res.arrayBuffer())
         const out = await decryptImageBytes(key, raw, kind)
@@ -192,7 +212,7 @@ export async function fetchAndDecryptImage(signedUrl, key, kind = 'image') {
           console.warn('[media] 下载到了但解不开', kind, 'len=' + raw.length, 'head=' + head, 'hasKey=' + !!key)
         }
       } else if (attempt === 1) {
-        console.warn('[media] 下载失败:', res.status, signedUrl.slice(0, 80))
+        console.warn('[media] 下载失败:', res.status, currentUrl.slice(0, 80))
       }
     } catch (err) {
       if (attempt === 1) console.warn('[media] 下载异常:', err?.message)
