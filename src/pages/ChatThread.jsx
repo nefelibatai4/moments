@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { isPanelSurface } from '../lib/surface'
+import { requestUnlock } from '../lib/unlockSignal'
 import { useAuth } from '../lib/AuthContext'
 import { safeStorageKey } from '../lib/sanitizeFilename'
 import { compressImage } from '../lib/compressImage'
@@ -16,7 +17,7 @@ import StickerPicker from '../components/StickerPicker'
 import { fetchThreadData, readCachedThread, writeCachedThread } from '../lib/chatCache'
 // 阶段 1：私聊文本端到端加密（会话密钥由双方身份密钥 ECDH 得到，见 lib/crypto.js）
 import {
-  conversationKey, decryptPeerMessages, encryptForPeer, onUnlockChange, unlockStateVersion,
+  conversationKey, decryptPeerMessages, encryptForPeer, isUnlocked, onUnlockChange, unlockStateVersion,
 } from '../lib/crypto'
 
 // 撤回 / 编辑窗口：2 分钟内（与微信一致）。
@@ -885,6 +886,15 @@ export default function ChatThread() {
           <span className="chat-header-card-hint" aria-hidden="true">›</span>
         </Link>
       </div>
+
+      {/* 使用者 2026-10-28："我都输入密码登录了，为什么还读不到" ——
+          登录 ≠ 解锁钥匙（钥匙是按设备缓存/按密码现算的）。这里给一个**看得见、点得到**的入口，
+          免得只有气泡里那句小字、没有出路。 */}
+      {!isUnlocked() && rawMessages.some((m) => m.ciphertext && !m.content) && (
+        <button type="button" className="chat-unlock-bar" onClick={() => requestUnlock()}>
+          这台设备还没就绪，点这里输入一次密码就能读到内容
+        </button>
+      )}
 
       <div className="chat-messages" ref={msgListRef}>
         {hasMore && (

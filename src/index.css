@@ -4375,3 +4375,18 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
 .usage-day-label { font-size: 9px; color: var(--text-tertiary, rgba(0, 0, 0, 0.4)); }
 
 .usage-note { margin: 4px 0 0; font-size: 11px; line-height: 1.6; color: var(--text-tertiary, rgba(0, 0, 0, 0.42)); }
+
+/* 会话顶部"这台设备还没就绪"的可点条（2026-10-28） */
+.chat-unlock-bar {
+  margin: 8px 12px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 159, 28, 0.35);
+  background: rgba(255, 159, 28, 0.12);
+  color: var(--text-primary, inherit);
+  font-size: 12.5px;
+  line-height: 1.5;
+  text-align: center;
+  cursor: pointer;
+}
+.chat-unlock-bar:hover { background: rgba(255, 159, 28, 0.18); }

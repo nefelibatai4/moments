@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { onUnlockRequested } from '../lib/unlockSignal'
 import { supabase } from '../supabaseClient'
 import { useAccess } from '../lib/AuthContext'
 import {
@@ -52,6 +53,15 @@ export default function UnlockPrompt() {
     const off = onUnlockChange(() => { if (isUnlocked()) setVisible(false) })
     return () => { clearTimeout(t); off() }
   }, [uid, approved, dismissed])
+
+  // 别的地方（聊天里读不到内容时的提示按钮）可以主动把它叫出来
+  useEffect(() => {
+    const off = onUnlockRequested(() => {
+      setDismissed(false)
+      setVisible(true)
+    })
+    return off
+  }, [])
 
   useEffect(() => {
     if (visible) inputRef.current?.focus()
