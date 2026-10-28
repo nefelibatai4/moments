@@ -14,6 +14,7 @@ import SplashScreen from './components/SplashScreen.jsx'
 import Maintenance from './pages/Maintenance.jsx'
 import { MAINTENANCE_ENABLED, probeBackend } from './lib/maintenance.js'
 import { installTrafficMeter } from './lib/traffic.js'
+import { resetImageAttemptBudget } from './lib/imageCrypto.js'
 
 // 两个都要在首屏渲染前定好，否则会闪一下（主题闪白 / 毛玻璃面板闪出不透明底色）
 initTheme()
@@ -28,6 +29,17 @@ registerServiceWorker()
 
 // 流量计量（2026-10-20）：包一层 fetch，把响应字节数记在本机（【我】→ 流量与存储）
 installTrafficMeter()
+
+// 重新联网 / 从后台切回时，给"之前解不开的图"一次新机会（见 resetImageAttemptBudget 的注释）
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => resetImageAttemptBudget())
+  let hiddenAt = 0
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return }
+    if (hiddenAt && Date.now() - hiddenAt > 30_000) resetImageAttemptBudget()
+    hiddenAt = 0
+  })
+}
 
 const basename = import.meta.env.BASE_URL.replace(/\/$/, '') || '/'
 

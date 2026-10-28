@@ -228,6 +228,20 @@ const MAX_ATTEMPTS_PER_OBJECT = 3
  */
 const MAX_NO_KEY_ATTEMPTS = 1
 
+/**
+ * 把"这个对象已经试过太多次"的记账清空（2026-10-28）。
+ *
+ * 为什么必须能重置：额度停服那几天，每个图都会失败 3 次 → 被记成"这辈子解不开"，
+ * 之后即使服务恢复，同一个会话里也再不会去取 —— 表现就是"某张照片一直不显示"，
+ * 而库里对象明明在（我用真实数据验过这条兼容路径是好的：verify-legacy-image-dm 5/0）。
+ * 所以：**重新联网**、或**从后台切回来**时，把这份记账清掉，给它们一次新机会。
+ */
+export function resetImageAttemptBudget() {
+  attemptCounts.clear()
+  noKeyAttempts.clear()
+  for (const cb of cacheListeners) { try { cb(null) } catch { /* 忽略 */ } }
+}
+
 /** 登出/换账号时释放内存里所有 `blob:` 地址（否则会把上一个人的内容留在内存里） */
 export function clearImageCache() {
   for (const url of urlCache.values()) {
