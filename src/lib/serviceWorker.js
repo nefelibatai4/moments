@@ -13,6 +13,26 @@
 export function registerServiceWorker() {
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
 
+  // ⚠️ 2026-10-29：**插件面板里不注册 SW，并顺手注销旧的**。
+  //    面板是嵌在别人网页里的 iframe，SW 又会把外壳缓存起来 —— 结果是我这边改完、
+  //    使用者在面板里看到的还是旧版本（"怎么又不稳定了"的一大半来源）。
+  //    面板不需要离线能力（就一小块浮层），永远拿最新的最省事。
+  const surface = (() => {
+    try {
+      const v = new URLSearchParams(window.location.search).get('surface')
+      return v === 'glass' || v === 'panel' ? v : null
+    } catch {
+      return null
+    }
+  })()
+  if (surface) {
+    navigator.serviceWorker.getRegistrations?.()
+      .then((regs) => Promise.all(regs.map((r) => r.unregister().catch(() => false))))
+      .then(() => { if (typeof caches !== 'undefined') return caches.keys().then((ks) => Promise.all(ks.map((k) => caches.delete(k)))) })
+      .catch(() => {})
+    return
+  }
+
   const register = () => {
     navigator.serviceWorker
       .register(`${import.meta.env.BASE_URL}sw.js`)

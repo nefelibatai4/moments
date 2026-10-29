@@ -1063,6 +1063,7 @@ export default function ChatThread() {
                         图片没能显示，点这里重试
                         <span className="chat-media-retry-why">
                           {mediaReasonText(mediaFailureReason(storagePathFromUrl(m.image_url)), isUnlocked())}
+                          {' · '}{typeof __APP_BUILD__ === 'string' ? __APP_BUILD__ : ''}
                         </span>
                       </button>
                     )}

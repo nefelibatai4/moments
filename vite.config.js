@@ -75,6 +75,9 @@ function supabasePreconnect() {
 
 // https://vite.dev/config/
 export default defineConfig({
+  define: {
+    __APP_BUILD__: JSON.stringify(String(Date.now()).slice(-6)),
+  },
   base: process.env.VITE_APP_BASE || '/moments/',
   plugins: [react(), serviceWorkerVersion(), supabasePreconnect()],
 })
