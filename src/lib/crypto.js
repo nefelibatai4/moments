@@ -78,6 +78,23 @@ export function unlockStateVersion() {
   return S.unlockVersion
 }
 
+/**
+ * 用"这次登录时刚输入过的密码"静默解锁（2026-10-29）。
+ *
+ * 使用者原话："我的账号密码都输入进去了，就别有其他输入密码的位置了"。
+ * 只要内存里还留着这次登录用的密码（`noteLoginSecrets` 记的），就不该再弹卡片问一遍 ——
+ * 直接拿它去解、解开就顺手写设备缓存。解不开（例如真忘过密码）才让上层去提示。
+ */
+export async function silentUnlockWithKnownPassword(userId, email) {
+  if (!userId || !S.loginPassword) return { ok: false, reason: 'no-password' }
+  if (isUnlocked()) return { ok: true, already: true }
+  const res = await unlockWithPassword(userId, S.loginPassword, email)
+  if (res.ok) {
+    try { await cacheDekOnDevice(userId) } catch { /* 缓存失败不影响本次解锁 */ }
+  }
+  return res
+}
+
 /** 登录成功后由登录/注册页告知"真正发去认证的值"（社交恢复的包裹里要存它） */
 export function noteLoginSecrets({ password, credential, email } = {}) {
   if (password) S.loginPassword = String(password)

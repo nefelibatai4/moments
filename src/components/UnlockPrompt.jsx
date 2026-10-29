@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient'
 import { useAccess } from '../lib/AuthContext'
 import {
   cacheDekOnDevice, deriveAuthPassword, hasLocalRecoveryEph, isUnlocked,
-  noteLoginSecrets, onUnlockChange, unlockWithPassword,
+  noteLoginSecrets, onUnlockChange, silentUnlockWithKnownPassword, unlockWithPassword,
 } from '../lib/crypto'
 
 /**
@@ -48,7 +48,17 @@ export default function UnlockPrompt() {
   useEffect(() => {
     if (!uid || approved !== true || dismissed) return
     if (isUnlocked() || hasLocalRecoveryEph(uid)) return
-    const t = setTimeout(() => { if (!isUnlocked()) setVisible(true) }, GRACE_MS)
+    const t = setTimeout(() => {
+      if (isUnlocked()) return
+      // ① 先用"这次登录刚输入的密码"静默解一次（使用者要求：别再有第二个输入密码的地方）
+      silentUnlockWithKnownPassword(uid, email)
+        .then((res) => {
+          if (res?.ok) return
+          // ② 解不开才亮卡片（例如这台设备从没输过密码、或那套钥匙不是这个密码包的）
+          if (!isUnlocked()) setVisible(true)
+        })
+        .catch(() => { if (!isUnlocked()) setVisible(true) })
+    }, GRACE_MS)
     // ⚠️ 回调收到的是"解锁版本号"，不是布尔值 —— 要自己再问一次 isUnlocked()
     const off = onUnlockChange(() => { if (isUnlocked()) setVisible(false) })
     return () => { clearTimeout(t); off() }
