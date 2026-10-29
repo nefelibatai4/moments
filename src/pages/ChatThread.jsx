@@ -15,6 +15,8 @@ import { stickerContent, stickerIdFromContent } from '../lib/stickers'
 import StickerMessage from '../components/StickerMessage'
 import StickerPicker from '../components/StickerPicker'
 import { fetchThreadData, readCachedThread, writeCachedThread } from '../lib/chatCache'
+import { clearMediaFailure, mediaFailureReason } from '../lib/imageCrypto'
+import { invalidateSignedUrl } from '../lib/signedUrls'
 // 阶段 1：私聊文本端到端加密（会话密钥由双方身份密钥 ECDH 得到，见 lib/crypto.js）
 import {
   conversationKey, decryptPeerMessages, encryptForPeer, isUnlocked, onUnlockChange, unlockStateVersion,
@@ -320,8 +322,11 @@ export default function ChatThread() {
     [messages],
   )
   // 私聊图片：签名 → 下载 → 用**会话密钥**在本机解密（见 lib/imageCrypto.js）
+  // mediaRetry：点了"图片没能显示，点这里重试"就 +1，让取图 effect 重跑一次
+  const [mediaRetry, setMediaRetry] = useState(0)
   const signedImages = useContentImageUrls(chatImageUrls, {
     resolveKey: () => conversationKey(userId),
+    refreshKey: mediaRetry,
   })
   // 操作按钮只在 2 分钟窗口内出现。用低频计时器驱动，让按钮在窗口过期后自行消失。
   // （不在 render 里直接调 Date.now()，那会让渲染变成非纯函数）
@@ -1020,6 +1025,28 @@ export default function ChatThread() {
                         </a>
                       )
                     })()}
+
+                    {/* 图片打不开时的出口（2026-10-29）：一个空框什么都不说，使用者只能来问。
+                        这里给一句人话 + 可点重试 —— 重试会清掉"这个对象试过太多次"的记账，
+                        再重新签名取一次（签名过期就是靠这个自愈的）。
+                        界面上不出现"解密/密钥"这类词，只说"打不开"。 */}
+                    {m.image_url && !signedImages.get(m.image_url) && (
+                      <button
+                        type="button"
+                        className="chat-media-retry"
+                        data-media-retry="1"
+                        data-media-reason={mediaFailureReason(storagePathFromUrl(m.image_url)) ?? 'pending'}
+                        onClick={() => {
+                          const p = storagePathFromUrl(m.image_url)
+                          if (!p) return
+                          clearMediaFailure(p)
+                          invalidateSignedUrl('moment-images', m.image_url)
+                          setMediaRetry((n) => n + 1)
+                        }}
+                      >
+                        图片没能显示，点这里重试
+                      </button>
+                    )}
 
                     {isEditing ? (
                       <div className="chat-edit">

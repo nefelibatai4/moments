@@ -4390,3 +4390,17 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
   cursor: pointer;
 }
 .chat-unlock-bar:hover { background: rgba(255, 159, 28, 0.18); }
+
+/* 图片打不开时的重试按钮（2026-10-29）：不能让使用者只看到一个空框 */
+.chat-media-retry {
+  display: block;
+  margin: 4px 0 2px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px dashed rgba(127, 127, 127, 0.45);
+  background: transparent;
+  color: var(--text-secondary, inherit);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.chat-media-retry:hover { background: rgba(127, 127, 127, 0.08); }

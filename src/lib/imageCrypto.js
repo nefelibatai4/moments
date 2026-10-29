@@ -204,14 +204,16 @@ export async function fetchAndDecryptImage(signedUrl, key, kind = 'image') {
         const raw = new Uint8Array(await res.arrayBuffer())
         const out = await decryptImageBytes(key, raw, kind)
         if (out) {
-          if (cachePath) putRaw(cachePath, raw).catch(() => {})
+          if (cachePath) { failures.delete(cachePath); putRaw(cachePath, raw).catch(() => {}) }
           return out
         }
         if (attempt === 1) {
+          if (cachePath) failures.set(cachePath, key ? 'locked' : 'no-key')
           const head = [...raw.slice(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join('')
           console.warn('[media] 下载到了但解不开', kind, 'len=' + raw.length, 'head=' + head, 'hasKey=' + !!key)
         }
       } else if (attempt === 1) {
+        if (cachePath) failures.set(cachePath, `http-${res.status}`)
         console.warn('[media] 下载失败:', res.status, currentUrl.slice(0, 80))
       }
     } catch (err) {
@@ -233,6 +235,19 @@ export async function fetchAndDecryptImage(signedUrl, key, kind = 'image') {
  *          ② 每个对象每个会话最多试 3 次，从机制上封顶。
  */
 const attemptCounts = new Map()          // 真正"带钥匙去取"的次数（防流量黑洞）
+// 每个对象最后一次失败的原因（只用于"打不开"时给一句人话 + 让使用者能点重试）
+const failures = new Map()
+
+export function mediaFailureReason(locator) {
+  return failures.get(locator) ?? null
+}
+
+export function clearMediaFailure(locator) {
+  failures.delete(locator)
+  attemptCounts.delete(locator)
+  noKeyAttempts.delete(locator)
+  for (const cb of cacheListeners) { try { cb(null) } catch { /* 忽略 */ } }
+}
 const noKeyAttempts = new Map()          // "还没钥匙"时试了几次（给钥匙一点时间到，但也要封顶）
 const MAX_ATTEMPTS_PER_OBJECT = 3
 /**
@@ -302,7 +317,7 @@ function remember(locator, url) {
  * @param {string[]} locators 存的那串定位符（`bucket:path`）
  * @param {{ resolveKey: () => Promise<CryptoKey|null> }} opts 怎么拿钥匙（由调用方按语境给）
  */
-export function useContentImageUrls(locators, { resolveKey, kind = 'image' }) {
+export function useContentImageUrls(locators, { resolveKey, kind = 'image', refreshKey = 0 }) {
   const list = useMemo(() => (locators ?? []).filter(Boolean), [locators])
   const signed = useSignedUrls(list, BUCKET)
   // ⚠️ 依赖用"定位符 → 签名地址"的字符串指纹，而不是 Map/数组本身：
@@ -316,7 +331,7 @@ export function useContentImageUrls(locators, { resolveKey, kind = 'image' }) {
     const cb = () => setVersion((v) => v + 1)
     cacheListeners.add(cb)
     return () => { cacheListeners.delete(cb) }
-  }, [])
+  }, [, refreshKey])
 
   useEffect(() => {
     let cancelled = false
