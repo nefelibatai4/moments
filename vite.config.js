@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { execSync } from 'node:child_process'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
@@ -74,9 +75,16 @@ function supabasePreconnect() {
 }
 
 // https://vite.dev/config/
+const GIT_SHA = (() => {
+  try { return execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() }
+  catch { return 'dev' }
+})()
+
 export default defineConfig({
+  // 构建标记：用**提交号**（而不是时间戳）——时间戳会让 CI 与本地构建出不同 hash，
+  // 导致"线上产物和 dist 一致"这条核对失效（2026-10-29 实测踩到）。
   define: {
-    __APP_BUILD__: JSON.stringify(String(Date.now()).slice(-6)),
+    __APP_BUILD__: JSON.stringify(GIT_SHA),
   },
   base: process.env.VITE_APP_BASE || '/moments/',
   plugins: [react(), serviceWorkerVersion(), supabasePreconnect()],
