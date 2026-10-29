@@ -76,6 +76,9 @@ function supabasePreconnect() {
 
 // https://vite.dev/config/
 const GIT_SHA = (() => {
+  // CI 里 git 命令不一定可用（浅克隆/无 git 二进制），优先用 GitHub 提供的环境变量
+  const fromEnv = (process.env.GITHUB_SHA || process.env.CF_PAGES_COMMIT_SHA || '').trim()
+  if (fromEnv) return fromEnv.slice(0, 7)
   try { return execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() }
   catch { return 'dev' }
 })()
