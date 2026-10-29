@@ -404,9 +404,15 @@ export function useContentImageUrls(locators, { resolveKey, kind = 'image', refr
           //    否则每次渲染都自己签一遍，实测会把"1 次请求"变成 6 次。
           const url = signed.get(locator)
             ?? (retry >= 3 ? await resolveSignedUrl(BUCKET, locator).catch(() => null) : null)
-          if (!url) { stillPending = true; continue }
+          if (!url) {
+            // 拿不到签名地址：**必须留痕**，否则界面永远停在"正在尝试…"（2026-10-29 实测）
+            if (!failures.has(locator)) failures.set(locator, 'no-url')
+            stillPending = true
+            continue
+          }
           const out = await fetchAndDecryptImage(url, key, kind)
           if (!out) {
+            if (!failures.has(locator)) failures.set(locator, 'locked')
             stillPending = true
             // 只在这个对象已经用完额度时喊一次：线上排查"图/视频为什么不出来"就靠它
             if ((attemptCounts.get(locator) ?? 0) >= MAX_ATTEMPTS_PER_OBJECT) {
