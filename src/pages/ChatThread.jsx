@@ -284,6 +284,9 @@ function mediaReasonText(reason, unlocked) {
   if (!reason || reason === 'pending') return '正在尝试…'
   if (reason === 'locked') return '内容对不上（可能是对方设备上的版本较旧）'
   if (reason === 'no-key') return unlocked ? '正在等这台设备就绪' : '这台设备还没就绪'
+  if (reason === 'no-key-budget') return '还没就绪（试过了，点重试再试一次）'
+  if (reason === 'no-url') return '没能拿到访问地址（签名失败）'
+  if (reason === 'budget') return '试过太多次（点重试）'
   if (String(reason).startsWith('http-')) return `服务器返回 ${String(reason).slice(5)}`
   return '未知原因'
 }

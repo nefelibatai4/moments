@@ -243,7 +243,7 @@ export function mediaFailureReason(locator) {
 }
 
 export function clearMediaFailure(locator) {
-  failures.delete(locator)
+  // 刻意**不**删 failures：重试期间界面要继续显示上一次的真实原因（"正在尝试"没有诊断价值）
   attemptCounts.delete(locator)
   noKeyAttempts.delete(locator)
   for (const cb of cacheListeners) { try { cb(null) } catch { /* 忽略 */ } }
@@ -336,10 +336,14 @@ export function useContentImageUrls(locators, { resolveKey, kind = 'image', refr
   useEffect(() => {
     let cancelled = false
     const storageOnes = list.filter((l) => storagePathFromUrl(l))
-    const pending = storageOnes.filter((l) => (
-      !urlCache.has(l)
-      && (attemptCounts.get(l) ?? 0) < MAX_ATTEMPTS_PER_OBJECT
-    ))
+    const pending = storageOnes.filter((l) => {
+      if (urlCache.has(l)) return false
+      if ((attemptCounts.get(l) ?? 0) >= MAX_ATTEMPTS_PER_OBJECT) {
+        if (!failures.has(l)) failures.set(l, 'budget')
+        return false
+      }
+      return true
+    })
     if (pending.length === 0) return undefined
     let stillPending = false
     ;(async () => {
@@ -367,7 +371,11 @@ export function useContentImageUrls(locators, { resolveKey, kind = 'image', refr
           const url = signed.get(locator) ?? null
           // 这一轮不取字节（还没签名地址，或者"唯一的免费机会"已经用过了）→ 只等钥匙。
           // ⚠️ 仍然要 stillPending，否则重试链断掉、钥匙到了也没人再来问。
-          if (!url || tried >= MAX_NO_KEY_ATTEMPTS) { stillPending = true; continue }
+          if (!url || tried >= MAX_NO_KEY_ATTEMPTS) {
+            if (locator && !failures.has(locator)) failures.set(locator, url ? 'no-key-budget' : 'no-url')
+            stillPending = true
+            continue
+          }
           noKeyAttempts.set(locator, tried + 1)
           try {
             const out = await fetchAndDecryptImage(url, null, kind)
