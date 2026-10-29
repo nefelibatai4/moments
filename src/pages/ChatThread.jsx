@@ -16,6 +16,7 @@ import StickerMessage from '../components/StickerMessage'
 import StickerPicker from '../components/StickerPicker'
 import { fetchThreadData, readCachedThread, writeCachedThread } from '../lib/chatCache'
 import { clearMediaFailure, mediaFailureReason } from '../lib/imageCrypto'
+import { dropRaw } from '../lib/mediaCache'
 import { invalidateSignedUrl } from '../lib/signedUrls'
 // 阶段 1：私聊文本端到端加密（会话密钥由双方身份密钥 ECDH 得到，见 lib/crypto.js）
 import {
@@ -276,6 +277,15 @@ function FileDownload({ locator, name, resolveKey }) {
   }, [locator, resolveKey])
   if (!href) return <span className="chat-file-download" aria-disabled="true">准备中…</span>
   return <a className="chat-file-download" href={href} download={name}>下载</a>
+}
+
+/** 把"图片为什么没显示"翻成一句人话（界面不出现密码学术语） */
+function mediaReasonText(reason, unlocked) {
+  if (!reason || reason === 'pending') return '正在尝试…'
+  if (reason === 'locked') return '内容对不上（可能是对方设备上的版本较旧）'
+  if (reason === 'no-key') return unlocked ? '正在等这台设备就绪' : '这台设备还没就绪'
+  if (String(reason).startsWith('http-')) return `服务器返回 ${String(reason).slice(5)}`
+  return '未知原因'
 }
 
 export default function ChatThread() {
@@ -1039,12 +1049,18 @@ export default function ChatThread() {
                         onClick={() => {
                           const p = storagePathFromUrl(m.image_url)
                           if (!p) return
+                          // 连本机缓存一起清：万一缓存里那份是坏的（例如停服期间的残片），
+                          // 只清"试错记账"是没用的（使用者 2026-10-29 实测"点了重试还是不行"）
                           clearMediaFailure(p)
+                          dropRaw(p).catch(() => {})
                           invalidateSignedUrl('moment-images', m.image_url)
                           setMediaRetry((n) => n + 1)
                         }}
                       >
                         图片没能显示，点这里重试
+                        <span className="chat-media-retry-why">
+                          {mediaReasonText(mediaFailureReason(storagePathFromUrl(m.image_url)), isUnlocked())}
+                        </span>
                       </button>
                     )}
 
