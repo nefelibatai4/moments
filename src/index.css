@@ -302,6 +302,12 @@ button:disabled {
   font-weight: 400;
   color: var(--text-muted);
   margin-left: 6px;
+  /* 现在时间带 HH:mm（2026-10-29），比原来长 —— 别让它被挤成两行 */
+  white-space: nowrap;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .moment-location {

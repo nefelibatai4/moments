@@ -1,6 +1,10 @@
 /**
- * 把时间戳变成信息流里那种"短、相对"的写法（微博/微信都是这样）：
- *   刚刚 / 12 分钟前 / 3 小时前 / 昨天 19:23 / 9月20日 / 2025年9月20日
+ * 把时间戳变成信息流里那种"短、相对"的写法：
+ *   刚刚 / 12 分钟前 / 今天 18:32 / 昨天 19:23 / 9月20日 14:07 / 2025年9月20日 09:12
+ *
+ * ⚠️ 2026-10-29 使用者："动态再补充一个具体的时间，而不是单单的日期" ——
+ *    以前超过一天就只显示「9月20日」，看不出是上午还是晚上。现在**所有超过 1 分钟的时间都带 HH:mm**；
+ *    只有"刚刚 / N 分钟前"保持相对写法（那时精确到分钟也没意义）。
  *
  * 为什么不用 `toLocaleString` 的完整时间（原实现）：
  * 手机端卡片头只有一行位置，"2026/9/30 14:17:18" 会把昵称挤到换行，
@@ -22,12 +26,12 @@ export function relativeTime(iso, now = new Date()) {
 
   const sameDay = d.toDateString() === now.toDateString()
   const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-  if (sameDay) return `${Math.floor(min / 60)} 小时前`
+  if (sameDay) return `今天 ${hhmm}`
 
   const yesterday = new Date(now)
   yesterday.setDate(now.getDate() - 1)
   if (d.toDateString() === yesterday.toDateString()) return `昨天 ${hhmm}`
 
-  if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}月${d.getDate()}日`
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
+  if (d.getFullYear() === now.getFullYear()) return `${d.getMonth() + 1}月${d.getDate()}日 ${hhmm}`
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${hhmm}`
 }
