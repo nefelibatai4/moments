@@ -42,9 +42,17 @@ export async function probeBackend({ timeoutMs = 8000 } = {}) {
       signal: ctrl?.signal,
       cache: 'no-store',
     })
-    return { ok: res.status === 200, status: res.status }
+    // ⚠️ 2026-10-29 事故教训：**只有 402（额度停服）才该盖维护页**。
+    //    以前把"任何非 200"都当成"服务不可用"，结果对方那台设备网络抖一下 / 面板里跨域探活失败，
+    //    就被盖上"正在等待恢复"的整页 —— 而我这边一切正常（使用者当场就问"你们做过这个页面吗"）。
+    //    网络问题交给应用自己的重试，不要用整页遮挡。
+    return {
+      ok: res.status === 200,
+      status: res.status,
+      restricted: res.status === 402,
+    }
   } catch {
-    return { ok: false, status: null }
+    return { ok: false, status: null, restricted: false }
   } finally {
     if (timer) clearTimeout(timer)
   }

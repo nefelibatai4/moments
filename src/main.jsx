@@ -63,7 +63,8 @@ function Boot({ children }) {
     probeBackend().then((r) => {
       if (!alive) return
       setStatus(r.status)
-      setState(r.ok ? 'ok' : 'down')
+      // 只有"额度停服（402）"才盖维护页；网络抖动/CORS 失败一律照常渲染应用
+      setState(r.ok || !r.restricted ? 'ok' : 'down')
     })
     return () => { alive = false }
   }, [])
