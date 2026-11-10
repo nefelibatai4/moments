@@ -208,12 +208,12 @@ export async function fetchAndDecryptImage(signedUrl, key, kind = 'image') {
           return out
         }
         if (attempt === 1) {
-          if (cachePath) failures.set(cachePath, key ? 'locked' : 'no-key')
+          if (cachePath) noteFailure(cachePath, key ? 'locked' : 'no-key')
           const head = [...raw.slice(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join('')
           console.warn('[media] 下载到了但解不开', kind, 'len=' + raw.length, 'head=' + head, 'hasKey=' + !!key)
         }
       } else if (attempt === 1) {
-        if (cachePath) failures.set(cachePath, `http-${res.status}`)
+        if (cachePath) noteFailure(cachePath, `http-${res.status}`)
         console.warn('[media] 下载失败:', res.status, currentUrl.slice(0, 80))
       }
     } catch (err) {
@@ -240,6 +240,14 @@ const failures = new Map()
 
 export function mediaFailureReason(locator) {
   return failures.get(locator) ?? null
+}
+
+/** 记一笔失败原因，并**通知界面重渲染**（否则按钮上的原因永远停在"正在尝试…"） */
+function noteFailure(locator, reason) {
+  if (!locator) return
+  if (failures.get(locator) === reason) return
+  failures.set(locator, reason)
+  for (const cb of cacheListeners) { try { cb(locator) } catch { /* 忽略 */ } }
 }
 
 export function clearMediaFailure(locator) {
@@ -339,7 +347,7 @@ export function useContentImageUrls(locators, { resolveKey, kind = 'image', refr
     const pending = storageOnes.filter((l) => {
       if (urlCache.has(l)) return false
       if ((attemptCounts.get(l) ?? 0) >= MAX_ATTEMPTS_PER_OBJECT) {
-        if (!failures.has(l)) failures.set(l, 'budget')
+        if (!failures.has(l)) noteFailure(l, 'budget')
         return false
       }
       return true
@@ -372,7 +380,7 @@ export function useContentImageUrls(locators, { resolveKey, kind = 'image', refr
           // 这一轮不取字节（还没签名地址，或者"唯一的免费机会"已经用过了）→ 只等钥匙。
           // ⚠️ 仍然要 stillPending，否则重试链断掉、钥匙到了也没人再来问。
           if (!url || tried >= MAX_NO_KEY_ATTEMPTS) {
-            if (locator && !failures.has(locator)) failures.set(locator, url ? 'no-key-budget' : 'no-url')
+            if (!failures.has(locator)) noteFailure(locator, url ? 'no-key-budget' : 'no-url')
             stillPending = true
             continue
           }
@@ -406,13 +414,13 @@ export function useContentImageUrls(locators, { resolveKey, kind = 'image', refr
             ?? (retry >= 3 ? await resolveSignedUrl(BUCKET, locator).catch(() => null) : null)
           if (!url) {
             // 拿不到签名地址：**必须留痕**，否则界面永远停在"正在尝试…"（2026-10-29 实测）
-            if (!failures.has(locator)) failures.set(locator, 'no-url')
+            noteFailure(locator, 'no-url')
             stillPending = true
             continue
           }
           const out = await fetchAndDecryptImage(url, key, kind)
           if (!out) {
-            if (!failures.has(locator)) failures.set(locator, 'locked')
+            noteFailure(locator, 'locked')
             stillPending = true
             // 只在这个对象已经用完额度时喊一次：线上排查"图/视频为什么不出来"就靠它
             if ((attemptCounts.get(locator) ?? 0) >= MAX_ATTEMPTS_PER_OBJECT) {
