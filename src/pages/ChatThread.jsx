@@ -291,6 +291,26 @@ function mediaReasonText(reason, unlocked) {
   return '未知原因'
 }
 
+/** 网络层失败（浏览器连响应都没拿到）—— 这类错误对象只有 TypeError: Failed to fetch，
+ *  没有 HTTP 状态码。使用者 2026-11-10 在面板里就看到这行红字，但完全不知道怎么办。 */
+function isNetworkError(err) {
+  const msg = String(err?.message ?? err ?? '')
+  return /failed to fetch|network ?error|load failed|networkerror/i.test(msg)
+}
+
+/** 插入一条消息：网络抖动自动重试一次（其它错误立刻抛，别把"权限被拒"也重试） */
+async function insertMessageWithRetry(row) {
+  let lastError = null
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const { error } = await supabase.from('messages').insert(row)
+    if (!error) return null
+    lastError = error
+    if (!isNetworkError(error)) return error
+    if (attempt === 0) await new Promise((r) => setTimeout(r, 700))
+  }
+  return lastError
+}
+
 export default function ChatThread() {
   const session = useAuth()
   const { userId } = useParams()
@@ -658,23 +678,23 @@ export default function ChatThread() {
         if (sealed) body = { ...sealed, content: null }
         else console.warn('[chat] 这条消息没能加密（本机未解锁或对方缺少公钥）')
       }
-      const { error } = await supabase
-        .from('messages')
-        .insert({
-          sender_id: me,
-          recipient_id: userId,
-          image_url: imageUrl,
-          reply_to_id: replyTarget?.id ?? null,
-          ...body,
-        })
-      if (error) throw error
+      const sendError = await insertMessageWithRetry({
+        sender_id: me,
+        recipient_id: userId,
+        image_url: imageUrl,
+        reply_to_id: replyTarget?.id ?? null,
+        ...body,
+      })
+      if (sendError) throw sendError
       setContent('')
       setImageFile(null)
       setFileToSend(null)
       setVideoToSend(null)
       setReplyTarget(null)
     } catch (err) {
-      setError(err.message)
+      setError(isNetworkError(err)
+        ? '发送失败：网络没连上（内容还在输入框里，稍后再点一次发送）'
+        : (err?.message || '发送失败'))
     } finally {
       setSending(false)
     }
