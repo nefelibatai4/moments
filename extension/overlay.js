@@ -114,6 +114,10 @@
          （下限 200px 是为了在很矮的窗口里仍然能用；上限不设，随屏幕走）。 */
       .panel {
         position: relative;
+        /* 内容没就绪之前先别显形（否则会看到一块长时间的黑底） */
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.16s ease, background 0.18s ease, backdrop-filter 0.18s ease;
         width: min(420px, 100%);
         height: max(200px, 25vh);
         border-radius: 14px;
@@ -128,6 +132,7 @@
         overflow: hidden;
         transition: background 0.18s ease, backdrop-filter 0.18s ease;
       }
+      .panel.is-ready { opacity: 1; visibility: visible; }
       .panel[data-mode="solid"] {
         border-color: rgba(255, 255, 255, 0.08);
       }
@@ -329,6 +334,7 @@
   function onMessage(msg) {
     if (msg && msg.type === 'panel:frameReady') {
       clearTimeout(readyTimer)
+      try { panel.classList.add('is-ready') } catch { /* 忽略 */ }
       log('面板里的网页已就绪')
     }
   }
@@ -354,6 +360,10 @@
     fallback.classList.add('show')
     fallbackText.textContent = '面板里的网页没能加载出来（可能是网络问题）。'
   }, FRAME_READY_TIMEOUT_MS)
+
+  // 内容迟迟没就绪时也要显形（不然一直隐藏，比黑屏更让人以为"点了没反应"）
+  const REVEAL_FALLBACK_MS = 400
+  setTimeout(() => { try { panel.classList.add('is-ready') } catch { /* 忽略 */ } }, REVEAL_FALLBACK_MS)
 
   // ---------------------------------------------------------------- 起
   //

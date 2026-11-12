@@ -13,11 +13,12 @@
 export function registerServiceWorker() {
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
 
-  // ⚠️ 2026-10-29：**插件面板里不注册 SW，并顺手注销旧的**。
-  //    面板是嵌在别人网页里的 iframe，SW 又会把外壳缓存起来 —— 结果是我这边改完、
-  //    使用者在面板里看到的还是旧版本（"怎么又不稳定了"的一大半来源）。
-  //    面板不需要离线能力（就一小块浮层），永远拿最新的最省事。
-  const surface = (() => {
+  // ⚠️ 2026-11-12：面板里**恢复**注册 SW。
+  //    前几天为了让面板"永远拿最新版"把 SW 关掉了，代价是每次打开都要**从网络重新下整包** ——
+  //    使用者反馈"点插件后黑屏时间比以前更长"。而外壳 HTML 本来就是网络优先（见 public/sw.js），
+  //    版本新鲜度并不依赖关掉 SW；带 hash 的资源缓存反而让面板秒开。
+  //    这里补一步"每次打开都主动检查更新"，两侧兼得。
+  const surfaceEarly = (() => {
     try {
       const v = new URLSearchParams(window.location.search).get('surface')
       return v === 'glass' || v === 'panel' ? v : null
@@ -25,12 +26,10 @@ export function registerServiceWorker() {
       return null
     }
   })()
-  if (surface) {
-    navigator.serviceWorker.getRegistrations?.()
-      .then((regs) => Promise.all(regs.map((r) => r.unregister().catch(() => false))))
-      .then(() => { if (typeof caches !== 'undefined') return caches.keys().then((ks) => Promise.all(ks.map((k) => caches.delete(k)))) })
-      .catch(() => {})
-    return
+  if (surfaceEarly) {
+    try {
+      navigator.serviceWorker.getRegistration?.().then((reg) => reg?.update?.()).catch(() => {})
+    } catch { /* 忽略 */ }
   }
 
   const register = () => {

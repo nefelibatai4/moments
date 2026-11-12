@@ -122,6 +122,8 @@ async function fetchUnreadCount(userId, accessToken) {
 
 /** 把图标染成某种颜色（用于 tint 模式）—— 用 OffscreenCanvas 在 SW 里现画，不需要多套素材 */
 async function tintedIconData(color) {
+  const cacheKey = `tint:${color}`
+  if (iconRenderCache.has(cacheKey)) return iconRenderCache.get(cacheKey)
   const sizes = [16, 32, 48, 128]
   const out = {}
   for (const size of sizes) {
@@ -140,7 +142,10 @@ async function tintedIconData(color) {
       /* 某个尺寸失败就跳过，其它尺寸照用 */
     }
   }
-  return Object.keys(out).length ? out : null
+  const data = Object.keys(out).length ? out : null
+  // 缓存起来：图标只取决于（模式/颜色），没必要每次刷新都重画一遍
+  iconRenderCache.set(cacheKey, data)
+  return data
 }
 
 const BASE_ICON = { 16: 'icons/icon16.png', 48: 'icons/icon48.png', 128: 'icons/icon128.png' }
@@ -152,7 +157,11 @@ const BASE_ICON = { 16: 'icons/icon16.png', 48: 'icons/icon48.png', 128: 'icons/
  * 使用者 2026-11-12 说"红点太大了，应该只有 Logo 的四分之一"。角标的大小改不了，
  * 所以改成把点**画进图标里** —— 尺寸/位置完全可控（默认直径 = 图标边长 / 4）。
  */
+const iconRenderCache = new Map()
+
 async function dottedIconData({ ratio = 1 / 4, color = BADGE_COLOR } = {}) {
+  const cacheKey = `dot:${ratio}:${color}`
+  if (iconRenderCache.has(cacheKey)) return iconRenderCache.get(cacheKey)
   const sizes = [16, 32, 48, 128]
   const out = {}
   for (const size of sizes) {
