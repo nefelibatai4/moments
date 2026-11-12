@@ -201,3 +201,16 @@ oabameiajckjjolmpkjhfpcfpbdbmanj
   然后用它替换 `.key.pem`；
 - 移动目录后仍需在 `chrome://extensions` 里**移除旧的、重新"加载已解压的扩展程序"**指向新路径
   （路径本身 Chrome 会记住，ID 不变只代表"身份"不变）。
+
+
+## 未读提示的三种样式（2026-11-12）
+
+在网页【我】→「未读提示」里切换，选择会下发到扩展（`unreadStyle:set`），存在 `chrome.storage.local`：
+
+| 样式 | 实现 | 备注 |
+|---|---|---|
+| `number`（默认） | `setBadgeText(数字)` + 红底 | 浏览器原生角标 |
+| `dot` | **画进图标**：右上角一个直径 = 边长/4 的小红点 | 角标大小改不了，所以自己画（使用者要求"只有 Logo 四分之一"） |
+| `tint` | 整枚图标染红 | OffscreenCanvas + `source-atop` |
+
+三种都在 `background.js` 里用 OffscreenCanvas 现画，**不需要多套素材**。

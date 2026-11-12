@@ -145,6 +145,45 @@ async function tintedIconData(color) {
 
 const BASE_ICON = { 16: 'icons/icon16.png', 48: 'icons/icon48.png', 128: 'icons/icon128.png' }
 
+/**
+ * 在图标右上角画一个**小圆点**（用于"小红点"样式）。
+ *
+ * 为什么不用角标做红点：`setBadgeText(' ')` 画出来的是**浏览器统一大小的方块**，
+ * 使用者 2026-11-12 说"红点太大了，应该只有 Logo 的四分之一"。角标的大小改不了，
+ * 所以改成把点**画进图标里** —— 尺寸/位置完全可控（默认直径 = 图标边长 / 4）。
+ */
+async function dottedIconData({ ratio = 1 / 4, color = BADGE_COLOR } = {}) {
+  const sizes = [16, 32, 48, 128]
+  const out = {}
+  for (const size of sizes) {
+    try {
+      const res = await fetch(chrome.runtime.getURL(`icons/icon${size}.png`))
+      const bitmap = await createImageBitmap(await res.blob())
+      const canvas = new OffscreenCanvas(size, size)
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(bitmap, 0, 0, size, size)
+      const d = Math.max(3, Math.round(size * ratio))
+      const m = Math.max(1, Math.round(size * 0.04))     // 右上角留一点边
+      const x = size - d - m
+      const y = m
+      ctx.beginPath()
+      ctx.arc(x + d / 2, y + d / 2, d / 2, 0, Math.PI * 2)
+      ctx.fillStyle = color
+      ctx.fill()
+      // 一圈极细的描边，深色图标上也能看清（尺寸小时不加，免得糊成一团）
+      if (size >= 32) {
+        ctx.lineWidth = Math.max(1, size / 64)
+        ctx.strokeStyle = 'rgba(255,255,255,0.9)'
+        ctx.stroke()
+      }
+      out[size] = ctx.getImageData(0, 0, size, size)
+    } catch {
+      /* 某尺寸失败就跳过 */
+    }
+  }
+  return Object.keys(out).length ? out : null
+}
+
 /** 按当前模式画未读指示（数字 / 圆点 / 图标变色） */
 async function paintBadge(count) {
   lastUnreadCount = count || 0
@@ -158,10 +197,10 @@ async function paintBadge(count) {
       const data = n > 0 ? await tintedIconData(TINT_COLOR) : null
       await chrome.action.setIcon(data ? { imageData: data } : { path: BASE_ICON })
     } else if (style === 'dot') {
-      // 只有小圆点，不显示数字：用一个空格 + 背景色画出来
-      await chrome.action.setBadgeText({ text: n > 0 ? ' ' : '' })
-      if (n > 0) await chrome.action.setBadgeBackgroundColor({ color: BADGE_COLOR })
-      await chrome.action.setIcon({ path: BASE_ICON })
+      // 小红点：**画进图标里**（角标大小浏览器不让改，那样点会太大）
+      await chrome.action.setBadgeText({ text: '' })
+      const data = n > 0 ? await dottedIconData() : null
+      await chrome.action.setIcon(data ? { imageData: data } : { path: BASE_ICON })
     } else {
       const text = !n ? '' : n > BADGE_MAX ? `${BADGE_MAX}+` : String(n)
       await chrome.action.setBadgeText({ text })
