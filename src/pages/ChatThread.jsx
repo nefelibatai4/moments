@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { isPanelSurface } from '../lib/surface'
 import { requestUnlock } from '../lib/unlockSignal'
+import { isPeekOn } from '../lib/peekMode'
 import { useAuth } from '../lib/AuthContext'
 import { safeStorageKey } from '../lib/sanitizeFilename'
 import { compressImage } from '../lib/compressImage'
@@ -391,6 +392,8 @@ export default function ChatThread() {
     }
 
     function markUnreadAsRead() {
+      // 隐身预览（只有使用者本人能开，见 lib/peekMode.js）：整段会话不写已读
+      if (isPeekOn()) return
       supabase
         .from('messages')
         .update({ read_at: new Date().toISOString() })
@@ -447,7 +450,7 @@ export default function ChatThread() {
         ) {
           setRawMessages((prev) => [...prev, m])
           // If it's from the other person and the page is in front, mark read immediately
-          if (m.sender_id === userId && isPageActive()) {
+          if (m.sender_id === userId && isPageActive() && !isPeekOn()) {
             supabase
               .from('messages')
               .update({ read_at: new Date().toISOString() })
@@ -924,6 +927,13 @@ export default function ChatThread() {
           <span className="chat-header-card-hint" aria-hidden="true">›</span>
         </Link>
       </div>
+
+      {/* 隐身预览开启时给一条常驻提示（使用者本人专属，见 lib/peekMode.js） */}
+      {isPeekOn() && (
+        <div className="chat-peek-bar" data-peek-bar="1">
+          隐身预览中 · 对方不会看到已读
+        </div>
+      )}
 
       {/* 使用者 2026-10-28："我都输入密码登录了，为什么还读不到" ——
           登录 ≠ 解锁钥匙（钥匙是按设备缓存/按密码现算的）。这里给一个**看得见、点得到**的入口，
