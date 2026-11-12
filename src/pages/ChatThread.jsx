@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { isPanelSurface } from '../lib/surface'
 import { requestUnlock } from '../lib/unlockSignal'
-import { isPeekOn } from '../lib/peekMode'
+import { ensurePeekLoaded, isPeekOn } from '../lib/peekMode'
 import { useAuth } from '../lib/AuthContext'
 import { safeStorageKey } from '../lib/sanitizeFilename'
 import { compressImage } from '../lib/compressImage'
@@ -404,6 +404,8 @@ export default function ChatThread() {
     }
 
     async function load() {
+      // 先把"隐身预览"设置从服务器拉一次（跟账号走；失败就按关闭处理，不影响任何功能）
+      await ensurePeekLoaded(me).catch(() => {})
       // 先用内存里的缓存把这一屏画出来（同一次会话里返回再进、或列表悬停预取过）。
       // 画完照旧去取最新的 —— 缓存只是"先顶一下"，不改变任何判断。
       const cached = readCachedThread(me, userId)

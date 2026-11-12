@@ -1,19 +1,30 @@
-import { useState } from 'react'
-import { isPeekAllowed, isPeekOn, setPeekOn } from '../lib/peekMode'
+import { useEffect, useState } from 'react'
+import { ensurePeekLoaded, isPeekAllowed, isPeekOn, onPeekChange, setPeekOn } from '../lib/peekMode'
 
 // 【我】→「隐身预览」（2026-11-12）
 //
 // 只有使用者本人（`PEEK_ALLOWED_IDS`）能看到这一块；对方那边**完全不出现**。
 // 打开时：进入任何会话都**不写已读**，对方会一直看到"未读"（✓ 而不是 ✓✓）。
 export default function PeekModeSection({ session }) {
+  const uid = session?.user?.id ?? null
   const allowed = isPeekAllowed(session?.user)
   const [on, setOn] = useState(() => isPeekOn())
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (!allowed || !uid) return undefined
+    ensurePeekLoaded(uid).then((v) => setOn(v))
+    return onPeekChange((v) => setOn(v))
+  }, [allowed, uid])
 
   if (!allowed) return null
 
-  function toggle(next) {
-    setOn(next)
-    setPeekOn(next)
+  async function toggle(next) {
+    if (busy) return
+    setBusy(true)
+    const ok = await setPeekOn(uid, next)
+    setOn(ok ? next : isPeekOn())
+    setBusy(false)
   }
 
   return (
@@ -28,7 +39,7 @@ export default function PeekModeSection({ session }) {
           </span>
         </div>
         <label className="peek-switch">
-          <input type="checkbox" checked={on} onChange={(e) => toggle(e.target.checked)} />
+          <input type="checkbox" checked={on} disabled={busy} onChange={(e) => toggle(e.target.checked)} />
           <span className="peek-slider" />
         </label>
       </div>
