@@ -221,6 +221,11 @@
       try { chrome.runtime.sendMessage({ type: 'unread:cleared' }) } catch { /* 扩展上下文失效 */ }
       return
     }
+    // 网页里选"未读提示样式"→ 转给后台（数字 / 小红点 / 图标变色）
+    if (data.type === 'unread-style') {
+      try { chrome.runtime.sendMessage({ type: 'unreadStyle:set', value: data.value }) } catch { /* 忽略 */ }
+      return
+    }
     if (data.type !== 'panel-bg' && data.type !== 'theme-change') return
     onPanelSettingChangedByUser()
   })

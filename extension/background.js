@@ -26,6 +26,17 @@ const PANEL_HEIGHT_KEY = 'panelHeightPx'
 const BADGE_COLOR = '#ff6363' // 与 app 的 --accent-red 一致
 const BADGE_MAX = 99
 
+// 未读展示方式（2026-11-12 使用者要求：可以从"数字"切成"图标变色"，并保留数字可选）
+//   number = 数字角标（默认）
+//   dot    = 只显示一个小圆点（不显示数字）
+//   tint   = 不改角标，改**图标本身**的颜色（有未读时图标变红）
+const UNREAD_STYLE_KEY = 'unreadStyle'
+const DEFAULT_UNREAD_STYLE = 'number'
+let unreadStyle = DEFAULT_UNREAD_STYLE
+let lastUnreadCount = 0
+let lastPainted = null
+const TINT_COLOR = '#ff5a5f'
+
 const log = (...args) => console.log('[moments-ext]', ...args)
 
 // ---------------------------------------------------------------- 会话存取
@@ -109,14 +120,64 @@ async function fetchUnreadCount(userId, accessToken) {
 
 // ---------------------------------------------------------------- 角标
 
+/** 把图标染成某种颜色（用于 tint 模式）—— 用 OffscreenCanvas 在 SW 里现画，不需要多套素材 */
+async function tintedIconData(color) {
+  const sizes = [16, 32, 48, 128]
+  const out = {}
+  for (const size of sizes) {
+    try {
+      const res = await fetch(chrome.runtime.getURL(`icons/icon${size}.png`))
+      const bitmap = await createImageBitmap(await res.blob())
+      const canvas = new OffscreenCanvas(size, size)
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(bitmap, 0, 0, size, size)
+      // source-atop：只给"已经有像素"的地方上色，透明区域保持透明
+      ctx.globalCompositeOperation = 'source-atop'
+      ctx.fillStyle = color
+      ctx.fillRect(0, 0, size, size)
+      out[size] = ctx.getImageData(0, 0, size, size)
+    } catch {
+      /* 某个尺寸失败就跳过，其它尺寸照用 */
+    }
+  }
+  return Object.keys(out).length ? out : null
+}
+
+const BASE_ICON = { 16: 'icons/icon16.png', 48: 'icons/icon48.png', 128: 'icons/icon128.png' }
+
+/** 按当前模式画未读指示（数字 / 圆点 / 图标变色） */
 async function paintBadge(count) {
-  const text = !count ? '' : count > BADGE_MAX ? `${BADGE_MAX}+` : String(count)
-  await chrome.action.setBadgeText({ text })
-  if (text) await chrome.action.setBadgeBackgroundColor({ color: BADGE_COLOR })
-  // 设置 title 让鼠标悬停能看到完整数字（角标位置太窄，99+ 会挤）
+  lastUnreadCount = count || 0
+  const style = unreadStyle
+  const n = lastUnreadCount
+
+  try {
+    if (style === 'tint') {
+      // 图标变色：角标清空；有未读 → 染色图标，无未读 → 原图标
+      await chrome.action.setBadgeText({ text: '' })
+      const data = n > 0 ? await tintedIconData(TINT_COLOR) : null
+      await chrome.action.setIcon(data ? { imageData: data } : { path: BASE_ICON })
+    } else if (style === 'dot') {
+      // 只有小圆点，不显示数字：用一个空格 + 背景色画出来
+      await chrome.action.setBadgeText({ text: n > 0 ? ' ' : '' })
+      if (n > 0) await chrome.action.setBadgeBackgroundColor({ color: BADGE_COLOR })
+      await chrome.action.setIcon({ path: BASE_ICON })
+    } else {
+      const text = !n ? '' : n > BADGE_MAX ? `${BADGE_MAX}+` : String(n)
+      await chrome.action.setBadgeText({ text })
+      if (text) await chrome.action.setBadgeBackgroundColor({ color: BADGE_COLOR })
+      await chrome.action.setIcon({ path: BASE_ICON })
+    }
+    lastPainted = `${style}:${n}`
+  } catch (e) {
+    log('画角标失败', e && e.message)
+  }
+
+  const text = !n ? '' : n > BADGE_MAX ? `${BADGE_MAX}+` : String(n)
   await chrome.action.setTitle({
-    title: text ? `Moments 私密圈 · ${count} 条未读私信` : 'Moments 私密圈',
+    title: n ? `Moments 私密圈 · ${n} 条未读私信` : 'Moments 私密圈',
   })
+  return text
 }
 
 async function setStatus(patch) {
@@ -181,6 +242,23 @@ async function handleSessionPush(incoming) {
   await refresh()
 }
 
+// 启动/安装时读一次"未读展示方式"
+chrome.storage.local.get(UNREAD_STYLE_KEY).then((r) => {
+  if (r && (r[UNREAD_STYLE_KEY] === 'dot' || r[UNREAD_STYLE_KEY] === 'tint' || r[UNREAD_STYLE_KEY] === 'number')) {
+    unreadStyle = r[UNREAD_STYLE_KEY]
+  }
+  paintBadge(lastUnreadCount)
+}).catch(() => {})
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes[UNREAD_STYLE_KEY]) return
+  const next = changes[UNREAD_STYLE_KEY].newValue
+  if (next === 'dot' || next === 'tint' || next === 'number') {
+    unreadStyle = next
+    paintBadge(lastUnreadCount)
+  }
+})
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.type === 'session:push') {
     handleSessionPush(msg.session).finally(() => sendResponse({ ok: true }))
@@ -202,6 +280,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.type === 'keycache:get') {
     chrome.storage.local.get('keyCache').then(({ keyCache }) => sendResponse({ keyCache: keyCache || null }))
     return true
+  }
+  if (msg && msg.type === 'unreadStyle:set') {
+    const v = msg.value
+    if (v === 'dot' || v === 'tint' || v === 'number') {
+      chrome.storage.local.set({ [UNREAD_STYLE_KEY]: v }).finally(() => sendResponse({ ok: true }))
+      return true
+    }
+    sendResponse({ ok: false })
+    return false
   }
   if (msg && msg.type === 'unread:cleared') {
     // 面板里读完消息（未读归零）→ 立刻清角标，别让使用者盯着一个过期的红点

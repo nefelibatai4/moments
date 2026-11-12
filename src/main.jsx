@@ -30,6 +30,9 @@ registerServiceWorker()
 // 流量计量（2026-10-20）：包一层 fetch，把响应字节数记在本机（【我】→ 流量与存储）
 installTrafficMeter()
 
+// 启动时把"未读提示样式"下发一次给扩展（扩展自己也有持久化，这里只是对齐）
+import('./lib/unreadStyle.js').then((m) => m.announceUnreadStyle()).catch(() => {})
+
 // 重新联网 / 从后台切回时，给"之前解不开的图"一次新机会（见 resetImageAttemptBudget 的注释）
 if (typeof window !== 'undefined') {
   window.addEventListener('online', () => resetImageAttemptBudget())
