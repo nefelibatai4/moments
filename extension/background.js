@@ -190,7 +190,9 @@ async function dottedIconData({ ratio = 1 / 4, color = BADGE_COLOR } = {}) {
       /* 某尺寸失败就跳过 */
     }
   }
-  return Object.keys(out).length ? out : null
+  const data = Object.keys(out).length ? out : null
+  iconRenderCache.set(cacheKey, data)
+  return data
 }
 
 /** 按当前模式画未读指示（数字 / 圆点 / 图标变色） */
