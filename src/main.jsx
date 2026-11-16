@@ -30,6 +30,28 @@ registerServiceWorker()
 // 流量计量（2026-10-20）：包一层 fetch，把响应字节数记在本机（【我】→ 流量与存储）
 installTrafficMeter()
 
+// ── 版本自检（2026-11-16）──────────────────────────────────────────────
+// 为什么需要：Pages 的 HTML 有 10 分钟缓存，插件面板常常"打开的还是上一版"——
+// 于是同样的 bug 你这边改完了、对方那边看起来没变（我们为此反复解释了好几轮）。
+// 这里启动后读一次 dist/version.json（SW 放行、不走缓存），不一致就**自动刷新一次**。
+if (typeof window !== 'undefined' && typeof __APP_BUILD__ === 'string' && __APP_BUILD__ !== 'dev') {
+  const KEY = 'moments_version_reloaded'
+  try {
+    const url = `${import.meta.env.BASE_URL}version.json?cb=${Date.now()}`
+    fetch(url, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        const latest = j && j.build
+        if (!latest || latest === __APP_BUILD__) return
+        if (sessionStorage.getItem(KEY) === '1') return   // 每次打开只自重载一次
+        sessionStorage.setItem(KEY, '1')
+        console.info('[version] 发现新版本，正在刷新:', __APP_BUILD__, '→', latest)
+        window.location.reload()
+      })
+      .catch(() => {})
+  } catch { /* 忽略 */ }
+}
+
 // 启动时把"未读提示样式"下发一次给扩展（扩展自己也有持久化，这里只是对齐）
 import('./lib/unreadStyle.js').then((m) => m.announceUnreadStyle()).catch(() => {})
 

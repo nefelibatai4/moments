@@ -83,6 +83,17 @@ const GIT_SHA = (() => {
   catch { return 'dev' }
 })()
 
+/** 构建号写进 dist/version.json：客户端用它判断"自己跑的是不是最新版" */
+function versionFilePlugin() {
+  return {
+    name: 'moments-version-file',
+    apply: 'build',
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ build: GIT_SHA }) })
+    },
+  }
+}
+
 export default defineConfig({
   // 构建标记：用**提交号**（而不是时间戳）——时间戳会让 CI 与本地构建出不同 hash，
   // 导致"线上产物和 dist 一致"这条核对失效（2026-10-29 实测踩到）。
@@ -90,5 +101,5 @@ export default defineConfig({
     __APP_BUILD__: JSON.stringify(GIT_SHA),
   },
   base: process.env.VITE_APP_BASE || '/moments/',
-  plugins: [react(), serviceWorkerVersion(), supabasePreconnect()],
+  plugins: [versionFilePlugin(), react(), serviceWorkerVersion(), supabasePreconnect()],
 })

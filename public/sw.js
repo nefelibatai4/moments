@@ -250,6 +250,8 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return
   // 不缓存 SW 自己（否则就永远更新不了）
   if (url.pathname.endsWith('/sw.js')) return
+  // 版本文件必须永远走网络：它就是用来判断"我是不是旧版本"的
+  if (url.pathname.endsWith('/version.json')) return
   // ⚠️ 开发服务器的模块路径一律不碰（/src/…、/@vite/…、/@fs/…、node_modules、/__vite_ping 等）。
   //    踩过的坑：下面的"策略 3"原本对所有同源 GET 生效，于是 SW 用**缓存优先**把
   //    `/src/pages/Timeline.jsx` 也缓存了 —— 改了代码刷新页面还是旧逻辑（而且看不出原因，
