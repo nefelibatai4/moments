@@ -16,7 +16,7 @@ import { stickerContent, stickerIdFromContent } from '../lib/stickers'
 import StickerMessage from '../components/StickerMessage'
 import StickerPicker from '../components/StickerPicker'
 import { fetchThreadData, readCachedThread, writeCachedThread } from '../lib/chatCache'
-import { clearMediaFailure, mediaFailureReason } from '../lib/imageCrypto'
+import { clearMediaFailure, mediaDiagnostics, mediaFailureReason } from '../lib/imageCrypto'
 import { dropRaw } from '../lib/mediaCache'
 import { invalidateSignedUrl } from '../lib/signedUrls'
 // 阶段 1：私聊文本端到端加密（会话密钥由双方身份密钥 ECDH 得到，见 lib/crypto.js）
@@ -1096,6 +1096,11 @@ export default function ChatThread() {
                         <span className="chat-media-retry-why">
                           {mediaReasonText(mediaFailureReason(storagePathFromUrl(m.image_url)), isUnlocked())}
                           {' · '}{typeof __APP_BUILD__ === 'string' ? __APP_BUILD__ : ''}
+                          {/* 诊断计数：路(path)、试(try)、无钥(noKey)、缓存(cache) —— 只在这一行里，不加界面噪音 */}
+                          {(() => {
+                            const d = mediaDiagnostics(storagePathFromUrl(m.image_url))
+                            return ` · p${d.path} t${d.attempts} k${d.noKey} c${d.cached ? 1 : 0}`
+                          })()}
                         </span>
                       </button>
                     )}

@@ -242,6 +242,21 @@ export function mediaFailureReason(locator) {
   return failures.get(locator) ?? null
 }
 
+/**
+ * 一组"为什么这张图没出来"的原始计数（2026-11-16）。
+ * 使用者已经帮我们试了太多次，这次直接把内部状态摊开：
+ *   有没有钥匙 / 有没有签名地址 / 试了几次 / 内存里有没有（可能是个坏 blob）/ 最后原因
+ */
+export function mediaDiagnostics(locator) {
+  return {
+    reason: failures.get(locator) ?? null,
+    attempts: attemptCounts.get(locator) ?? 0,
+    noKey: noKeyAttempts.get(locator) ?? 0,
+    cached: urlCache.has(locator),
+    path: storagePathFromUrl(locator) ? 'yes' : 'no',
+  }
+}
+
 /** 记一笔失败原因，并**通知界面重渲染**（否则按钮上的原因永远停在"正在尝试…"） */
 function noteFailure(locator, reason) {
   if (!locator) return
