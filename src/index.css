@@ -1954,6 +1954,26 @@ button:disabled {
   html:not([data-surface]) .app-container:has(.chat-thread) main {
     display: flex;
     flex-direction: column;
+    /* ⚠️ 2026-11-16 使用者实测：会话页顶部钻进"灵动岛/刘海"，返回按钮点不到。
+       原因：其它页面的留白在 `.app-header` 上，而会话页没有那个头部，
+       于是 main 的 padding-top 是 **0**，加上 `.chat-thread { margin-top: -8px }`
+       → 实测 header.top = -8、返回按钮 top = -3（有一截在屏幕外）。
+       这里直接给 main 补上安全区留白（--safe-top 跟随 env(safe-area-inset-top)）。 */
+    padding-top: calc(var(--safe-top, 0px) + 6px);
+  }
+
+  /* 会话页内容不要再往上顶（那条 -8px 是给"有 app-header"的页面省空间的） */
+  html:not([data-surface]) .app-container:has(.chat-thread) .chat-thread {
+    margin-top: 0;
+  }
+
+  /* 返回按钮的点击热区补到 44px（iOS 的最小可点尺寸），否则贴边时很难点中 */
+  .chat-back-btn {
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 }
 
