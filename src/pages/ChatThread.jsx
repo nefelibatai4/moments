@@ -612,6 +612,18 @@ export default function ChatThread() {
     })
   }
 
+  // 编辑某条消息时把光标放到**末尾**（2026-11-16：autoFocus 在 Chrome 里落在最前面）
+  const editInputRef = useRef(null)
+  useEffect(() => {
+    if (!editing) return
+    const el = editInputRef.current
+    if (!el) return
+    el.focus()
+    const end = el.value.length
+    try { el.setSelectionRange(end, end) } catch { /* 忽略 */ }
+    el.scrollTop = el.scrollHeight
+  }, [editing?.id])
+
   // ── 键盘弹起时把"最新消息"钉在底部（2026-11-16 使用者实测反馈）────────────
   // 现象（我复现了）：手机上点输入框、键盘弹起后外壳会正确收缩到 --app-h=480，
   // 输入框也贴在键盘上方；但**消息列表没有跟着滚到底** —— 实测 scrollTop 停在 1333，
@@ -1152,7 +1164,9 @@ export default function ChatThread() {
                           value={editing.text}
                           rows={2}
                           maxLength={1000}
-                          autoFocus
+                          // 光标位置由 effect 统一放到末尾（autoFocus 在 Chrome 里会落在最前面）
+                          ref={editInputRef}
+                          data-chat-edit
                           onChange={(e) => setEditing((s) => ({ ...s, text: e.target.value }))}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' && !e.shiftKey) {

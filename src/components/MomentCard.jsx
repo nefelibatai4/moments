@@ -175,6 +175,18 @@ export default function MomentCard({
 
   useEffect(() => () => { if (brushRaf.current) cancelAnimationFrame(brushRaf.current) }, [])
 
+  // 点"编辑"时把光标放到**末尾**（2026-11-16 使用者实测：autoFocus 会把光标放在最前面）
+  const editRef = useRef(null)
+  useEffect(() => {
+    if (!editing) return
+    const el = editRef.current
+    if (!el) return
+    el.focus()
+    const end = el.value.length
+    try { el.setSelectionRange(end, end) } catch { /* 某些浏览器/输入法下会抛，忽略 */ }
+    el.scrollTop = el.scrollHeight
+  }, [editing])
+
   function startEdit() {
     setDraft(moment.content ?? '')
     setDraftColor(normalizeCardColor(moment.card_color))
@@ -302,11 +314,14 @@ export default function MomentCard({
       {editing ? (
         <form className="moment-edit-form" onSubmit={handleSaveEdit}>
           <textarea
+            ref={editRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             rows={3}
             maxLength={20000}
-            autoFocus
+            data-moment-edit
+            // 不再用 autoFocus：Chrome 里它会把握把光标放在**位置 0**（第一句话前面）；
+            // 光标位置统一由上面的 effect 放到末尾
           />
           <div className="card-color-row" role="group" aria-label="卡片颜色">
             {CARD_COLORS.map((c) => (
