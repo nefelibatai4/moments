@@ -612,6 +612,46 @@ export default function ChatThread() {
     })
   }
 
+  // ── 键盘弹起时把"最新消息"钉在底部（2026-11-16 使用者实测反馈）────────────
+  // 现象（我复现了）：手机上点输入框、键盘弹起后外壳会正确收缩到 --app-h=480，
+  // 输入框也贴在键盘上方；但**消息列表没有跟着滚到底** —— 实测 scrollTop 停在 1333，
+  // 而到底需要 1697，差 364px，正好是键盘高度那一截。于是"打字时看不到最新那部分"。
+  // 做法：在视口变化/聚焦之前记下"原本是否在底部"，变化后用几帧把列表回到底部；
+  // 原本就在翻历史就**不动**（否则会打断回看）。
+  useEffect(() => {
+    const el = msgListRef.current
+    if (!el) return undefined
+    let wasNearBottom = true
+
+    const nearBottom = () => el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    const remember = () => { wasNearBottom = nearBottom() }
+    const pinIfNeeded = () => {
+      if (!wasNearBottom) return
+      el.scrollTop = el.scrollHeight
+    }
+    const handleViewportChange = () => {
+      remember()
+      // 键盘动画有几百毫秒，并且在 iOS 上可能只发一次中间态 → 多补几帧
+      requestAnimationFrame(pinIfNeeded)
+      setTimeout(pinIfNeeded, 120)
+      setTimeout(pinIfNeeded, 400)
+    }
+
+    remember()
+    window.visualViewport?.addEventListener('resize', handleViewportChange)
+    window.visualViewport?.addEventListener('scroll', handleViewportChange)
+    window.addEventListener('resize', handleViewportChange)
+    document.addEventListener('focusin', handleViewportChange, true)
+    return () => {
+      window.visualViewport?.removeEventListener('resize', handleViewportChange)
+      window.visualViewport?.removeEventListener('scroll', handleViewportChange)
+      window.removeEventListener('resize', handleViewportChange)
+      document.removeEventListener('focusin', handleViewportChange, true)
+    }
+    // ⚠️ 依赖里必须有 loading：`.chat-messages` 要等数据到了才渲染，
+    //    挂载那一刻 ref 还是 null —— 只写 `[]` 的话这段逻辑**永远不会生效**（实测踩到）。
+  }, [loading])
+
   async function handleSubmit(e) {
     e.preventDefault()
     if ((!content.trim() && !imageFile && !fileToSend && !videoToSend) || sending) return
