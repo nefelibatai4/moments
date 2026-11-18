@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
+import { onUnlockChange } from '../lib/crypto'
 import {
   decryptGroupRow, isPresenceFresh, listGroupThreads, loadGroupMessages,
   loadGroupPresence, markGroupSeen, recallGroupMessage, sendGroupMessage,
@@ -45,6 +46,8 @@ export default function GroupThread() {
   const [messages, setMessages] = useState([])
   const [key, setKey] = useState(null)
   const [loading, setLoading] = useState(true)
+  // 冷启动时"登录好了但钥匙还在派生"——解一次失败就等解锁事件再来一次，别让人对着"钥匙不在本机"发呆
+  const [retryTick, setRetryTick] = useState(0)
   const [error, setError] = useState(null)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
@@ -86,7 +89,12 @@ export default function GroupThread() {
       requestAnimationFrame(() => scrollToBottom(false))
     })()
     return () => { cancelled = true }
-  }, [me, scrollToBottom])
+  }, [me, scrollToBottom, retryTick])
+
+  useEffect(() => {
+    const off = onUnlockChange(() => setRetryTick((n) => n + 1))
+    return off
+  }, [])
 
   // ── 实时：新消息 / 状态更新 ─────────────────────────────────
   useEffect(() => {
