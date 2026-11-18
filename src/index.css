@@ -1967,13 +1967,26 @@ button:disabled {
     margin-top: 0;
   }
 
-  /* 返回按钮的点击热区补到 44px（iOS 的最小可点尺寸），否则贴边时很难点中 */
+  /* 返回按钮的点击热区补到 44px（iOS 的最小可点尺寸），否则贴边时很难点中。
+     ⚠️ 但**不能让它把头部撑高**：2026-09-22 使用者要求头部收窄（≤46px），
+     直接给 44px 的 min-height 会把头部顶到 57px —— 两条需求打架（2026-11-18 实测踩到）。
+     解法：按钮绝对定位、自己 44×44（热区与可点矩形都够），但**不参与头部高度**，
+     头部用 padding-left 给它让出位置。 */
+  .chat-thread-header {
+    position: relative;
+    padding-left: 48px;
+  }
   .chat-back-btn {
+    position: absolute;
+    left: 6px;
+    top: 50%;
+    transform: translateY(-50%);
     min-width: 44px;
     min-height: 44px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    z-index: 2;
   }
 }
 
