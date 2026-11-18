@@ -1972,21 +1972,17 @@ button:disabled {
      直接给 44px 的 min-height 会把头部顶到 57px —— 两条需求打架（2026-11-18 实测踩到）。
      解法：按钮绝对定位、自己 44×44（热区与可点矩形都够），但**不参与头部高度**，
      头部用 padding-left 给它让出位置。 */
-  .chat-thread-header {
-    position: relative;
-    padding-left: 48px;
-  }
+  /* ⚠️ 这里**不再**用绝对定位/负边距去凑：基础规则在文件更后面，
+     同权重会被它覆盖（2026-11-19 实测：标题贴到左边缘、返回箭头和标题叠在一起，
+     看起来就像"名称和返回按钮重复了"）。改成：按钮留在流里、44×44，
+     用负的上下外边距把它从头部高度里"借"回来，头部仍是 43px。 */
   .chat-back-btn {
-    position: absolute;
-    left: 6px;
-    top: 50%;
-    transform: translateY(-50%);
     min-width: 44px;
     min-height: 44px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    z-index: 2;
+    margin: -7px 2px -7px 0;
   }
 }
 
@@ -4726,3 +4722,68 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
   font-size: 12px;
   line-height: 1.5;
 }
+
+/* ── 群聊：输入框上方的「艾特条」────────────────────────────────
+   2026-11-19 使用者："在输入框上面放他们的头像，以此来区分这句话着重艾特谁"。
+   点一下头像 = 在输入框插入 @昵称（不是发一条消息），所以做成按钮 + 头像 + 名字。
+   ⚠️ 高度要克制：手机键盘弹起后这一行也在，太高会把消息区挤没。 */
+.group-mention-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: 0 0 auto;
+}
+.group-mention-bar::-webkit-scrollbar { display: none; }
+.group-mention-hint {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-tertiary, rgba(0, 0, 0, 0.45));
+  letter-spacing: 0.02em;
+}
+.group-mention-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px 3px 3px;
+  border-radius: 999px;
+  border: 1px solid var(--border-standard, rgba(0, 0, 0, 0.1));
+  background: var(--bg-elevated, rgba(127, 127, 127, 0.08));
+  color: var(--text-primary, inherit);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.group-mention-chip:active { transform: scale(0.97); }
+/* Ace 那个用暖色描边，和"人"区分开 */
+.group-mention-chip.is-ai {
+  border-color: rgba(255, 159, 28, 0.5);
+  background: rgba(255, 159, 28, 0.1);
+}
+.group-mention-avatar {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10.5px;
+  background: rgba(127, 127, 127, 0.18);
+  color: var(--text-secondary, inherit);
+}
+.group-mention-avatar img,
+.group-sender-avatar img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: inherit;
+}
+.group-mention-name { max-width: 84px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 群入口的占位行（第一帧就有，解密完自动换成真实内容） */
+.chat-group-item.is-placeholder { pointer-events: none; }
+.chat-group-item.is-placeholder .chat-list-preview { opacity: 0.6; }

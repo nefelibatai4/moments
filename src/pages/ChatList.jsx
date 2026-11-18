@@ -5,7 +5,7 @@ import { useAuth } from '../lib/AuthContext'
 import SignedImage from '../components/SignedImage'
 import { prefetchThread, readChatListSnapshot, writeChatListSnapshot } from '../lib/chatCache'
 import { decryptForPeer } from '../lib/crypto'
-import { loadGroupSummaries } from '../lib/groupChat'
+import { loadGroupSummaries, readGroupSnapshot } from '../lib/groupChat'
 import { stickerIdFromContent } from '../lib/stickers'
 
 function formatChatTime(iso) {
@@ -31,6 +31,8 @@ export default function ChatList() {
   const session = useAuth()
   const [conversations, setConversations] = useState([])
   const [groups, setGroups] = useState([])
+  // 群那一行**从第一帧就要在**：没有快照时先画一个占位行，解密完再填内容
+  const [groupLoading, setGroupLoading] = useState(true)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [search, setSearch] = useState('')
@@ -40,10 +42,12 @@ export default function ChatList() {
   useLayoutEffect(() => {
     const uid = session?.user?.id
     if (!uid) return
+    // 私聊和群聊**都要第一帧就在**：群入口用本机快照先画出来，解密结果随后覆盖
     const cached = readChatListSnapshot(uid)
-    if (!cached) return
-    setConversations((prev) => (prev.length > 0 ? prev : cached))
-    setLoading(false)
+    if (cached) setConversations((prev) => (prev.length > 0 ? prev : cached))
+    const cachedGroups = readGroupSnapshot(uid)
+    if (cachedGroups?.summaries) setGroups((prev) => (prev.length > 0 ? prev : cachedGroups.summaries))
+    if (cached || cachedGroups?.summaries) setLoading(false)
   }, [session?.user?.id])
 
   useEffect(() => {
@@ -134,10 +138,14 @@ export default function ChatList() {
 
         setConversations(merged)
         writeChatListSnapshot(me, merged)
+        // 联系人先出来就能结束"加载中"；群那行有自己的占位行，不用等解密
+        setLoading(false)
       }
-      // 群摘要最后填充：它自己解密，失败了也只是少一行，不影响上面的联系人
-      const gs = await groupPromise
-      if (gs?.summaries) setGroups(gs.summaries)
+      // 群摘要**不跟着联系人一起等**：它自己解密，先到先填；失败了也只是少一行
+      groupPromise.then((gs) => {
+        if (gs?.summaries) setGroups(gs.summaries)
+        setGroupLoading(false)
+      })
       setLoading(false)
     }
     load()
@@ -169,8 +177,20 @@ export default function ChatList() {
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
-      {shownGroups.length > 0 && (
+      {(shownGroups.length > 0 || groupLoading) && (
         <ul className="chat-list chat-group-list">
+          {shownGroups.length === 0 && groupLoading && (
+            <li>
+              <span className="chat-list-item chat-group-item is-placeholder" aria-hidden="true">
+                <span className="chat-list-avatar chat-group-avatar"><span className="chat-group-avatar-glyph">❀</span></span>
+                <span className="chat-list-info">
+                  <span className="chat-list-name">私密圈后花园<span className="chat-group-count">3 人</span></span>
+                  <span className="chat-list-preview">正在打开…</span>
+                </span>
+                <span className="chat-list-time" />
+              </span>
+            </li>
+          )}
           {shownGroups.map(({ thread: g, latest, unread, lastTime }) => (
             <li key={g.id}>
               <Link to="/garden" className="chat-list-item chat-group-item" data-group-id={g.id}>

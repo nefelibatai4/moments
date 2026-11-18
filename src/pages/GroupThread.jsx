@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
+import SignedImage from '../components/SignedImage'
 import { onUnlockChange } from '../lib/crypto'
 import {
   decryptGroupRow, isPresenceFresh, listGroupThreads, loadGroupMessages,
@@ -171,6 +172,23 @@ export default function GroupThread() {
     return { m, showLabel: label !== prev }
   }), [messages])
 
+  // 点谁的头像就在输入框里插入 @谁（并聚焦、光标放到最后）
+  const mention = (member) => {
+    const token = `@${member.nickname} `
+    const el = inputRef.current
+    const start = el?.selectionStart ?? draft.length
+    const end = el?.selectionEnd ?? draft.length
+    const next = `${draft.slice(0, start)}${token}${draft.slice(end)}`
+    setDraft(next.slice(0, 1000))
+    requestAnimationFrame(() => {
+      el?.focus()
+      const pos = Math.min(next.length, 1000)
+      try { el?.setSelectionRange(pos, pos) } catch { /* 老浏览器 */ }
+    })
+  }
+
+  const others = useMemo(() => (thread?.members ?? []).filter((m) => m.id !== me), [thread, me])
+
   const send = async (e) => {
     e?.preventDefault()
     const text = draft.trim()
@@ -276,7 +294,13 @@ export default function GroupThread() {
                 </div>
               ) : (
                 <div className={`chat-bubble-row ${isMine ? 'mine' : 'theirs'}${mine?.is_ai && !isMine ? ' from-ai' : ''}`}>
-                  {!isMine && <span className={`group-sender-avatar${mine?.is_ai ? ' is-ai' : ''}`}>{initial(mine?.nickname)}</span>}
+                  {!isMine && (
+                    <span className={`group-sender-avatar${mine?.is_ai ? ' is-ai' : ''}`}>
+                      {mine?.avatar_url
+                        ? <SignedImage bucket="avatars" stored={mine.avatar_url} alt="" />
+                        : initial(mine?.nickname)}
+                    </span>
+                  )}
                   <div className={`chat-bubble ${isMine ? 'mine' : 'theirs'}`}>
                     {!isMine && (
                       <span className="group-sender-name">
@@ -355,6 +379,31 @@ export default function GroupThread() {
         <div className="chat-reply-bar">
           <span className="chat-reply-bar-text">引用：{(replyTo.body?.text ?? '').slice(0, 40)}</span>
           <button type="button" className="chat-reply-bar-cancel" onClick={() => setReplyTo(null)} aria-label="取消引用">×</button>
+        </div>
+      )}
+
+      {/* 输入框上方：点谁的头像就 @谁。群里"这句话是说给谁听的"必须一眼能选，
+          不然只能靠手打 @，还得记住昵称（2026-11-19 使用者反馈） */}
+      {others.length > 0 && (
+        <div className="group-mention-bar" role="group" aria-label="艾特谁">
+          <span className="group-mention-hint">艾特</span>
+          {others.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              className={`group-mention-chip${m.is_ai ? ' is-ai' : ''}`}
+              onClick={() => mention(m)}
+              title={`插入 @${m.nickname}`}
+              data-mention={m.is_ai ? 'ai' : 'human'}
+            >
+              <span className="group-mention-avatar">
+                {m.avatar_url
+                  ? <SignedImage bucket="avatars" stored={m.avatar_url} alt="" />
+                  : initial(m.nickname)}
+              </span>
+              <span className="group-mention-name">{m.nickname}</span>
+            </button>
+          ))}
         </div>
       )}
 

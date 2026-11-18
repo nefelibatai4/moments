@@ -205,11 +205,35 @@ export function isPresenceFresh(iso, now = Date.now()) {
  * 给聊天列表用的群摘要：最后一条（状态气泡不算）+ 未读数。
  * 只取每个群最近 40 条，避免为了一个角标把整段历史拉下来（流量按条计）。
  */
+const SNAPSHOT_PREFIX = 'moments_group_list_v1'
+
+/** 上次加载到的群摘要（本机快照）：聊天列表要**第一帧就有群入口**，不能等解密 */
+export function readGroupSnapshot(uid) {
+  try {
+    const raw = localStorage.getItem(`${SNAPSHOT_PREFIX}:${uid}`)
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+
+function writeGroupSnapshot(uid, summaries) {
+  try {
+    // 只存列表要用的字段（别把整段消息塞进 localStorage）
+    const slim = summaries.map((s) => ({
+      thread: { id: s.thread.id, name: s.thread.name, created_by: s.thread.created_by, memberCount: s.thread.memberCount },
+      latest: s.latest ? { body: s.latest.body, created_at: s.latest.created_at, sender_id: s.latest.sender_id } : null,
+      unread: s.unread,
+      lastTime: s.lastTime,
+    }))
+    localStorage.setItem(`${SNAPSHOT_PREFIX}:${uid}`, JSON.stringify({ at: Date.now(), summaries: slim }))
+  } catch { /* 隐私模式 */ }
+}
+
 export async function loadGroupSummaries(uid) {
   const { threads, error } = await listGroupThreads()
   if (error) return { summaries: [], error }
-  const out = []
-  for (const t of threads) {
+
+  // 解密并行做：40 条串行 await 会让"群入口出现"晚 1–2 秒（2026-11-19 使用者反馈）
+  const out = await Promise.all(threads.map(async (t) => {
     const key = await groupKeyFor(t)
     const { data } = await supabase
       .from('group_messages')
@@ -217,19 +241,19 @@ export async function loadGroupSummaries(uid) {
       .eq('thread_id', t.id)
       .order('created_at', { ascending: false })
       .limit(40)
-    const rows = []
-    for (const row of (data ?? [])) {
+    const rows = await Promise.all((data ?? []).map(async (row) => {
       const plain = row.recalled_at ? null : await openGroupText(key, row)
-      rows.push({ ...row, body: row.recalled_at ? { kind: 'recalled' } : decodeGroupBody(row, plain) })
-    }
+      return { ...row, body: row.recalled_at ? { kind: 'recalled' } : decodeGroupBody(row, plain) }
+    }))
     const latest = rows.find((r) => r.body.kind !== 'ai_state') ?? null
     const seenAt = readGroupSeen(uid, t.id)
-    out.push({
+    return {
       thread: t,
       latest,
       unread: countUnread(rows, uid, seenAt),
       lastTime: latest?.created_at ?? rows[0]?.created_at ?? t.created_at,
-    })
-  }
+    }
+  }))
+  writeGroupSnapshot(uid, out)
   return { summaries: out, error: null }
 }
