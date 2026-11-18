@@ -14,6 +14,7 @@ import { fulfillRecoveryRequest, onUnlockChange, recoveryStatus, unlockStateVers
 import UsageCard from '../components/UsageCard'
 import PeekModeSection from '../components/PeekModeSection'
 import UnreadStyleSection from '../components/UnreadStyleSection'
+import TypingToggle from '../components/TypingToggle'
 
 // 扩展只能在桌面版 Chrome 里安装：iOS 壳里没有「解压 + 装扩展」这个概念。
 // 原生端不显示下载按钮，但也不让它静默消失（那样会被当成 bug），改显示一句该去哪做。
@@ -365,6 +366,9 @@ export default function Profile() {
 
       {/* 未读怎么提示：数字 / 小红点 / 图标变色（本机偏好，会下发给浏览器扩展） */}
       <UnreadStyleSection />
+
+      {/* 「对方正在输入」开关（默认开） */}
+      <TypingToggle />
 
       {/* 隐身预览：**只对使用者本人显示**（见 lib/peekMode.js 的白名单） */}
       <PeekModeSection session={session} />

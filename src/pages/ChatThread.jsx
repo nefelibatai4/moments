@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient'
 import { isPanelSurface } from '../lib/surface'
 import { requestUnlock } from '../lib/unlockSignal'
 import { ensurePeekLoaded, isPeekOn } from '../lib/peekMode'
+import { SHOW_MS, createTypingSender } from '../lib/typingStatus'
 import { useAuth } from '../lib/AuthContext'
 import { safeStorageKey } from '../lib/sanitizeFilename'
 import { compressImage } from '../lib/compressImage'
@@ -358,6 +359,11 @@ export default function ChatThread() {
   // 私聊图片：签名 → 下载 → 用**会话密钥**在本机解密（见 lib/imageCrypto.js）
   // mediaRetry：点了"图片没能显示，点这里重试"就 +1，让取图 effect 重跑一次
   const [mediaRetry, setMediaRetry] = useState(0)
+  // 「对方正在输入」：收到广播就显示，5 秒没再收到就消失
+  const [peerTyping, setPeerTyping] = useState(false)
+  const typingTimerRef = useRef(null)
+  const typingSenderRef = useRef(null)
+  const channelRef = useRef(null)
   const signedImages = useContentImageUrls(chatImageUrls, {
     resolveKey: () => conversationKey(userId),
     refreshKey: mediaRetry,
@@ -444,6 +450,15 @@ export default function ChatThread() {
 
     const channel = supabase
       .channel(`messages-${[me, userId].sort().join('-')}`)
+      // 「对方正在输入」：同一条通道上加 broadcast，不额外建连接
+      .on('broadcast', { event: 'typing' }, (payload) => {
+        const from = payload?.payload?.from
+        if (!from || from !== userId) return
+        setPeerTyping(true)
+        // 每收到一次就重置 5 秒窗口（对方停了就自己消失）
+        clearTimeout(typingTimerRef.current)
+        typingTimerRef.current = setTimeout(() => setPeerTyping(false), SHOW_MS)
+      })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
         const m = payload.new
         if (
@@ -451,6 +466,11 @@ export default function ChatThread() {
           (m.sender_id === userId && m.recipient_id === me)
         ) {
           setRawMessages((prev) => [...prev, m])
+          // 对方消息已经到了，就别再显示"正在输入"
+          if (m.sender_id === userId) {
+            clearTimeout(typingTimerRef.current)
+            setPeerTyping(false)
+          }
           // If it's from the other person and the page is in front, mark read immediately
           if (m.sender_id === userId && isPageActive() && !isPeekOn()) {
             supabase
@@ -478,8 +498,14 @@ export default function ChatThread() {
       })
       .subscribe()
 
+    channelRef.current = channel
+    typingSenderRef.current = createTypingSender(channel, me)
+
     return () => {
       cancelled = true
+      clearTimeout(typingTimerRef.current)
+      channelRef.current = null
+      typingSenderRef.current = null
       document.removeEventListener('visibilitychange', onBecomeActive)
       window.removeEventListener('focus', onBecomeActive)
       supabase.removeChannel(channel)
@@ -980,6 +1006,9 @@ export default function ChatThread() {
           {otherProfile?.nickname}
           <span className="chat-header-card-hint" aria-hidden="true">›</span>
         </Link>
+        {peerTyping && (
+          <span className="chat-typing" data-typing="1">正在输入…</span>
+        )}
       </div>
 
       {/* 隐身预览开启时给一条常驻提示（使用者本人专属，见 lib/peekMode.js） */}
@@ -1401,7 +1430,11 @@ export default function ChatThread() {
           placeholder="发消息…"
           title={isTouchPrimary ? '点右侧「发送」发送' : 'Enter 发送，Shift + Enter 换行'}
           value={content}
-          onChange={(e) => setContent(e.target.value)}
+          onChange={(e) => {
+            setContent(e.target.value)
+            // 有内容才算"在打字"（清空/只按空格不发）
+            if (e.target.value.trim()) typingSenderRef.current?.()
+          }}
           maxLength={1000}
           onKeyDown={(e) => {
             // 桌面端 Enter 直接发送；触屏端不拦，留给换行（见 isTouchPrimary 的说明）

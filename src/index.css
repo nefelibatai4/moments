@@ -4502,3 +4502,19 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
   cursor: pointer;
 }
 .unread-style-option.is-active { background: var(--text-primary, #17191c); color: var(--bg-primary, #fff); border-color: transparent; }
+
+/* 「对方正在输入…」——昵称右边的小字（微信那种），2026-11-16 */
+.chat-typing {
+  margin-left: 6px;
+  font-size: 11.5px;
+  color: var(--text-tertiary, rgba(0, 0, 0, 0.45));
+  letter-spacing: 0.02em;
+  animation: chat-typing-fade 1.6s ease-in-out infinite;
+}
+@keyframes chat-typing-fade {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-typing { animation: none; opacity: 0.8; }
+}
