@@ -255,6 +255,9 @@ export default function GroupThread() {
           const mine = members.get(m.sender_id)
           const body = m.body ?? { kind: 'locked' }
           const canRecall = isMine && body.kind !== 'recalled' && Date.now() - new Date(m.created_at).getTime() < RECALL_WINDOW_MS
+          // 引用对**任何人的**文字消息都开放（只让引用自己的，等于半个功能）
+          const canQuote = body.kind === 'text'
+          const hasMenu = canRecall || canQuote
           const quoted = m.reply_to_id ? byId.get(m.reply_to_id) : null
 
           return (
@@ -294,7 +297,7 @@ export default function GroupThread() {
                         {body.streaming ? <span className="group-stream-caret" aria-hidden="true" /> : null}
                       </span>
                     )}
-                    {canRecall && (
+                    {hasMenu && (
                       <div className="chat-msg-menu-wrap">
                         <button
                           type="button"
@@ -306,8 +309,12 @@ export default function GroupThread() {
                         </button>
                         {menuFor === m.id && (
                           <div className={`chat-msg-menu${isMine ? ' align-right' : ''}`} role="menu">
-                            <button type="button" role="menuitem" onClick={() => { setReplyTo(m); setMenuFor(null); inputRef.current?.focus() }}>引用</button>
-                            <button type="button" role="menuitem" className="danger" onClick={() => doRecall(m.id)}>撤回</button>
+                            {canQuote && (
+                              <button type="button" role="menuitem" onClick={() => { setReplyTo(m); setMenuFor(null); inputRef.current?.focus() }}>引用</button>
+                            )}
+                            {canRecall && (
+                              <button type="button" role="menuitem" className="danger" onClick={() => doRecall(m.id)}>撤回</button>
+                            )}
                           </div>
                         )}
                       </div>
