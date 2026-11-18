@@ -1151,7 +1151,9 @@ export default function ChatThread() {
                           {/* 诊断计数：路(path)、试(try)、无钥(noKey)、缓存(cache) —— 只在这一行里，不加界面噪音 */}
                           {(() => {
                             const d = mediaDiagnostics(storagePathFromUrl(m.image_url))
-                            return ` · p${d.path} t${d.attempts} k${d.noKey} c${d.cached ? 1 : 0}`
+                            // inList：这条消息的图**在不在待取清单里**（不在就说明是列表/解密环节把它丢了）
+                            const inList = chatImageUrls.includes(m.image_url) ? 1 : 0
+                            return ` · p${d.path} l${inList} t${d.attempts} k${d.noKey} c${d.cached ? 1 : 0}`
                           })()}
                         </span>
                       </button>
