@@ -170,6 +170,7 @@ export function lockCrypto() {
   S.noPeerKeyUntil.clear()
   S.pubCache.clear()
   S.momentKeys.clear()
+  groupKeys.clear()
   bumpUnlock()
 }
 export function unlockedDek() {
@@ -608,12 +609,15 @@ export const CIRCLE_SCHEME = 'v2-circle'
 // 每条动态的内容密钥缓存也放在上面的单例 S 里
 
 /** 成员清单 + "能不能加密"：**所有已激活成员的公钥世代都得对得上**，否则不加密。
- *  理由：圈子是"所有人都能看"，任何一个成员解不开 = 这个人看不到内容，宁可先明文。 */
+ *  理由：圈子是"所有人都能看"，任何一个成员解不开 = 这个人看不到内容，宁可先明文。
+ *  ⚠️ AI 成员（is_ai）**不算圈子里的"人"**：它没有客户端、不读动态；
+ *     给它包一把 CEK 等于把钥匙交给用不上它的人，还会被它拖进安全阀（少一把钥 → 整圈明文）。 */
 export async function circleReady() {
   const { data, error } = await supabase
     .from('profiles')
     .select('id, public_key, key_scheme')
     .eq('approved', true)
+    .eq('is_ai', false)
   if (error) return { ready: false, members: [] }
   const members = data ?? []
   const ready = members.length > 0 && members.every((m) => !!m.public_key && m.key_scheme === KEY_SCHEME)
@@ -732,6 +736,111 @@ export async function decryptCircleText(cek, row) {
   }
 }
 
+// ── 群聊密钥（阶段 3：私密圈后花园）────────────────────────────
+/**
+ * 群聊用**一把对称的群密钥**（32 字节 AES-GCM），而不是每两条算一次 ECDH：
+ * 群消息是"每个人都能看"，一把钥就够；谁来谁走只需要把群密钥重新包一份给他。
+ * 包裹沿用动态那套 ECDH + HKDF（`moments-wrap-v1:<pairTag>` 盐），只把 info 换成群聊专用，
+ * 这样同一个人同一对钥匙也不会在私聊/动态/群聊之间复用同一把包裹密钥。
+ */
+const GROUP_INFO = 'moments-group-v1'
+export const GROUP_SCHEME = 'v3-group'
+
+/** 群密钥缓存：threadId → CryptoKey（内存，锁定登录即清空） */
+const groupKeys = new Map()
+export function clearGroupKeys() { groupKeys.clear() }
+
+/** 取（并缓存）某个群的群密钥：解 `group_keys` 里"我自己那一份"包裹。
+ *  `wrapperId` 是当初包这份钥匙的人（建群人）。解不开返回 null（不抛）。
+ */
+export async function groupKey(threadId, wrapperId = null) {
+  if (!threadId) return null
+  if (groupKeys.has(threadId)) return groupKeys.get(threadId)
+  if (!S.identity?.privateKey || !S.userId) return null
+  const { data, error } = await supabase
+    .from('group_keys')
+    .select('iv, wrapped, wrapped_by')
+    .eq('thread_id', threadId)
+    .eq('user_id', S.userId)
+    .maybeSingle()
+  if (error || !data) return null
+  // ⚠️ 包裹是**谁**做的决定用谁的公钥去解：一手分发的群钥匙可能由建群人包，
+  //    也可能由别人补包（例如 AI 初始化时替全群包的那一轮）。以行上的 wrapped_by 为准。
+  const tag = data.wrapped_by ?? wrapperId
+  if (!tag) return null
+  const jwk = await peerKeyInfo(tag).catch(() => null)
+  if (!jwk) return null
+  try {
+    const kek = await deriveWrapKek(tag, jwk, ['unwrapKey'], GROUP_INFO)
+    const key = await crypto.subtle.unwrapKey(
+      'raw', fromB64(data.wrapped), kek,
+      { name: 'AES-GCM', iv: fromB64(data.iv) },
+      { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'],
+    )
+    groupKeys.set(threadId, key)
+    return key
+  } catch {
+    return null
+  }
+}
+
+/** 建群时生成群密钥并给每位成员包一份（只有建群人做这件事；已存在就沿用旧的，绝不重造）。 */
+export async function createGroupKey(threadId, members) {
+  if (!threadId || !S.identity?.privateKey || !S.userId) return null
+  const list = (members ?? []).filter((m) => m?.id && m?.public_key)
+  if (list.length === 0) return null
+  const { data: existing } = await supabase
+    .from('group_keys')
+    .select('iv')
+    .eq('thread_id', threadId)
+    .limit(1)
+  if (existing && existing.length > 0) return groupKey(threadId, S.userId)
+  const key = await crypto.subtle.importKey(
+    'raw', crypto.getRandomValues(new Uint8Array(32)),
+    { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'],
+  )
+  const rows = []
+  for (const m of list) {
+    const kek = await deriveWrapKek(m.id, m.public_key, ['wrapKey'], GROUP_INFO)
+    const iv = crypto.getRandomValues(new Uint8Array(12))
+    const wrapped = await crypto.subtle.wrapKey('raw', key, kek, { name: 'AES-GCM', iv })
+    rows.push({
+      thread_id: threadId, user_id: m.id, wrapped_by: S.userId,
+      iv: toB64(iv), wrapped: toB64(wrapped), scheme: GROUP_SCHEME,
+    })
+  }
+  const { error } = await supabase.from('group_keys').upsert(rows, { onConflict: 'thread_id,user_id' })
+  if (error) {
+    console.warn('[group] 写群密钥包裹失败:', error.message)
+    return null
+  }
+  groupKeys.set(threadId, key)
+  return key
+}
+
+/** 群消息加密：key 为群密钥（拿不到就返回 null，调用方决定退路） */
+export async function sealGroupText(key, text) {
+  if (!key) return null
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, te.encode(String(text)))
+  return { ciphertext: toB64(ct), iv: toB64(iv), scheme: GROUP_SCHEME }
+}
+
+/** 群消息解密：解不开返回 null（绝不把密文当正文显示） */
+export async function openGroupText(key, row) {
+  if (!row) return null
+  if (!row.ciphertext) return row.content ?? null
+  if (!key || !row.iv) return null
+  try {
+    const plain = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: fromB64(row.iv) }, key, fromB64(row.ciphertext),
+    )
+    return td.decode(plain)
+  } catch {
+    return null
+  }
+}
+
 /**
  * 时间线一屏数据的解密：动态正文 + **嵌套的评论**（评论与动态共用同一条 CEK）。
  * 一次查询把这一屏所有动态的包裹取回来，逐条解开（解不开就留 null → 显示占位）。
@@ -847,6 +956,8 @@ export async function ensureEscrowWraps() {
     .select('id, public_key, key_scheme')
     .eq('approved', true)
     .neq('id', S.userId)
+    // 恢复包裹只交给人：AI 成员（is_ai）不该拿到能解开人类身份私钥的东西
+    .eq('is_ai', false)
   if (error) return 0
   const members = (data ?? []).filter((m) => m.public_key && m.key_scheme === KEY_SCHEME)
   if (members.length === 0) return 0
@@ -910,6 +1021,8 @@ export async function createRecoveryRequest() {
       .select('id, public_key, key_scheme')
       .eq('approved', true)
       .neq('id', S.userId)
+      // 求助只发给人：AI 成员拿不到、也不该拿到别人的密钥恢复请求
+      .eq('is_ai', false)
     const rows = (data ?? [])
       .filter((m) => m.public_key && m.key_scheme === KEY_SCHEME)
       .map((m) => ({ owner_id: S.userId, holder_id: m.id, eph_public: pub }))
@@ -1220,6 +1333,10 @@ if (typeof window !== 'undefined') {
     momentKey,
     encryptCircleText,
     decryptCircleText,
+    groupKey,
+    createGroupKey,
+    sealGroupText,
+    openGroupText,
     cacheState: () => {
       try { return !!localStorage.getItem('moments_dek_cache_v1') } catch { return false }
     },

@@ -30,6 +30,7 @@ const Profile = lazy(() => import('./pages/Profile'))
 const Doll = lazy(() => import('./pages/Doll'))
 const ChatList = lazy(() => import('./pages/ChatList'))
 const ChatThread = lazy(() => import('./pages/ChatThread'))
+const GroupThread = lazy(() => import('./pages/GroupThread'))
 const UserProfile = lazy(() => import('./pages/UserProfile'))
 
 export default function App() {
@@ -129,6 +130,8 @@ export default function App() {
             <Route path="/doll" element={<RequireAuth><Doll /></RequireAuth>} />
             <Route path="/chat" element={<RequireAuth><ChatList /></RequireAuth>} />
             <Route path="/chat/:userId" element={<RequireAuth><ChatThread /></RequireAuth>} />
+            {/* 私密圈后花园：三人群聊（我 + 对方 + Ace）。群密钥一人一份，见 lib/groupChat.js */}
+            <Route path="/garden" element={<RequireAuth><GroupThread /></RequireAuth>} />
             <Route path="/user/:userId" element={<RequireAuth><UserProfile /></RequireAuth>} />
           </Routes>
         </Suspense>

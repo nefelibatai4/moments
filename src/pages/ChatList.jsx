@@ -5,6 +5,7 @@ import { useAuth } from '../lib/AuthContext'
 import SignedImage from '../components/SignedImage'
 import { prefetchThread, readChatListSnapshot, writeChatListSnapshot } from '../lib/chatCache'
 import { decryptForPeer } from '../lib/crypto'
+import { loadGroupSummaries } from '../lib/groupChat'
 import { stickerIdFromContent } from '../lib/stickers'
 
 function formatChatTime(iso) {
@@ -29,6 +30,7 @@ function truncate(text, max = 30) {
 export default function ChatList() {
   const session = useAuth()
   const [conversations, setConversations] = useState([])
+  const [groups, setGroups] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [search, setSearch] = useState('')
@@ -47,8 +49,10 @@ export default function ChatList() {
   useEffect(() => {
     async function load() {
       const me = session.user.id
+      // 群聊摘要和联系人并行拉；群加载失败不影响 1:1 列表
+      const groupPromise = loadGroupSummaries(me).catch(() => ({ summaries: [] }))
       const [profileRes, msgRes, unreadRes] = await Promise.all([
-        supabase.from('profiles').select('id, nickname, avatar_url').neq('id', me),
+        supabase.from('profiles').select('id, nickname, avatar_url, is_ai').neq('id', me),
         supabase
           .from('messages')
           .select('sender_id, recipient_id, content, ciphertext, iv, created_at, read_at, image_url, recalled_at')
@@ -102,7 +106,10 @@ export default function ChatList() {
           }
         }))
 
-        const merged = profileRes.data.map((p) => ({
+        // AI 成员（Ace）不进 1:1 列表：它住在「私密圈后花园」那个群里，
+        // 这里再出现一个"Ace 私聊"只会让人以为有两个入口。
+        const humans = (profileRes.data ?? []).filter((p) => !p.is_ai)
+        const merged = humans.map((p) => ({
           ...p,
           lastMsg: (p.id in decryptedLast)
             ? (decryptedLast[p.id] ?? '🔒 消息')
@@ -128,6 +135,9 @@ export default function ChatList() {
         setConversations(merged)
         writeChatListSnapshot(me, merged)
       }
+      // 群摘要最后填充：它自己解密，失败了也只是少一行，不影响上面的联系人
+      const gs = await groupPromise
+      if (gs?.summaries) setGroups(gs.summaries)
       setLoading(false)
     }
     load()
@@ -138,6 +148,13 @@ export default function ChatList() {
     const q = search.toLowerCase()
     return conversations.filter((c) => c.nickname.toLowerCase().includes(q))
   }, [conversations, search])
+
+  // 群聊行也吃搜索：按群名过滤（群里就一个，但别让搜索框装作没看见它）
+  const shownGroups = useMemo(() => {
+    if (!search.trim()) return groups
+    const q = search.toLowerCase()
+    return groups.filter((g) => (g.thread?.name ?? '').toLowerCase().includes(q))
+  }, [groups, search])
 
   if (loading) return <p className="status-text">加载中…</p>
   if (error) return <p className="status-text">加载失败：{error}</p>
@@ -152,6 +169,34 @@ export default function ChatList() {
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
+      {shownGroups.length > 0 && (
+        <ul className="chat-list chat-group-list">
+          {shownGroups.map(({ thread: g, latest, unread, lastTime }) => (
+            <li key={g.id}>
+              <Link to="/garden" className="chat-list-item chat-group-item" data-group-id={g.id}>
+                <span className="chat-list-avatar chat-group-avatar" aria-hidden="true">
+                  <span className="chat-group-avatar-glyph">❀</span>
+                </span>
+                <span className="chat-list-info">
+                  <span className="chat-list-name">
+                    {g.name}
+                    <span className="chat-group-count">{g.memberCount} 人</span>
+                    {unread > 0 && <span className="chat-unread-badge">{unread > 99 ? '99+' : unread}</span>}
+                  </span>
+                  <span className="chat-list-preview">
+                    {latest
+                      ? (latest.body?.kind === 'text'
+                        ? truncate(latest.body.text ?? '')
+                        : (latest.body?.kind === 'locked' ? '🔒 消息' : '[已撤回]'))
+                      : '还没有消息'}
+                  </span>
+                </span>
+                <span className="chat-list-time">{formatChatTime(lastTime)}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
       {filtered.length === 0 ? (
         <p className="status-text">还没有聊天记录。</p>
       ) : (
