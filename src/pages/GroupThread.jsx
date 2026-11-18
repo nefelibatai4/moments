@@ -55,6 +55,7 @@ export default function GroupThread() {
   const [menuFor, setMenuFor] = useState(null)
   const [atBottom, setAtBottom] = useState(true)
   const [aceOnline, setAceOnline] = useState(null)
+  const [notice, setNotice] = useState(null)
   const listRef = useRef(null)
   const inputRef = useRef(null)
   const keyRef = useRef(null)
@@ -181,6 +182,11 @@ export default function GroupThread() {
     const replyId = replyTo?.id ?? null
     setReplyTo(null)
     const res = await sendGroupMessage(t.id, keyRef.current, { kind: 'text', text }, replyId, me)
+    // 叫了它、但它不在线 → 当场说一句，别让人对着"• • •"等
+    if (aceOnline === false && /@\s*ace/i.test(text)) {
+      setNotice('Ace 现在不在线（它的桥没在跑），等它回来再叫一次。')
+      setTimeout(() => setNotice(null), 8000)
+    }
     setSending(false)
     if (res.error) { setError(res.error); setDraft(text); return }
     // 乐观插入（实时那条回来时按 id 替换，不会重复）
@@ -326,6 +332,10 @@ export default function GroupThread() {
           </button>
         )}
       </div>
+
+      {notice && (
+        <div className="group-notice" role="status" data-ace-offline-notice="1">{notice}</div>
+      )}
 
       {error && (
         <div className="group-error" role="alert">
