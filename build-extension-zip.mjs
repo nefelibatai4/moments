@@ -67,7 +67,11 @@ mkdirSync(dirname(OUT), { recursive: true })
 const zip = new AdmZip()
 // 过滤掉 macOS 的杂物：__MACOSX 资源分叉与 .DS_Store
 const JUNK = /(^|\/)(__MACOSX|\.DS_Store)(\/|$)/
-zip.addLocalFolder(SRC, TOP, (entry) => !JUNK.test(entry))
+// ⚠️ 私钥/环境文件**绝不能进分发包**：extension/.key.pem 是固定扩展 ID 用的私钥，
+//    谁拿到它就能签一个同 ID 的扩展冒充我们。CI 上没有这个文件，
+//    但本机构建会把它打进 zip（2026-11-19 实测发现），所以这里显式挡掉。
+const SECRET = /(^|\/)(\.env[^/]*|[^/]*\.pem|[^/]*\.key)$/
+zip.addLocalFolder(SRC, TOP, (entry) => !JUNK.test(entry) && !SECRET.test(entry))
 zip.writeZip(OUT)
 
 // 自检：打成什么样就核对什么样（读回产物，而不是信任写入时的返回值）
@@ -83,6 +87,9 @@ if (stray.length > 0) fail(`zip 里混进了顶层目录之外的东西：${stra
 
 const junk = entries.filter((e) => JUNK.test(e))
 if (junk.length > 0) fail(`zip 里混进了 macOS 杂物：${junk.slice(0, 5).join('、')}`)
+
+const secret = entries.filter((e) => SECRET.test(e))
+if (secret.length > 0) fail(`zip 里混进了私钥/环境文件：${secret.slice(0, 5).join('、')}`)
 
 if (!entries.includes(`${TOP}/manifest.json`)) {
   fail(`zip 里没有 ${TOP}/manifest.json —— 层级不对，Chrome 会装不上`)
