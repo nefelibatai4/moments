@@ -142,7 +142,7 @@ button:disabled {
 }
 
 .app-header {
-  /* 吸顶：往下刷动态时【动态/发布/私聊/我】始终可见，
+  /* 吸顶：往下刷动态时【动态/发布/私聊/实验室/我】始终可见，
      不用为了点「私聊」再滚回顶部（等于表格里的冻结首行）。
      顶部留白由它自己出（--app-pad-top），这样吸顶后上方不留缝。 */
   position: sticky;
@@ -2828,8 +2828,8 @@ html[data-surface="glass"] .app-header {
    导航的三种摆放（同一套 DOM，只改 CSS）
    ──────────────────────────────────────────────────────────────
    使用者 2026-09-24 的要求：
-     · 电脑整页  → 【动态/发布/私聊/我】在**左上角、从上到下**排成一条竖栏
-     · 手机      → 同样的四项挪到**底部**，像微博那样的 tab 栏（图标 + 文字）
+     · 电脑整页  → 【动态/发布/私聊/实验室/我】在**左上角、从上到下**排成一条竖栏
+     · 手机      → 同样的五项挪到**底部**，像微博那样的 tab 栏（图标 + 文字）
      · 插件面板  → **不变**（仍是顶部横排）
 
    三条分支的判据：
@@ -2891,7 +2891,7 @@ html[data-surface="glass"] .app-header {
     /* ⚠️ 必须显式写 flex-start：基础规则里为"顶部横排"写了
        `justify-content: space-between`（标题靠左、导航靠右），
        改成列方向后它会把首尾两项顶到**上下两端** ——
-       实测就是"发布/私聊/我 跑到竖栏最下面"。 */
+       实测就是"发布/私聊/实验室/我 跑到竖栏最下面"。 */
     justify-content: flex-start;
     gap: 14px;
     z-index: 30;
@@ -3045,8 +3045,16 @@ html:not([data-surface]) .app-container:not(.authed) {
     text-align: center;
   }
 
+  /* 「动态」是 h1 里的链接：让它铺满自己那一格，和 nav 里的四项一样宽。
+     不铺满的话可点区域只有图标那么宽（约 23px），五个 tab 也看着不等宽。 */
+  html:not([data-surface]) .app-header h1 .nav-item {
+    width: 100%;
+  }
+
   html:not([data-surface]) .app-header nav {
-    flex: 3 1 0;
+    /* 4 个链接 + h1 里的「动态」= 5 个 tab，nav 必须占 4 份，
+       每个 tab 才是等宽的 1/5（写 3 的话「动态」会明显比另外四个宽）。 */
+    flex: 4 1 0;
     display: flex;
     justify-content: space-around;
     gap: 0;

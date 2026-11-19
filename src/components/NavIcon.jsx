@@ -49,6 +49,16 @@ export default function NavIcon({ name }) {
       </svg>
     )
   }
+  if (name === 'lab') {
+    // 实验室：锥形瓶 + 一条液面线
+    return (
+      <svg {...base}>
+        <path d="M9.5 3h5" />
+        <path d="M10.5 3v5.8L6.3 16a2 2 0 0 0 1.7 3h8a2 2 0 0 0 1.7-3l-4.2-7.2V3" />
+        <path d="M8 14.5h8" />
+      </svg>
+    )
+  }
   // me：人像
   return (
     <svg {...base}>

@@ -31,6 +31,7 @@ const Doll = lazy(() => import('./pages/Doll'))
 const ChatList = lazy(() => import('./pages/ChatList'))
 const ChatThread = lazy(() => import('./pages/ChatThread'))
 const GroupThread = lazy(() => import('./pages/GroupThread'))
+const LabPage = lazy(() => import('./lab/LabPage'))
 const UserProfile = lazy(() => import('./pages/UserProfile'))
 
 export default function App() {
@@ -78,8 +79,8 @@ export default function App() {
       {/* ⚠️ 这里刻意**不改 DOM 结构**：同一套 `header > h1 + 指示器 + nav > a`
           由 CSS 按使用场景摆成三种样子（插件顶部横排 / 桌面左侧竖栏 / 手机底部 tab）。
           好处：① 插件形态完全不受影响；② 测试里的 `header nav a`、`.app-header`、
-          `.nav-chat-link` 选择器继续有效（e2e 里有一条断言"导航是 3 项"，把
-          「动态」留在 h1 里而不是塞进 nav，正是为了不打破它）。
+          `.nav-chat-link` 选择器继续有效（e2e 里对导航项数量有断言；2026-11-19
+          加【实验室】时已同步，把「动态」留在 h1 里而不是塞进 nav 的约定不变）。
           图标是内联 SVG：不占额外请求，也不给 innerText 添字，文字断言照样过。 */}
       <header className="app-header">
         <h1>
@@ -100,6 +101,11 @@ export default function App() {
               {unread > 0 && (
                 <span className="nav-unread-badge">{unread > 99 ? '99+' : unread}</span>
               )}
+            </Link>
+            {/* 实验室：未定稿的小功能先进这里；代码在 src/lab/（实验室模式的审计边界） */}
+            <Link to="/lab" className="nav-item">
+              <NavIcon name="lab" />
+              <span className="nav-label">实验室</span>
             </Link>
             <Link to="/profile" className="nav-item">
               <NavIcon name="me" />
@@ -132,6 +138,8 @@ export default function App() {
             <Route path="/chat/:userId" element={<RequireAuth><ChatThread /></RequireAuth>} />
             {/* 私密圈后花园：三人群聊（我 + 对方 + Ace）。群密钥一人一份，见 lib/groupChat.js */}
             <Route path="/garden" element={<RequireAuth><GroupThread /></RequireAuth>} />
+            {/* 实验室：未定稿的试验田。页面与样式都在 src/lab/，权限仍走 RequireAuth。 */}
+            <Route path="/lab" element={<RequireAuth><LabPage /></RequireAuth>} />
             <Route path="/user/:userId" element={<RequireAuth><UserProfile /></RequireAuth>} />
           </Routes>
         </Suspense>
