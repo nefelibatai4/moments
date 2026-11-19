@@ -63,3 +63,6 @@ lerna-debug.log*
 # 文件本身有用，保留在磁盘上，只是不该出现在仓库里
 SQL开发项目.code-workspace
 extension/.key.pem
+
+# Ace 的人物档案（由 scripts/ace-read.mjs 生成，只在本机）
+.ace-vault/
