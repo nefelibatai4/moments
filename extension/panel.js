@@ -37,7 +37,18 @@ function render(status) {
   const n = status.unread || 0
   const t = timeLabel(status.lastChecked)
   dot.className = 'dot ok'
-  statusText.textContent = n > 0 ? `${n} 条未读私信${t ? ` · ${t} 检查` : ''}` : `无未读${t ? ` · ${t} 检查` : ''}`
+  if (n > 0) {
+    // 数字是私信 + 群聊的总数；只有其中一种时就不啰嗦，两种都有才写括号
+    const dm = status.dmUnread || 0
+    const group = status.groupUnread || 0
+    const parts = []
+    if (dm > 0) parts.push(`私信 ${dm}`)
+    if (group > 0) parts.push(`群聊 ${group}`)
+    const detail = parts.length > 1 ? `（${parts.join(' · ')}）` : ''
+    statusText.textContent = `${n} 条未读${detail}${t ? ` · ${t} 检查` : ''}`
+  } else {
+    statusText.textContent = `无未读${t ? ` · ${t} 检查` : ''}`
+  }
 }
 
 async function load() {

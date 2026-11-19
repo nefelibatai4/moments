@@ -25,6 +25,9 @@ const PANEL_DEFAULT_SETTINGS = { mode: 'glass', tint: 'theme', blur: 12 }
 const PANEL_HEIGHT_KEY = 'panelHeightPx'
 const BADGE_COLOR = '#ff6363' // 与 app 的 --accent-red 一致
 const BADGE_MAX = 99
+// 群聊"读到哪"由网页的 content script 同步过来（见 content.js / groupChat.js）。
+// 扩展读不到网页的 localStorage，所以这里存一份 { [uid]: { [threadId]: iso } }。
+const GROUP_SEEN_KEY = 'groupSeen'
 
 // 未读展示方式（2026-11-12 使用者要求：可以从"数字"切成"图标变色"，并保留数字可选）
 //   number = 数字角标（默认）
@@ -34,6 +37,8 @@ const UNREAD_STYLE_KEY = 'unreadStyle'
 const DEFAULT_UNREAD_STYLE = 'number'
 let unreadStyle = DEFAULT_UNREAD_STYLE
 let lastUnreadCount = 0
+// 角标只显示总数，但 tooltip 要能说清"其中私信几条、群聊几条"
+let lastBreakdown = { dm: 0, group: 0 }
 let lastPainted = null
 const TINT_COLOR = '#ff5a5f'
 
@@ -97,25 +102,129 @@ async function ensureFreshToken(session) {
 // 依赖越少越好，而且 service worker 里没有 localStorage，用 supabase-js
 // 还得给它写一个 chrome.storage 适配器，不值得。
 //
-// 角标口径 = **未读私信**（messages.read_at 为空）。
+// 角标口径 = **未读私信 + 未读群聊**。
+//  - 私信：messages.read_at 为空（服务端已有已读回执）；
+//  - 群聊：群消息没有服务端已读表（群里就两个人 + AI，不做回执），
+//    已读位置记在网页 localStorage。content.js 把那份位置同步到 chrome.storage，
+//    这里再按"比已读时间新、不是自己发的"数行数。
+//    ⚠️ 群消息是密文，扩展解不开、也分不出 AI 状态行；这对角标是可接受的：
+//        AI 的"思考中"和它后面的回答是**同一行**（bridge 就地 UPDATE），不会重复计数。
 // 动态/评论/点赞那几张表没有「已读」概念，统计不准，所以不纳入口径。
-async function fetchUnreadCount(userId, accessToken) {
+
+const REST_HEADERS = (accessToken) => ({
+  apikey: SUPABASE_ANON_KEY,
+  Authorization: `Bearer ${accessToken}`,
+})
+
+async function fetchDmUnreadCount(userId, accessToken) {
   const url =
     `${SUPABASE_URL}/rest/v1/messages` +
     `?select=id&recipient_id=eq.${encodeURIComponent(userId)}&read_at=is.null&limit=${BADGE_MAX + 1}`
 
-  const res = await fetch(url, {
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${accessToken}`,
-    },
-  })
+  const res = await fetch(url, { headers: REST_HEADERS(accessToken) })
 
   if (res.status === 401) return { error: 'unauthorized' }
   if (!res.ok) return { error: `http ${res.status}` }
 
   const rows = await res.json()
   return { count: Array.isArray(rows) ? rows.length : 0 }
+}
+
+/** 取这个账号在网页里记下的"每个群读到哪"（没有记录就返回空对象） */
+async function getGroupSeen(userId) {
+  if (!userId) return {}
+  const { [GROUP_SEEN_KEY]: all } = await chrome.storage.local.get(GROUP_SEEN_KEY)
+  const seen = all && all[userId]
+  return seen && typeof seen === 'object' && !Array.isArray(seen) ? seen : {}
+}
+
+/**
+ * 把网页上报的已读位置合并进来。
+ *
+ * 为什么是"取更晚的那个"而不是覆盖：同一浏览器可能开着多个标签页/面板，
+ * 各自 localStorage 分区的进度不一样；一个旧标签页晚上报一次不能把角标又点亮。
+ */
+async function mergeGroupSeen(userId, incoming) {
+  if (!userId || !incoming || typeof incoming !== 'object' || Array.isArray(incoming)) return false
+
+  const { [GROUP_SEEN_KEY]: all } = await chrome.storage.local.get(GROUP_SEEN_KEY)
+  const store = all && typeof all === 'object' && !Array.isArray(all) ? all : {}
+  const current = store[userId] && typeof store[userId] === 'object' ? store[userId] : {}
+  const merged = { ...current }
+  let changed = false
+
+  for (const [threadId, iso] of Object.entries(incoming)) {
+    const next = new Date(iso).getTime()
+    if (!threadId || !Number.isFinite(next)) continue
+    const prev = new Date(merged[threadId] || 0).getTime()
+    if (next > (Number.isFinite(prev) ? prev : 0)) {
+      merged[threadId] = iso
+      changed = true
+    }
+  }
+
+  if (!changed) return false
+  store[userId] = merged
+  await chrome.storage.local.set({ [GROUP_SEEN_KEY]: store })
+  return true
+}
+
+/** 群聊未读：RLS 只返回我是成员的群，所以不需要在客户端再筛成员 */
+async function fetchGroupUnreadCount(userId, accessToken) {
+  const headers = REST_HEADERS(accessToken)
+
+  const threadsRes = await fetch(`${SUPABASE_URL}/rest/v1/group_threads?select=id,created_at`, { headers })
+  if (threadsRes.status === 401) return { error: 'unauthorized' }
+  if (!threadsRes.ok) return { error: `group http ${threadsRes.status}` }
+
+  const threads = await threadsRes.json()
+  if (!Array.isArray(threads) || threads.length === 0) return { count: 0 }
+
+  const seen = await getGroupSeen(userId)
+  let count = 0
+
+  for (const thread of threads) {
+    // 没打开过这个群 → 从建群时间算起。网页里的群角标在"从没打开过"时是 0，
+    // 但扩展的目标是"有新东西就提醒"，宁可多提醒一次，也别漏掉第一条。
+    const seenAt = seen[thread.id]
+    const since = Number.isFinite(new Date(seenAt).getTime()) ? seenAt : thread.created_at
+    const params = new URLSearchParams({
+      select: 'id',
+      thread_id: `eq.${thread.id}`,
+      sender_id: `neq.${userId}`,
+      created_at: `gt.${since}`,
+      limit: String(BADGE_MAX + 1),
+    })
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/group_messages?${params}`, { headers })
+    if (res.status === 401) return { error: 'unauthorized' }
+    if (!res.ok) return { error: `group http ${res.status}` }
+
+    const rows = await res.json()
+    count += Array.isArray(rows) ? rows.length : 0
+    if (count > BADGE_MAX) break // 角标最多显示 99+，不用继续数
+  }
+
+  return { count }
+}
+
+/** 私信 + 群聊。群聊查询失败不让私信角标一起消失（旧库没有群表时也要能用）。 */
+async function fetchUnreadCounts(userId, accessToken) {
+  const [dm, group] = await Promise.all([
+    fetchDmUnreadCount(userId, accessToken),
+    fetchGroupUnreadCount(userId, accessToken),
+  ])
+
+  if (dm.error) return { error: dm.error }
+  if (group.error === 'unauthorized') return { error: 'unauthorized' }
+
+  const dmUnread = dm.count || 0
+  const groupUnread = group.error ? 0 : (group.count || 0)
+  return {
+    count: dmUnread + groupUnread,
+    dmUnread,
+    groupUnread,
+    groupError: group.error || null,
+  }
 }
 
 // ---------------------------------------------------------------- 角标
@@ -196,8 +305,10 @@ async function dottedIconData({ ratio = 1 / 4, color = BADGE_COLOR } = {}) {
 }
 
 /** 按当前模式画未读指示（数字 / 圆点 / 图标变色） */
-async function paintBadge(count) {
+async function paintBadge(count, breakdown) {
   lastUnreadCount = count || 0
+  if (breakdown) lastBreakdown = breakdown
+
   const style = unreadStyle
   const n = lastUnreadCount
 
@@ -224,8 +335,12 @@ async function paintBadge(count) {
   }
 
   const text = !n ? '' : n > BADGE_MAX ? `${BADGE_MAX}+` : String(n)
+  const parts = []
+  if (lastBreakdown.dm > 0) parts.push(`私信 ${lastBreakdown.dm}`)
+  if (lastBreakdown.group > 0) parts.push(`群聊 ${lastBreakdown.group}`)
+  const detail = parts.length > 1 ? `（${parts.join(' · ')}）` : ''
   await chrome.action.setTitle({
-    title: n ? `Moments 私密圈 · ${n} 条未读私信` : 'Moments 私密圈',
+    title: n ? `Moments 私密圈 · ${n} 条未读${detail}` : 'Moments 私密圈',
   })
   return text
 }
@@ -240,30 +355,44 @@ async function setStatus(patch) {
 async function refresh() {
   const session = await getSession()
   if (!session || !session.user_id) {
-    await paintBadge(0)
-    await setStatus({ hasSession: false, unread: 0, lastChecked: Date.now(), lastError: null })
+    await paintBadge(0, { dm: 0, group: 0 })
+    await setStatus({
+      hasSession: false, unread: 0, dmUnread: 0, groupUnread: 0, groupError: null,
+      lastChecked: Date.now(), lastError: null,
+    })
     return
   }
 
   try {
     const token = await ensureFreshToken(session)
     if (!token) {
-      await paintBadge(0)
-      await setStatus({ hasSession: false, unread: 0, lastChecked: Date.now(), lastError: '会话已失效' })
+      await paintBadge(0, { dm: 0, group: 0 })
+      await setStatus({
+        hasSession: false, unread: 0, dmUnread: 0, groupUnread: 0, groupError: null,
+        lastChecked: Date.now(), lastError: '会话已失效',
+      })
       return
     }
 
-    const { count, error } = await fetchUnreadCount(session.user_id, token)
+    const { count, dmUnread, groupUnread, groupError, error } = await fetchUnreadCounts(session.user_id, token)
     if (error) {
       // 401 说明会话在别处失效了，清掉等重新同步；其他错误保留会话重试
       if (error === 'unauthorized') await clearSession()
-      await setStatus({ hasSession: error !== 'unauthorized', unread: 0, lastChecked: Date.now(), lastError: error })
-      if (error === 'unauthorized') await paintBadge(0)
+      await setStatus({
+        hasSession: error !== 'unauthorized', unread: 0, dmUnread: 0, groupUnread: 0, groupError: null,
+        lastChecked: Date.now(), lastError: error,
+      })
+      if (error === 'unauthorized') await paintBadge(0, { dm: 0, group: 0 })
       return
     }
 
-    await paintBadge(count)
-    await setStatus({ hasSession: true, unread: count, lastChecked: Date.now(), lastError: null })
+    const breakdown = { dm: dmUnread || 0, group: groupUnread || 0 }
+    if (groupError) log('群聊未读查询失败（角标先只算私信）', groupError)
+    await paintBadge(count || 0, breakdown)
+    await setStatus({
+      hasSession: true, unread: count || 0, dmUnread: breakdown.dm, groupUnread: breakdown.group,
+      groupError: groupError || null, lastChecked: Date.now(), lastError: null,
+    })
   } catch (e) {
     // 网络不可用等情况：保留上次的角标，不要把数字抹掉
     log('刷新失败', e && e.message)
@@ -340,11 +469,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ ok: false })
     return false
   }
+  if (msg && msg.type === 'group:seen:push') {
+    // 网页里读了群（见 src/lib/groupChat.js 的 markGroupSeen）→ 合并已读位置后重算。
+    // 不能直接清 0：私信可能还有未读，群也不一定只有一个。
+    mergeGroupSeen(msg.uid, msg.seen).then(async (changed) => {
+      if (!changed) return
+      const session = await getSession()
+      // 角标本来就是 0 时不必再查一遍：群里连续来消息、使用者正停在群页，
+      // markGroupSeen 会一条一条上报，每次都重算就是白白多打几轮 API。
+      // 用 storage 里的 status 而不是内存变量：service worker 随时可能被回收。
+      const { status } = await chrome.storage.local.get('status')
+      const visible = (status && status.unread > 0) || lastUnreadCount > 0
+      if (session && session.user_id === msg.uid && visible) await refresh()
+    }).finally(() => sendResponse({ ok: true }))
+    return true
+  }
   if (msg && msg.type === 'unread:cleared') {
-    // 面板里读完消息（未读归零）→ 立刻清角标，别让使用者盯着一个过期的红点
-    paintBadge(0)
-      .then(() => setStatus({ unread: 0, lastChecked: Date.now() }))
-      .finally(() => sendResponse({ ok: true }))
+    // 网页里私信未读归零 → 立刻重算，而不是直接清角标：
+    // 群聊可能还有未读，无脑 paintBadge(0) 会把群聊的红点一起抹掉。
+    refresh().finally(() => sendResponse({ ok: true }))
     return true
   }
   if (msg && msg.type === 'panel:settings') {

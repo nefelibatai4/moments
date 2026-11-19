@@ -1,6 +1,6 @@
 # Moments 私密圈 · Chrome 扩展
 
-工具栏角标显示未读私信；点一下图标，当前网页上会浮出一层**毛玻璃面板**，
+工具栏角标显示未读私信 + 群聊；点一下图标，当前网页上会浮出一层**毛玻璃面板**，
 背后是你正在看的网页（模糊可见），面板里就是 Moments 本体，**不用切标签页**就能看动态、回私信。
 
 > 0.2.0 起面板从「action 弹窗」改成了「注入到当前网页的浮层」。
@@ -118,7 +118,18 @@ MV3 的 service worker 空闲约 30 秒就被回收，长连接（websocket）�
 
 ## 角标口径
 
-角标数字 = **未读私信数**（`messages.read_at` 为空）。
+角标数字 = **未读私信数 + 未读群聊数**。
+
+- **私信**：`messages.read_at` 为空（服务端有已读回执）。
+- **群聊**：`group_messages` 里比"本机已读时间"新、不是自己发的行。群聊的已读位置
+  记在网页 localStorage（`moments_group_seen_v1:<uid>:<thread>`），扩展读不到它，
+  所以由 `content.js` 同步到 `chrome.storage.local.groupSeen`；角标里再把两份数字相加。
+  - 群消息是密文，扩展**解不开**，也就分不出 AI 的「思考中」状态行。这不会重复计数：
+    AI 的状态和它后面的回答是**同一行**（bridge 就地 UPDATE）。
+  - 已读位置是**按设备**记的（和网页里的群角标一致）。换一台设备/浏览器，
+    需要在那台设备上打开一次群聊，已读进度才会同步到扩展。
+  - 从没打开过某个群时，扩展从**建群时间**开始算未读（网页里则显示 0）——
+    角标的目标是"有新东西就提醒"，宁可多提醒一次，也别漏掉第一条。
 
 动态、评论、点赞**不计入**——那几张表没有"已读"概念，统计不出准确数字，硬做只会得到一个会骗人的角标。
 
@@ -126,12 +137,12 @@ MV3 的 service worker 空闲约 30 秒就被回收，长连接（websocket）�
 
 ```
 网页（任意标签页 / 浮层里的 iframe / 兜底小窗里的 iframe）
-   │  content.js 每 10 秒读一次 localStorage：supabase 会话 + 面板背景设置
-   │  改设置时网页 postMessage → content.js 立刻转交
+   │  content.js 每 10 秒读一次 localStorage：supabase 会话 + 群已读位置 + 面板背景设置
+   │  改设置 / 标记群已读时网页 postMessage → content.js 立刻转交
    ▼
 background service worker
    │  · 会话存 chrome.storage.local
-   │  · chrome.alarms 每分钟查一次未读私信
+   │  · chrome.alarms 每分钟查一次未读私信 + 未读群聊
    │  · access token 过期前 5 分钟自动刷新
    │  · 点图标 → chrome.scripting 注入 overlay.js（activeTab）
    │  · 注入不了 / 浮层报错 → 开兜底小窗 panel.html
@@ -157,6 +168,7 @@ Supabase 每次刷新都会轮换 refresh token。网页和扩展都能刷新，
 | 现象 | 原因 / 处理 |
 |---|---|
 | 角标一直是空的 | 先确认网页登录过（状态条会提示"未同步会话"）；确认图标已固定到工具栏 |
+| 群聊有未读，角标不涨 | 确认扩展是 0.3.4+ 并在 `chrome://extensions/` 刷新过；再打开一次 Moments 网页（让 `content.js` 把已读位置同步过去） |
 | 状态条显示"未同步会话" | 打开一次 Moments 网页即可，扩展会自动同步 |
 | 状态条显示"同步异常" | 大概率是网络；点 ↻ 重试。持续失败就去 `chrome://extensions/` 点扩展的 "Service Worker" 看日志 |
 | 改了代码不生效 | 到 `chrome://extensions/` 点该扩展的刷新按钮；改 `manifest.json` 必须重新加载 |
@@ -170,8 +182,10 @@ Supabase 每次刷新都会轮换 refresh token。网页和扩展都能刷新，
 ## 验证
 
 ```bash
-node scripts/verify-extension.cjs        # 角标 / 会话同步 / token 刷新 / 兜底小窗
-node scripts/verify-extension-panel.cjs  # 毛玻璃浮层本身（39 项断言）
+node scripts/verify-extension.cjs              # 角标 / 会话同步 / token 刷新 / 兜底小窗
+node scripts/verify-extension-live-status.cjs  # 读完消息后状态条/角标自己跟上
+node scripts/verify-extension-group-unread.cjs # 群聊未读 = 角标的一部分（0.3.4）
+node scripts/verify-extension-panel.cjs        # 毛玻璃浮层本身（39 项断言）
 ```
 
 `verify-extension-panel.cjs` 会自建本地 HTTP 测试页，验证：真毛玻璃（`backdrop-filter`

@@ -161,6 +161,10 @@ export function readGroupSeen(uid, threadId) {
 
 export function markGroupSeen(uid, threadId, iso) {
   try { localStorage.setItem(seenKey(uid, threadId), iso ?? new Date().toISOString()) } catch { /* 隐私模式 */ }
+  // 插件角标要算上群聊未读，但它读不到网页的 localStorage（见 extension/content.js）。
+  // 这里主动喊一声，让 content script 立刻把"已读到哪"同步过去 ——
+  // 否则要等它 10 秒一次的轮询，使用者会觉得"读完了角标还挂着"。
+  try { window.postMessage({ source: 'moments-app', type: 'group-seen' }, '*') } catch { /* 忽略 */ }
 }
 
 /** 未读数：比"上次看到的时间"新的、别人发的、非 AI 状态行（状态气泡不算消息） */

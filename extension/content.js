@@ -80,6 +80,50 @@
     send({ type: 'session:push', session: parsed })
   }
 
+  // ---------------------------------------------------------------- 群聊已读位置
+
+  // 群聊的"读到哪"记在网页的 localStorage（见 src/lib/groupChat.js 的 markGroupSeen）。
+  // 扩展的 background 读不到它，所以这里把**当前账号**的每个群的已读时间转过去，
+  // 让角标能把群聊未读和私信未读加在一起。
+  const GROUP_SEEN_PREFIX = 'moments_group_seen_v1'
+
+  function readGroupSeen() {
+    let uid = null
+    try {
+      const raw = readRaw()
+      if (!raw) return null
+      uid = JSON.parse(raw)?.user?.id ?? null
+    } catch {
+      return null
+    }
+    if (!uid) return null
+
+    const prefix = `${GROUP_SEEN_PREFIX}:${uid}:`
+    const seen = {}
+    try {
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const key = localStorage.key(i)
+        if (!key || !key.startsWith(prefix)) continue
+        const iso = localStorage.getItem(key)
+        if (iso) seen[key.slice(prefix.length)] = iso
+      }
+    } catch {
+      return null
+    }
+    return { uid, seen }
+  }
+
+  let lastGroupSeenSig = null
+
+  function pushGroupSeen() {
+    const payload = readGroupSeen()
+    if (!payload) return
+    const sig = JSON.stringify(payload)
+    if (sig === lastGroupSeenSig) return
+    lastGroupSeenSig = sig
+    send({ type: 'group:seen:push', uid: payload.uid, seen: payload.seen })
+  }
+
   // ---------------------------------------------------------------- 已解锁材料的中转
 
   function readKeyCache() {
@@ -186,6 +230,7 @@
   // ---------------------------------------------------------------- 触发时机
 
   push()
+  pushGroupSeen()
   // ⚠️ 启动这一次同样要守"面板帧不上报"的规矩。
   //    否则：面板帧启动时把自己那份**旧值**（例如默认的 12px）上报上去，
   //    如果这个请求恰好晚于使用者刚做的修改落地，就会把新值顶掉
@@ -196,6 +241,7 @@
   // 所以这里用一个低频轮询兜住本标签页内的变化。读两个 localStorage key 很便宜。
   setInterval(() => {
     push()
+    pushGroupSeen()
     pushKeyCache()
     pushPanelSettingsIfAuthoritative()
     pushGlobalState()
@@ -205,6 +251,7 @@
   window.addEventListener('storage', (e) => {
     if (!e.key) return
     if (e.key === KEY || e.key.startsWith(`${KEY}.`)) push()
+    if (e.key.startsWith(`${GROUP_SEEN_PREFIX}:`)) pushGroupSeen()
     if (e.key === PANEL_BG_KEY) pushPanelSettingsIfAuthoritative()
   })
 
@@ -219,6 +266,11 @@
     // 网页那边读完消息、未读归零时会发这条 —— 立刻让后台把角标清掉
     if (data.type === 'unread-cleared') {
       try { chrome.runtime.sendMessage({ type: 'unread:cleared' }) } catch { /* 扩展上下文失效 */ }
+      return
+    }
+    // 群里刚标记了已读（src/lib/groupChat.js 的 markGroupSeen）→ 立刻同步一次
+    if (data.type === 'group-seen') {
+      pushGroupSeen()
       return
     }
     // 网页里选"未读提示样式"→ 转给后台（数字 / 小红点 / 图标变色）
@@ -244,6 +296,7 @@
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       push()
+      pushGroupSeen()
       pushPanelSettingsIfAuthoritative()
     }
   })
