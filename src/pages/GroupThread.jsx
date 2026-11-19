@@ -285,12 +285,28 @@ export default function GroupThread() {
               {body.kind === 'recalled' ? (
                 <div className="chat-recalled-line">{isMine ? '你撤回了一条消息' : `${mine?.nickname ?? '对方'}撤回了一条消息`}</div>
               ) : body.kind === 'ai_state' ? (
-                <div className={`group-ai-state state-${body.state}`} data-ai-state={body.state}>
-                  {body.state === 'thinking' ? (
-                    <span className="group-ai-dots" aria-label="Ace 正在思考"><i /><i /><i /></span>
-                  ) : (
-                    <span>{AI_STATE_TEXT[body.state] ?? ''}</span>
-                  )}
+                // AI 的状态也走"左边的气泡"：头像 + 对话框，和它正常说话时同一个位置。
+                // 2026-11-19 使用者："把状态放到正中间很离谱，应该像左边一个对话框。"
+                <div className={`chat-bubble-row theirs from-ai group-ai-state-row state-${body.state}`} data-ai-state={body.state}>
+                  <span className="group-sender-avatar is-ai">
+                    {mine?.avatar_url
+                      ? <SignedImage bucket="avatars" stored={mine.avatar_url} alt="" />
+                      : initial(mine?.nickname)}
+                  </span>
+                  <div className="chat-bubble theirs group-ai-state-bubble">
+                    <span className="group-sender-name">
+                      {mine?.nickname ?? 'Ace'}
+                      <span className="group-ai-badge">AI</span>
+                    </span>
+                    {body.state === 'thinking' ? (
+                      <span className="group-thinking">
+                        <span className="group-thinking-text">思考中</span>
+                        <span className="group-ai-dots" aria-label="Ace 正在思考"><i /><i /><i /></span>
+                      </span>
+                    ) : (
+                      <span className="group-ai-state-text">{AI_STATE_TEXT[body.state] ?? ''}</span>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div className={`chat-bubble-row ${isMine ? 'mine' : 'theirs'}${mine?.is_ai && !isMine ? ' from-ai' : ''}`}>

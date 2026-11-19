@@ -4609,28 +4609,27 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
 /* 群消息区域：继承私聊的滚动/内边距，只补一点上下留白 */
 .group-messages { padding-bottom: 8px; }
 
-/* AI 状态气泡：居中、小、灰，永远不抢话。
-   四种状态由 data-ai-state 区分，文案固定（使用者要求的四个状态）。 */
-.group-ai-state {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  margin: 8px auto;
-  padding: 5px 12px;
-  width: fit-content;
-  max-width: 82%;
-  border-radius: 999px;
-  background: rgba(127, 127, 127, 0.1);
-  color: var(--text-tertiary, rgba(0, 0, 0, 0.5));
-  font-size: 12px;
-  line-height: 1.5;
+/* AI 状态：**左边的气泡**（头像 + 对话框），不再居中成一个提示条。
+   2026-11-19 使用者反馈："待审批/正在休息的弹窗出现在画面正中间有点离谱，
+   正常应该是左边 AI 头像 + 旁边一个对话框，里面三个点在跳。" */
+.group-ai-state-row { align-items: flex-end; }
+.group-ai-state-bubble {
+  /* 和它正常说话时的气泡同一套尺寸/圆角，只是颜色更轻一点 */
+  color: var(--text-secondary, rgba(0, 0, 0, 0.62));
+  background: var(--bg-elevated, rgba(127, 127, 127, 0.10));
+  border-left: 2px solid rgba(255, 159, 28, 0.55);
 }
-.group-ai-state.state-waiting {
+.group-ai-state-row.state-waiting .group-ai-state-bubble {
   background: rgba(255, 159, 28, 0.14);
+  border-left-color: rgba(255, 159, 28, 0.85);
   color: #9a5f12;
 }
-.group-ai-state.state-offline { opacity: 0.65; }
+.group-ai-state-row.state-offline { opacity: 0.62; }
+.group-ai-state-text { white-space: pre-wrap; }
+
+/* 「思考中」+ 三个点：点是一直跳的，文字让人一眼知道在等什么 */
+.group-thinking { display: inline-flex; align-items: center; gap: 7px; }
+.group-thinking-text { color: var(--text-tertiary, rgba(0, 0, 0, 0.5)); font-size: 0.9em; }
 
 /* 「• • •」三个点：不是字符，是三个会呼吸的圆点（字体里的 • 大小不齐） */
 .group-ai-dots { display: inline-flex; align-items: center; gap: 4px; }
