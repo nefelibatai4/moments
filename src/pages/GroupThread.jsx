@@ -159,18 +159,24 @@ export default function GroupThread() {
     if (near) markGroupSeen(me, threadRef.current?.id)
   }
 
-  const byId = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages])
+  // 「Ace 不在线」不再作为消息显示：顶部实时状态已经说明了。
+  // 旧数据里的那几条 offline 行留在服务器（不改历史），只是不渲染。
+  const visible = useMemo(
+    () => messages.filter((m) => !(m.body?.kind === 'ai_state' && m.body.state === 'offline')),
+    [messages],
+  )
+  const byId = useMemo(() => new Map(visible.map((m) => [m.id, m])), [visible])
   const members = useMemo(() => {
     const map = new Map((thread?.members ?? []).map((m) => [m.id, m]))
     return map
   }, [thread])
 
   // 状态气泡：同一条行会被就地更新（thinking → working → 文字），所以列表里只有一个位置
-  const rows = useMemo(() => messages.map((m, i) => {
-    const prev = i > 0 ? timeLabel(messages[i - 1].created_at) : null
+  const rows = useMemo(() => visible.map((m, i) => {
+    const prev = i > 0 ? timeLabel(visible[i - 1].created_at) : null
     const label = timeLabel(m.created_at)
     return { m, showLabel: label !== prev }
-  }), [messages])
+  }), [visible])
 
   // 点谁的头像就在输入框里插入 @谁（并聚焦、光标放到最后）
   const mention = (member) => {
