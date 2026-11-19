@@ -942,6 +942,64 @@ async function buildRecoveryPayload() {
   return JSON.stringify({ v: 1, identity, dek, cred: S.loginCredential })
 }
 
+// ── 给 AI 成员（Ace）的"只读钥匙副本"────────────────────────────
+/**
+ * 动态与私聊是端到端加密的：**AI 成员没有钥匙就永远只能看到密文**。
+ * 使用者 2026-11-19 明确要求"让 Ace 读所有动态和我们的私聊，建人物档案"，
+ * 所以这里把"我的身份私钥 + DEK"用 **Ace 的公钥**锁一份给它（Ace 的私钥只在 Mac 钥匙串里）。
+ * 服务器上只有密文：除了 Ace，谁（包括服务端）都打不开。
+ *
+ * 与 `ensureEscrowWraps` 的区别：那份是"忘密码时让对方救回来"，必须带登录凭据、
+ * 且只在**真输密码登录**后写；这份只给读权限、不需要凭据，所以**任何一次解锁**都能补写。
+ * 撤销：删掉 `ace_key_grants` 里自己那行即可（RLS 允许本人删）。
+ */
+const ACE_GRANT_INFO = 'moments-ace-grant-v1'
+
+export async function grantReadAccessToAi() {
+  if (!isUnlocked() || !S.userId || !S.identity?.privateKey || !S.dek) return 0
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, public_key, key_scheme')
+    .eq('approved', true)
+    .eq('is_ai', true)
+  if (error || !data?.length) return 0
+  const ais = data.filter((m) => m.public_key && m.key_scheme === KEY_SCHEME)
+  if (ais.length === 0) return 0
+  const { data: existing } = await supabase
+    .from('ace_key_grants')
+    .select('holder_id')
+    .eq('owner_id', S.userId)
+  const have = new Set((existing ?? []).map((r) => r.holder_id))
+  const todo = ais.filter((m) => !have.has(m.id))
+  if (todo.length === 0) return 0
+
+  let written = 0
+  const payload = JSON.stringify({
+    v: 1,
+    identity: await crypto.subtle.exportKey('jwk', S.identity.privateKey),
+    dek: toB64(await crypto.subtle.exportKey('raw', S.dek)),
+  })
+  for (const m of todo) {
+    try {
+      const kek = await deriveWrapKek(m.id, m.public_key, ['encrypt'], ACE_GRANT_INFO)
+      const iv = crypto.getRandomValues(new Uint8Array(12))
+      const wrapped = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, kek, te.encode(payload))
+      const { error: upErr } = await supabase.from('ace_key_grants').upsert({
+        owner_id: S.userId,
+        holder_id: m.id,
+        iv: toB64(iv),
+        wrapped: toB64(wrapped),
+        scheme: 'ace-grant-v1',
+      }, { onConflict: 'owner_id,holder_id' })
+      if (!upErr) written += 1
+      else console.warn('[ace] 写钥匙副本失败:', upErr.message)
+    } catch (err) {
+      console.warn('[ace] 钥匙副本生成失败:', err?.message)
+    }
+  }
+  return written
+}
+
 /**
  * 静默刷新"我替对方存的那份包裹"（登录成功后调用；换密码后也必须重来一次，
  * 因为**登录凭据变了**）。对方还没登录过新版本（拿不到可用公钥）时什么也不做。

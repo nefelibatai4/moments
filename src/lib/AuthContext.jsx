@@ -6,7 +6,7 @@ import { clearChatListSnapshots } from './chatCache.js'
 // 这里只保留"登出时清掉内存里的会话密钥"，保证旧密文不会跨账号残留。
 import {
   applyRecoveryHandover, clearCachedDek, clearConversationKeys, ensureEscrowWraps,
-  hasLocalRecoveryEph, isUnlocked, loadCachedDek, lockCrypto, onUnlockChange,
+  grantReadAccessToAi, hasLocalRecoveryEph, isUnlocked, loadCachedDek, lockCrypto, onUnlockChange,
 } from './crypto.js'
 import { clearImageCache } from './imageCrypto.js'
 
@@ -137,6 +137,9 @@ export function AuthProvider({ children }) {
         // 包裹：登录/解锁那一下算一遍"要写谁"；45 秒的轮询只看"还缺谁"（通常一个查询、零写入），
         // 这样对方刚变得可用时最多 45 秒就会自动补上他的那份包裹。
         ensureEscrowWraps().catch(() => {})
+        // 2026-11-19：把"只给 AI 成员的只读钥匙副本"顺手补上（使用者要求 Ace 能读动态/私聊建档案）。
+        // 和 escrow 不同，这份不需要登录凭据，所以**每次解锁**都能写（缓存解锁也算）。
+        grantReadAccessToAi().catch(() => {})
         return
       }
       // 还没解锁：只有"本机留着等待交付的临时钥匙"时才去收尾（否则是正常没解锁）
