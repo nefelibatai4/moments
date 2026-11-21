@@ -105,7 +105,7 @@ export default function Login() {
         required
       />
       {error && <p className="error-text">{error}</p>}
-      <button type="submit" disabled={submitting}>登录</button>
+      <button type="submit" disabled={submitting}>{submitting ? '登录中…' : '登录'}</button>
       <p className="auth-switch-link">
         没有账号？<Link to="/register">去注册</Link>
       </p>
