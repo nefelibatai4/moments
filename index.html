@@ -7,9 +7,37 @@
     <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
 
+    <!-- 首屏底色：在 CSS/JS 加载前先定下来，避免深色主题用户先看到浏览器默认白底。
+         内联脚本在首次绘制前执行；localStorage 被拦时按 theme.js 的默认回退到深色。 -->
+    <meta name="color-scheme" content="dark light" />
+    <script>
+      ;(() => {
+        let theme = 'dark'
+        try {
+          const stored = localStorage.getItem('moments_theme')
+          if (stored === 'light' || stored === 'dark') theme = stored
+        } catch {
+          // localStorage 不可用 → 用默认深色（与 src/lib/theme.js 一致）
+        }
+        document.documentElement.setAttribute('data-theme', theme)
+      })()
+    </script>
+    <style>
+      /* 与 src/index.css 的 --bg-page 一致：深色 #07080a / 浅色 #f7f8f8。
+         color-scheme 让滚动条和表单控件在首屏就跟着主题走。 */
+      html {
+        color-scheme: dark;
+        background-color: #07080a;
+      }
+      html[data-theme="light"] {
+        color-scheme: light;
+        background-color: #f7f8f8;
+      }
+    </style>
+
     <!-- PWA -->
     <link rel="manifest" href="%BASE_URL%manifest.webmanifest" />
-    <meta name="theme-color" content="#0f1016" />
+    <meta name="theme-color" content="#07080a" />
 
     <!-- iOS 专属：添加到主屏幕 -->
     <link rel="apple-touch-icon" href="%BASE_URL%apple-touch-icon.png" />
