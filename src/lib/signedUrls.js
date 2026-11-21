@@ -25,6 +25,11 @@ import { supabase } from '../supabaseClient'
  *    （实测 1.2–2.7MB，而 JS/CSS 已经是 0KB）！所以把签名地址连同过期时间**落盘到
  *    localStorage**：1 小时内重复打开复用同一个地址，图片字节就能命中浏览器缓存。
  *    安全边界不变：地址本身的有效期仍然是 1 小时。
+ * 3. **缓存键带对象版本**：头像换图时对象路径不变（`<uid>/avatar` 被 upsert 覆盖），
+ *    上传端会在 `avatar_url` 后追加 `?t=<时间戳>`。如果缓存只按路径记，**其它设备**
+ *    拿到新的 `avatar_url` 仍会命中旧路径的缓存，最长 1 小时看不到新头像。
+ *    所以缓存键里带上这个版本号：新 `avatar_url` → 新键 → 重新签名 → 取到新图。
+ *    动态图片的定位串没有 `?t=`，键与原来完全一致，行为不变。
  */
 
 /** 签名有效期（秒）。越短越安全（泄漏的链接更快失效），越长越不容易在长时间停留的页面上裂图 */
@@ -109,15 +114,39 @@ export function objectLocator(bucket, path) {
   return `${base}/storage/v1/object/public/${bucket}/${path}`
 }
 
-function keyOf(bucket, path) {
-  return `${bucket}/${path}`
+/**
+ * 从定位串里取**对象版本**（换头像时上传端追加的 `?t=<时间戳>`）。
+ *
+ * 为什么不能只按路径缓存：换头像走的是同一个对象路径的 upsert，路径没变、内容变了。
+ * 上传端自己会调 invalidateSignedUrl 清缓存，但**其它设备**只会从数据库拿到一个新的
+ * `avatar_url`（带新的 `?t=`），本机缓存里仍是老的"路径 → 签名地址"，最长 1 小时
+ * 都会显示老头像。把版本并进缓存键后，新 `avatar_url` 自然落到新键上，会重新签名。
+ *
+ * 只认 `t`（现有上传流程写入的字段），不把任意 query 都当版本：
+ * 签名地址里的 `token=` 每次不同，拿它当版本会让浏览器缓存永远失效。
+ */
+function objectVersion(stored) {
+  if (typeof stored !== 'string') return ''
+  try {
+    if (/^https?:\/\//i.test(stored)) return new URL(stored).searchParams.get('t') || ''
+    const queryAt = stored.indexOf('?')
+    if (queryAt >= 0) return new URLSearchParams(stored.slice(queryAt + 1)).get('t') || ''
+  } catch {
+    /* 坏地址就当没有版本：退回按路径缓存，功能不受影响 */
+  }
+  return ''
+}
+
+function keyOf(bucket, path, version = '') {
+  // 没有版本时保持老键形态（动态图片走这条），避免升级后旧缓存整体失效。
+  return version ? `${bucket}/${path}?v=${version}` : `${bucket}/${path}`
 }
 
 /** 同步取缓存（里没有或快过期就返回 null）—— 用来避免"先空一下再闪出图片" */
 export function peekSignedUrl(bucket, stored) {
   const path = storagePathFromUrl(stored)
   if (!path) return null
-  const hit = cache.get(keyOf(bucket, path))
+  const hit = cache.get(keyOf(bucket, path, objectVersion(stored)))
   if (!hit) return null
   if (hit.expiresAt - Date.now() < RENEW_MARGIN_MS) return null
   return hit.url
@@ -161,6 +190,7 @@ export function requestSignedUrl(bucket, stored) {
   if (!path) return Promise.resolve(null)
   const peeked = peekSignedUrl(bucket, stored)
   if (peeked) return Promise.resolve(peeked)
+  const version = objectVersion(stored)
 
   return new Promise((resolve) => {
     let item = queue.get(bucket)
@@ -169,7 +199,7 @@ export function requestSignedUrl(bucket, stored) {
       queue.set(bucket, item)
     }
     item.paths.add(path)
-    item.waiters.push({ path, resolve })
+    item.waiters.push({ path, version, resolve })
     if (!flushTimer) flushTimer = setTimeout(flushQueue, 0)
   })
 }
@@ -196,7 +226,7 @@ async function flushQueue() {
         for (const waiter of item.waiters) {
           if (!fromCache.has(waiter.path)) continue
           const url = cachedImageUrl(origin, bucket, waiter.path)
-          cache.set(keyOf(bucket, waiter.path), { url, expiresAt, local: true })
+          cache.set(keyOf(bucket, waiter.path, waiter.version), { url, expiresAt, local: true })
           waiter.resolve(url)
         }
         persistSoon()
@@ -218,7 +248,7 @@ async function flushQueue() {
     const expiresAt = Date.now() + SIGNED_URL_TTL_SECONDS * 1000
     for (const waiter of item.waiters) {
       const url = byPath.get(waiter.path) || null
-      if (url) { cache.set(keyOf(bucket, waiter.path), { url, expiresAt }); persistSoon() }
+      if (url) { cache.set(keyOf(bucket, waiter.path, waiter.version), { url, expiresAt }); persistSoon() }
       waiter.resolve(url)
     }
   }))
@@ -232,7 +262,13 @@ async function flushQueue() {
 export function invalidateSignedUrl(bucket, stored) {
   const path = storagePathFromUrl(stored)
   if (!path) return
-  cache.delete(keyOf(bucket, path))
+  // 带版本的缓存键有多个（同一对象可能被不同 avatar_url 版本引用过）。
+  // 这里把该路径的**所有版本**一起清掉：调用方语义是"这个对象的内容变了/不要信了"，
+  // 只清当前版本会留下旧版本的死条目。
+  const prefix = `${bucket}/${path}`
+  for (const key of cache.keys()) {
+    if (key === prefix || key.startsWith(`${prefix}?v=`)) cache.delete(key)
+  }
   persistSoon()
 }
 
