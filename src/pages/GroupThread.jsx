@@ -3,6 +3,8 @@ import { Link, useOutletContext } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import SignedImage from '../components/SignedImage'
 import { onUnlockChange } from '../lib/crypto'
+import { usePinLatestOnViewport } from '../lib/usePinLatestOnViewport'
+import ChatPaneSkeleton from '../components/ChatPaneSkeleton'
 import {
   decryptGroupRow, isPresenceFresh, listGroupThreads, loadGroupMessages,
   loadGroupPresence, markGroupSeen, recallGroupMessage, sendGroupMessage,
@@ -69,6 +71,10 @@ export default function GroupThread() {
     if (!el) return
     el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
   }, [])
+
+  // 手机键盘弹起时贴底 —— 与私聊（ChatThread）同一套 hook、同一套阈值。
+  // 宽屏三栏右栏不启用（enabled=!wide），键盘 hack 只属于手机形态。
+  usePinLatestOnViewport({ enabled: !wide, listRef, onPin: scrollToBottom, rerunKey: loading })
 
   // ── 打开：拉群、解钥匙、解这一屏 ─────────────────────────────
   useEffect(() => {
@@ -227,10 +233,12 @@ export default function GroupThread() {
   }
 
   if (loading) {
+    // 宽屏右栏与私聊用同一个会话骨架（同高、非单行文本）
+    if (wide) return <ChatPaneSkeleton pane label="正在打开群聊" />
     return (
       <div className="chat-thread group-thread">
         <div className="chat-thread-header">
-          {!wide && <Link to="/chat" className="chat-back-btn">←</Link>}
+          <Link to="/chat" className="chat-back-btn">←</Link>
           <span className="chat-header-name">私密圈后花园</span>
         </div>
         <p className="status-text">打开中…</p>
@@ -251,7 +259,11 @@ export default function GroupThread() {
   }
 
   return (
-    <div className="chat-thread group-thread" data-group-thread={thread.id}>
+    <div
+      className={`chat-thread group-thread${wide ? ' chat-thread--pane' : ''}`}
+      data-group-thread={thread.id}
+      data-keyboard-pin={wide ? 'off' : 'on'}
+    >
       <div className="chat-thread-header">
         {!wide && <Link to="/chat" className="chat-back-btn">←</Link>}
         {/* 头像是"哪几个人"的三张小圆点 —— 但这三人本来就固定，占地方反而挤标题，

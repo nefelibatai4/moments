@@ -1,6 +1,7 @@
 import { Suspense, useEffect, useSyncExternalStore } from 'react'
 import { Outlet, useMatch } from 'react-router-dom'
 import ChatList from './ChatList'
+import ChatPaneSkeleton from '../components/ChatPaneSkeleton'
 import NavIcon from '../components/NavIcon'
 import { isPanelSurface } from '../lib/surface'
 
@@ -50,13 +51,14 @@ export default function ChatWorkspace() {
           <aside className="chat-sidebar" aria-label="会话列表">
             <ChatList
               embedded
+              live
               activeId={selectedId}
               activeGroup={Boolean(gardenMatch)}
             />
           </aside>
           <section className="chat-pane" aria-label="对话">
             {selectedKey ? (
-              <Suspense fallback={<p className="status-text chat-pane-status">加载中…</p>}>
+              <Suspense fallback={<ChatPaneSkeleton pane />}>
                 <Outlet key={selectedKey} context={{ wide }} />
               </Suspense>
             ) : (

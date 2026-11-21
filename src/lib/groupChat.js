@@ -1,5 +1,6 @@
 import { supabase } from '../supabaseClient'
 import { groupKey, openGroupText, sealGroupText } from './crypto'
+import { notifyGroupSeen } from './chatLive'
 
 /**
  * 群聊数据层（私密圈后花园）。
@@ -161,6 +162,8 @@ export function readGroupSeen(uid, threadId) {
 
 export function markGroupSeen(uid, threadId, iso) {
   try { localStorage.setItem(seenKey(uid, threadId), iso ?? new Date().toISOString()) } catch { /* 隐私模式 */ }
+  // 桌面三栏的常驻侧栏：本机立刻把群行角标清零，不等下一次 Realtime 全量摘要。
+  notifyGroupSeen(threadId)
   // 插件角标要算上群聊未读，但它读不到网页的 localStorage（见 extension/content.js）。
   // 这里主动喊一声，让 content script 立刻把"已读到哪"同步过去 ——
   // 否则要等它 10 秒一次的轮询，使用者会觉得"读完了角标还挂着"。
@@ -232,32 +235,45 @@ function writeGroupSnapshot(uid, summaries) {
   } catch { /* 隐私模式 */ }
 }
 
+/** 只重算一个群的摘要（Realtime 只刷新受影响那行时用；不再列群/拉成员） */
+async function summarizeThread(t, uid) {
+  const key = await groupKeyFor(t)
+  const { data } = await supabase
+    .from('group_messages')
+    .select('id, thread_id, sender_id, ciphertext, iv, scheme, content, reply_to_id, recalled_at, created_at')
+    .eq('thread_id', t.id)
+    .order('created_at', { ascending: false })
+    .limit(40)
+  const rows = await Promise.all((data ?? []).map(async (row) => {
+    const plain = row.recalled_at ? null : await openGroupText(key, row)
+    return { ...row, body: row.recalled_at ? { kind: 'recalled' } : decodeGroupBody(row, plain) }
+  }))
+  const latest = rows.find((r) => r.body.kind !== 'ai_state') ?? null
+  const seenAt = readGroupSeen(uid, t.id)
+  return {
+    thread: t,
+    latest,
+    unread: countUnread(rows, uid, seenAt),
+    lastTime: latest?.created_at ?? rows[0]?.created_at ?? t.created_at,
+  }
+}
+
+/** 单个群的摘要（失败返回 error，调用方保留旧行） */
+export async function loadGroupSummary(thread, uid) {
+  if (!thread?.id) return { summary: null, error: '群不存在' }
+  try {
+    return { summary: await summarizeThread(thread, uid), error: null }
+  } catch (e) {
+    return { summary: null, error: e?.message || '群摘要加载失败' }
+  }
+}
+
 export async function loadGroupSummaries(uid) {
   const { threads, error } = await listGroupThreads()
   if (error) return { summaries: [], error }
 
   // 解密并行做：40 条串行 await 会让"群入口出现"晚 1–2 秒（2026-11-19 使用者反馈）
-  const out = await Promise.all(threads.map(async (t) => {
-    const key = await groupKeyFor(t)
-    const { data } = await supabase
-      .from('group_messages')
-      .select('id, thread_id, sender_id, ciphertext, iv, scheme, content, reply_to_id, recalled_at, created_at')
-      .eq('thread_id', t.id)
-      .order('created_at', { ascending: false })
-      .limit(40)
-    const rows = await Promise.all((data ?? []).map(async (row) => {
-      const plain = row.recalled_at ? null : await openGroupText(key, row)
-      return { ...row, body: row.recalled_at ? { kind: 'recalled' } : decodeGroupBody(row, plain) }
-    }))
-    const latest = rows.find((r) => r.body.kind !== 'ai_state') ?? null
-    const seenAt = readGroupSeen(uid, t.id)
-    return {
-      thread: t,
-      latest,
-      unread: countUnread(rows, uid, seenAt),
-      lastTime: latest?.created_at ?? rows[0]?.created_at ?? t.created_at,
-    }
-  }))
+  const out = await Promise.all(threads.map((t) => summarizeThread(t, uid)))
   writeGroupSnapshot(uid, out)
   return { summaries: out, error: null }
 }

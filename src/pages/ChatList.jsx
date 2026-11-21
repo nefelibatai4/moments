@@ -1,11 +1,14 @@
-import { useEffect, useLayoutEffect, useState, useMemo } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../lib/AuthContext'
 import SignedImage from '../components/SignedImage'
 import { prefetchThread, readChatListSnapshot, writeChatListSnapshot } from '../lib/chatCache'
+import { subscribeChatLive } from '../lib/chatLive'
 import { decryptForPeer } from '../lib/crypto'
-import { loadGroupSummaries, readGroupSnapshot } from '../lib/groupChat'
+import {
+  decryptGroupRow, groupKeyFor, loadGroupSummaries, loadGroupSummary, readGroupSnapshot,
+} from '../lib/groupChat'
 import { stickerIdFromContent } from '../lib/stickers'
 
 function formatChatTime(iso) {
@@ -27,21 +30,76 @@ function truncate(text, max = 30) {
   return text.length > max ? text.slice(0, max) + '…' : text
 }
 
+function previewFromText(text) {
+  const isVideo = typeof text === 'string' && text.startsWith('{"v":1,"kind":"video"')
+  const fileEnvelope = typeof text === 'string' && text.startsWith('{"v":1,"kind":"file"')
+  return {
+    // 表情/文件消息在列表里只显示「[表情]」「[文件]」（不把内部标记露给使用者）
+    lastMsg: stickerIdFromContent(text)
+      ? '[表情]'
+      : (isVideo ? '[视频]' : (fileEnvelope ? '[文件]' : text)),
+    lastFile: fileEnvelope,
+    lastVideo: isVideo,
+  }
+}
+
+/**
+ * 把"最后一条消息"变成侧栏要显示的几个字段。
+ * 全量加载与 Realtime 单行刷新共用，避免两条路径的预览规则漂移。
+ */
+async function previewForMessage(partnerId, last) {
+  if (!last) {
+    return {
+      lastMsg: null,
+      lastImage: null,
+      lastFile: false,
+      lastVideo: false,
+      lastRecalled: false,
+      lastTime: null,
+    }
+  }
+  const base = {
+    lastImage: last.image_url ?? null,
+    lastRecalled: !!last.recalled_at,
+    lastTime: last.created_at ?? null,
+  }
+  if (!last.ciphertext || !last.iv) {
+    return { ...base, lastMsg: last.content ?? null, lastFile: false, lastVideo: false }
+  }
+  try {
+    const text = await decryptForPeer(partnerId, last)
+    return { ...base, ...previewFromText(text) }
+  } catch {
+    // 解不开就不显示内容，也绝不显示乱码
+    return { ...base, lastMsg: '🔒 消息', lastFile: false, lastVideo: false }
+  }
+}
+
+function conversationTime(c) {
+  return c.lastTime ? new Date(c.lastTime).getTime() : 0
+}
+
 export default function ChatList({
   // 宽屏三栏时作为第二列常驻；窄屏保持原来的整页列表。
   embedded = false,
   activeId = null,
   activeGroup = false,
+  // 常驻侧栏（桌面三栏）才开 Realtime：窄屏列表只是一次性页面，订阅纯浪费连接
+  live = false,
 } = {}) {
   const session = useAuth()
+  const me = session.user.id
   const [conversations, setConversations] = useState([])
   const [groups, setGroups] = useState([])
   // 群那一行**从第一帧就要在**：没有快照时先画一个占位行，解密完再填内容
   const [groupLoading, setGroupLoading] = useState(true)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  // 群摘要失败只影响群行内容，不能把私聊列表整页变成错误页
+  const [groupNotice, setGroupNotice] = useState(null)
   const [retryTick, setRetryTick] = useState(0)
   const [search, setSearch] = useState('')
+  const groupsRef = useRef([])
 
   // 先用上次的快照把联系人画出来（见 lib/chatCache.js）。
   // ⚠️ useLayoutEffect：要在**第一帧之前**就把内容放进去，否则先闪一下"加载中"。
@@ -56,19 +114,69 @@ export default function ChatList({
     if (cached || cachedGroups?.summaries) setLoading(false)
   }, [session?.user?.id])
 
+  useEffect(() => { groupsRef.current = groups }, [groups])
+
+  // 群摘要刷新（初次、重试、Realtime 共用）。失败时**只提示、不清空**：
+  // 三栏的群行要一直挂着，不能因为一次解密/网络失败就让入口消失。
+  const refreshGroupSummaries = useCallback(async () => {
+    try {
+      const gs = await loadGroupSummaries(me)
+      if (gs?.error) {
+        setGroupNotice('群消息摘要暂时没更新，稍后会自动重试')
+        return
+      }
+      if (gs?.summaries?.length) {
+        setGroups(gs.summaries)
+        setGroupNotice(null)
+        return
+      }
+      if (groupsRef.current.length > 0) setGroupNotice('群消息摘要暂时没更新，稍后会自动重试')
+    } catch {
+      setGroupNotice('群消息摘要暂时没更新，稍后会自动重试')
+    }
+  }, [me])
+
+  // 已读回传：会话页写完 read_at / markGroupSeen 后，侧栏本地立即清零。
+  // 这里只是"界面提示"，下一次 Realtime 全量校正会以数据库为准。
+  useEffect(() => {
+    return subscribeChatLive((event) => {
+      if (event.type === 'conversation-read') {
+        setConversations((prev) => {
+          let changed = false
+          const next = prev.map((c) => {
+            if (c.id !== event.peerId || c.unread === 0) return c
+            changed = true
+            return { ...c, unread: 0 }
+          })
+          return changed ? next : prev
+        })
+      } else if (event.type === 'group-seen') {
+        setGroups((prev) => {
+          let changed = false
+          const next = prev.map((g) => {
+            if (g.thread?.id !== event.threadId || g.unread === 0) return g
+            changed = true
+            return { ...g, unread: 0 }
+          })
+          return changed ? next : prev
+        })
+      }
+    })
+  }, [])
+
+  // 侧栏常驻时把最新状态写回快照，换页/刷新第一帧不会又看到旧的未读数。
+  useEffect(() => {
+    if (!embedded || loading || conversations.length === 0) return
+    writeChatListSnapshot(me, conversations)
+  }, [conversations, embedded, loading, me])
+
   useEffect(() => {
     async function load() {
-      const me = session.user.id
       try {
         setError(null)
         // 群摘要**不跟着联系人一起等**：它自己解密，先到先填；失败了也只是少一行，
         // 并保留第一帧已经画出来的本机快照（群加载失败不影响 1:1 列表）。
-        loadGroupSummaries(me)
-          .then((gs) => {
-            if (gs?.summaries?.length) setGroups(gs.summaries)
-          })
-          .catch(() => { /* 群加载失败只是少一行，别把整页拖死 */ })
-          .finally(() => setGroupLoading(false))
+        refreshGroupSummaries().finally(() => setGroupLoading(false))
 
         const [profileRes, msgRes, unreadRes] = await Promise.all([
           supabase.from('profiles').select('id, nickname, avatar_url, is_ai').neq('id', me),
@@ -109,49 +217,18 @@ export default function ChatList({
             }
           }
 
-          // 最后一条是密文时，解出预览（解不开就不显示预览，绝不显示乱码）
-          const decryptedLast = {}
-          await Promise.all(Object.entries(latestByPartner).map(async ([partnerId, last]) => {
-            if (!last.ciphertext || !last.iv) return
-            try {
-              const text = await decryptForPeer(partnerId, last)
-              // 表情/文件消息在列表里只显示「[表情]」「[文件]」（不把 [[s:xxx]]、
-              // {"v":1,"kind":"file",…} 这种内部标记露给使用者）
-              const isVideo = typeof text === 'string' && text.startsWith('{"v":1,"kind":"video"')
-              const fileEnvelope = typeof text === 'string' && text.startsWith('{"v":1,"kind":"file"')
-              decryptedLast[partnerId] = stickerIdFromContent(text)
-                ? '[表情]'
-                : (isVideo ? '[视频]' : (fileEnvelope ? '[文件]' : text))
-            } catch {
-              decryptedLast[partnerId] = null
-            }
-          }))
-
+          // 最后一条是密文时，解出预览（解不开就不显示预览，绝不显示乱码）。
+          // 全量加载与 Realtime 单行刷新共用 previewForMessage，规则不会漂移。
           // AI 成员（Ace）不进 1:1 列表：它住在「私密圈后花园」那个群里，
           // 这里再出现一个"Ace 私聊"只会让人以为有两个入口。
           const humans = (profileRes.data ?? []).filter((p) => !p.is_ai)
-          const merged = humans.map((p) => ({
+          const merged = await Promise.all(humans.map(async (p) => ({
             ...p,
-            lastMsg: (p.id in decryptedLast)
-              ? (decryptedLast[p.id] ?? '🔒 消息')
-              : (latestByPartner[p.id]?.content ?? null),
-            lastImage: latestByPartner[p.id]?.image_url ?? null,
-            // 附件是文件还是图片？看**解密后的正文**（文件名/类型都藏在密文里，
-            // 所以服务端只知道"有个附件"，由本机解密后才决定显示 [文件] 还是 [图片]）
-            // ⚠️ 上面已经把文件信封**转成** '[文件]' 了，这里要按转换后的值判断
-            //    （第一版按原始 JSON 前缀判断，永远为 false —— 实测踩到）
-            lastFile: decryptedLast[p.id] === '[文件]',
-            lastVideo: decryptedLast[p.id] === '[视频]',
-            lastRecalled: !!latestByPartner[p.id]?.recalled_at,
-            lastTime: latestByPartner[p.id]?.created_at ?? null,
+            ...await previewForMessage(p.id, latestByPartner[p.id]),
             unread: unreadCounts[p.id] || 0,
-          }))
+          })))
 
-          merged.sort((a, b) => {
-            const tA = a.lastTime ? new Date(a.lastTime).getTime() : 0
-            const tB = b.lastTime ? new Date(b.lastTime).getTime() : 0
-            return tB - tA
-          })
+          merged.sort((a, b) => conversationTime(b) - conversationTime(a))
 
           setConversations(merged)
           writeChatListSnapshot(me, merged)
@@ -165,7 +242,197 @@ export default function ChatList({
       }
     }
     load()
-  }, [session.user.id, retryTick])
+  }, [me, retryTick, refreshGroupSummaries])
+
+  // ── 常驻侧栏的 Realtime：只刷新受影响的那一行 ─────────────────────
+  // 不做"每条消息都重新拉 500 条 + 重新解密 50 个会话"：
+  //   · 私聊：按对方 id 合并 120ms 内的连续事件，只查"我与他最近 1 条 + 未读数"；
+  //   · 群聊：只解密这一条 + 只重算这个群的 40 条摘要，合并 120ms；
+  //   · 失败一律保留旧行（群摘要失败会由 refreshGroupSummaries 给轻提示）。
+  useEffect(() => {
+    if (!live || !embedded) return undefined
+    let cancelled = false
+    const convTimers = new Map()
+    const convSeq = new Map()
+    let groupTimer = null
+    const groupThreadIds = new Set()
+
+    // 新消息先按 Realtime 载荷本地打一帧（未读/排序立刻动），随后 120ms 的
+    // 定向查询再以数据库为准校正。这样不依赖"查询往返"完成才开始更新界面。
+    function applyInsert(m) {
+      const partnerId = m.sender_id === me ? m.recipient_id : m.sender_id
+      if (!partnerId || partnerId === me) return
+      const incoming = m.recipient_id === me
+      const plainPreview = (!m.ciphertext && !m.recalled_at) ? previewFromText(m.content ?? '') : null
+      setConversations((prev) => {
+        const idx = prev.findIndex((c) => c.id === partnerId)
+        if (idx < 0) return prev
+        const next = prev.slice()
+        next[idx] = {
+          ...next[idx],
+          ...(plainPreview ?? {}),
+          lastMsg: plainPreview ? plainPreview.lastMsg : next[idx].lastMsg,
+          lastImage: m.image_url ?? next[idx].lastImage,
+          lastRecalled: false,
+          lastTime: m.created_at ?? next[idx].lastTime,
+          unread: (next[idx].unread || 0) + (incoming ? 1 : 0),
+        }
+        next.sort((a, b) => conversationTime(b) - conversationTime(a))
+        return next
+      })
+      if (plainPreview) return
+      decryptForPeer(partnerId, m).then((text) => {
+        if (cancelled) return
+        const preview = previewFromText(text)
+        setConversations((prev) => {
+          const idx = prev.findIndex((c) => c.id === partnerId)
+          if (idx < 0) return prev
+          const next = prev.slice()
+          next[idx] = { ...next[idx], ...preview }
+          return next
+        })
+      }).catch(() => { /* 解不开保留旧预览，定向查询会按「🔒 消息」校正 */ })
+    }
+
+    async function refreshConversation(partnerId) {
+      if (!partnerId || partnerId === me) return
+      const seq = (convSeq.get(partnerId) ?? 0) + 1
+      convSeq.set(partnerId, seq)
+      const [latestRes, unreadRes] = await Promise.all([
+        supabase
+          .from('messages')
+          .select('sender_id, recipient_id, content, ciphertext, iv, created_at, image_url, recalled_at')
+          .or(`and(sender_id.eq.${me},recipient_id.eq.${partnerId}),and(sender_id.eq.${partnerId},recipient_id.eq.${me})`)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from('messages')
+          .select('id', { count: 'exact', head: true })
+          .eq('sender_id', partnerId)
+          .eq('recipient_id', me)
+          .is('read_at', null)
+          .is('recalled_at', null),
+      ])
+      // 同一个人的请求可能乱序返回（A→B→A）；只认最后一次
+      if (cancelled || convSeq.get(partnerId) !== seq) return
+      if (latestRes.error || unreadRes.error) return
+      const preview = await previewForMessage(partnerId, latestRes.data)
+      if (cancelled || convSeq.get(partnerId) !== seq) return
+      setConversations((prev) => {
+        const idx = prev.findIndex((c) => c.id === partnerId)
+        if (idx < 0) return prev
+        const next = prev.slice()
+        next[idx] = { ...next[idx], ...preview, unread: unreadRes.count || 0 }
+        next.sort((a, b) => conversationTime(b) - conversationTime(a))
+        return next
+      })
+    }
+
+    function scheduleConversation(partnerId) {
+      if (!partnerId) return
+      clearTimeout(convTimers.get(partnerId))
+      convTimers.set(partnerId, setTimeout(() => {
+        convTimers.delete(partnerId)
+        refreshConversation(partnerId)
+      }, 120))
+    }
+
+    // 群消息实时到达：先解密这一条本地打帧，再只重算这个群的摘要。
+    // 不能走 loadGroupSummaries（那会重新列群/拉成员 + 所有群各解 40 条），
+    // 一个群的消息不该让整列摘要重算 —— 实测会把 1 秒拖到 3 秒。
+    async function applyGroupInsert(m) {
+      const group = groupsRef.current.find((g) => g.thread?.id === m.thread_id)
+      if (!group?.thread) return
+      try {
+        const key = await groupKeyFor(group.thread)
+        const full = await decryptGroupRow(key, m)
+        if (cancelled || !full) return
+        const incoming = m.sender_id !== me
+        const countsAsUnread = incoming && full.body?.kind !== 'ai_state' && full.body?.kind !== 'locked'
+        setGroups((prev) => {
+          const idx = prev.findIndex((g) => g.thread?.id === m.thread_id)
+          if (idx < 0) return prev
+          const next = prev.slice()
+          next[idx] = {
+            ...next[idx],
+            latest: full.body?.kind ? { body: full.body, created_at: full.created_at, sender_id: full.sender_id } : next[idx].latest,
+            lastTime: full.created_at ?? next[idx].lastTime,
+            unread: (next[idx].unread || 0) + (countsAsUnread ? 1 : 0),
+          }
+          return next
+        })
+      } catch { /* 定向重算会兜底 */ }
+    }
+
+    async function refreshGroupRow(threadId) {
+      const group = groupsRef.current.find((g) => g.thread?.id === threadId)
+      if (!group?.thread) {
+        refreshGroupSummaries()
+        return
+      }
+      const { summary, error } = await loadGroupSummary(group.thread, me)
+      if (cancelled) return
+      if (error || !summary) {
+        setGroupNotice('群消息摘要暂时没更新，稍后会自动重试')
+        return
+      }
+      setGroups((prev) => {
+        const idx = prev.findIndex((g) => g.thread?.id === threadId)
+        if (idx < 0) return prev
+        const next = prev.slice()
+        next[idx] = { ...next[idx], ...summary }
+        return next
+      })
+      setGroupNotice(null)
+    }
+
+    function scheduleGroups(threadId = null) {
+      if (threadId) groupThreadIds.add(threadId)
+      clearTimeout(groupTimer)
+      groupTimer = setTimeout(() => {
+        const ids = [...groupThreadIds]
+        groupThreadIds.clear()
+        if (ids.length) {
+          for (const id of ids) refreshGroupRow(id)
+        } else {
+          refreshGroupSummaries()
+        }
+      }, 120)
+    }
+
+    const channel = supabase
+      .channel(`chat-list-live-${me}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+        const m = payload.new
+        if (!m || (m.sender_id !== me && m.recipient_id !== me)) return
+        applyInsert(m)
+        scheduleConversation(m.sender_id === me ? m.recipient_id : m.sender_id)
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload) => {
+        const m = payload.new
+        if (!m || (m.sender_id !== me && m.recipient_id !== me)) return
+        scheduleConversation(m.sender_id === me ? m.recipient_id : m.sender_id)
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'group_messages' }, (payload) => {
+        const m = payload.new
+        if (!m) return
+        applyGroupInsert(m)
+        scheduleGroups(m.thread_id)
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'group_messages' }, (payload) => {
+        scheduleGroups(payload.new?.thread_id)
+      })
+      .subscribe()
+
+    return () => {
+      cancelled = true
+      for (const timer of convTimers.values()) clearTimeout(timer)
+      convTimers.clear()
+      clearTimeout(groupTimer)
+      supabase.removeChannel(channel)
+    }
+  }, [live, embedded, me, refreshGroupSummaries])
 
   const filtered = useMemo(() => {
     if (!search.trim()) return conversations
@@ -185,7 +452,15 @@ export default function ChatList({
     setRetryTick((n) => n + 1)
   }
 
-  if (loading) return <p className="status-text">加载中…</p>
+  function retryGroups() {
+    setGroupLoading(true)
+    refreshGroupSummaries().finally(() => setGroupLoading(false))
+  }
+
+  // 已有快照/旧行时不要把列表换成整页"加载中…"（常驻侧栏闪一下就是一次跳动）
+  if (loading && conversations.length === 0 && groups.length === 0) {
+    return <p className="status-text">加载中…</p>
+  }
 
   return (
     <div className={`chat-page${embedded ? ' chat-page--pane' : ''}`}>
@@ -205,6 +480,12 @@ export default function ChatList({
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
+      {groupNotice && (
+        <div className="chat-list-notice" role="status" data-group-notice="1">
+          <span>{groupNotice}</span>
+          <button type="button" onClick={retryGroups}>重试</button>
+        </div>
+      )}
       {(shownGroups.length > 0 || groupLoading) && (
         <ul className="chat-list chat-group-list">
           {shownGroups.length === 0 && groupLoading && (

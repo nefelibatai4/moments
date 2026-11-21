@@ -4,6 +4,9 @@ import { supabase } from '../supabaseClient'
 import { isPanelSurface } from '../lib/surface'
 import { requestUnlock } from '../lib/unlockSignal'
 import { ensurePeekLoaded, isPeekOn } from '../lib/peekMode'
+import { notifyConversationRead } from '../lib/chatLive'
+import { usePinLatestOnViewport } from '../lib/usePinLatestOnViewport'
+import ChatPaneSkeleton from '../components/ChatPaneSkeleton'
 import { SHOW_MS, createTypingSender } from '../lib/typingStatus'
 import { useAuth } from '../lib/AuthContext'
 import { safeStorageKey } from '../lib/sanitizeFilename'
@@ -402,13 +405,18 @@ export default function ChatThread() {
     function markUnreadAsRead() {
       // 隐身预览（只有使用者本人能开，见 lib/peekMode.js）：整段会话不写已读
       if (isPeekOn()) return
+      // 侧栏角标先本地清零（不等 Realtime 往返）；写失败时下一轮 Realtime/全量会校正
+      notifyConversationRead(userId)
       supabase
         .from('messages')
         .update({ read_at: new Date().toISOString() })
         .eq('sender_id', userId)
         .eq('recipient_id', me)
         .is('read_at', null)
-        .then(({ error }) => { if (error) console.error('mark read error:', error) })
+        .then(({ error }) => {
+          if (error) console.error('mark read error:', error)
+          else notifyConversationRead(userId)
+        })
     }
 
     async function load() {
@@ -475,11 +483,15 @@ export default function ChatThread() {
           }
           // If it's from the other person and the page is in front, mark read immediately
           if (m.sender_id === userId && isPageActive() && !isPeekOn()) {
+            notifyConversationRead(userId)
             supabase
               .from('messages')
               .update({ read_at: new Date().toISOString() })
               .eq('id', m.id)
-              .then(({ error }) => { if (error) console.error('mark read error:', error) })
+              .then(({ error }) => {
+                if (error) console.error('mark read error:', error)
+                else notifyConversationRead(userId)
+              })
           }
         }
       })
@@ -653,44 +665,13 @@ export default function ChatThread() {
   }, [editing?.id])
 
   // ── 键盘弹起时把"最新消息"钉在底部（2026-11-16 使用者实测反馈）────────────
-  // 现象（我复现了）：手机上点输入框、键盘弹起后外壳会正确收缩到 --app-h=480，
-  // 输入框也贴在键盘上方；但**消息列表没有跟着滚到底** —— 实测 scrollTop 停在 1333，
-  // 而到底需要 1697，差 364px，正好是键盘高度那一截。于是"打字时看不到最新那部分"。
   // 做法：在视口变化/聚焦之前记下"原本是否在底部"，变化后用几帧把列表回到底部；
   // 原本就在翻历史就**不动**（否则会打断回看）。
-  useEffect(() => {
-    const el = msgListRef.current
-    if (!el) return undefined
-    let wasNearBottom = true
-
-    const nearBottom = () => el.scrollHeight - el.scrollTop - el.clientHeight < 80
-    const remember = () => { wasNearBottom = nearBottom() }
-    const pinIfNeeded = () => {
-      if (!wasNearBottom) return
-      el.scrollTop = el.scrollHeight
-    }
-    const handleViewportChange = () => {
-      remember()
-      // 键盘动画有几百毫秒，并且在 iOS 上可能只发一次中间态 → 多补几帧
-      requestAnimationFrame(pinIfNeeded)
-      setTimeout(pinIfNeeded, 120)
-      setTimeout(pinIfNeeded, 400)
-    }
-
-    remember()
-    window.visualViewport?.addEventListener('resize', handleViewportChange)
-    window.visualViewport?.addEventListener('scroll', handleViewportChange)
-    window.addEventListener('resize', handleViewportChange)
-    document.addEventListener('focusin', handleViewportChange, true)
-    return () => {
-      window.visualViewport?.removeEventListener('resize', handleViewportChange)
-      window.visualViewport?.removeEventListener('scroll', handleViewportChange)
-      window.removeEventListener('resize', handleViewportChange)
-      document.removeEventListener('focusin', handleViewportChange, true)
-    }
-    // ⚠️ 依赖里必须有 loading：`.chat-messages` 要等数据到了才渲染，
-    //    挂载那一刻 ref 还是 null —— 只写 `[]` 的话这段逻辑**永远不会生效**（实测踩到）。
-  }, [loading])
+  // ⚠️ 只在窄屏/手机形态启用：桌面三栏右栏由 flex 固定高度，窗口 resize
+  //    不等于键盘弹起，套用手机 hack 会在拖动窗口时把会话强行拉到底。
+  // ⚠️ 依赖里必须有 loading：`.chat-messages` 要等数据到了才渲染，
+  //    挂载那一刻 ref 还是 null —— 只写 `[]` 的话这段逻辑**永远不会生效**（实测踩到）。
+  usePinLatestOnViewport({ enabled: !wide, listRef: msgListRef, rerunKey: loading })
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -963,7 +944,13 @@ export default function ChatThread() {
     writeCachedThread(me, userId, { profile: otherProfile, messages: rows })
   }, [loading, otherProfile, rawMessages, me, userId])
 
-  if (loading) return <p className="status-text">加载中…</p>
+  // 宽屏右栏：用与右栏同高的会话骨架（头 + 气泡 + 输入条），
+  // 不能是一行居中文本 —— 内容出现时会把整列从几十像素拉到整屏。
+  if (loading) {
+    return wide
+      ? <ChatPaneSkeleton pane />
+      : <p className="status-text">加载中…</p>
+  }
 
   function handlePaste(e) {
     const items = e.clipboardData?.items
@@ -986,7 +973,12 @@ export default function ChatThread() {
   })
 
   return (
-    <div className={`chat-thread${wide ? ' chat-thread--pane' : ''}`} onPaste={handlePaste}>
+    <div
+      className={`chat-thread${wide ? ' chat-thread--pane' : ''}`}
+      data-chat-peer={userId}
+      data-keyboard-pin={wide ? 'off' : 'on'}
+      onPaste={handlePaste}
+    >
       <div className="chat-thread-header">
         {!wide && <Link to="/chat" className="chat-back-btn">←</Link>}
         {/* 头像点开看大图（灯箱），昵称点开看个人名片。两件事分开，
