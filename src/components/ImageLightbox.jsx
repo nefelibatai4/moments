@@ -32,12 +32,13 @@ function clampIndex(i, total) {
  *     右键菜单也没被吃掉（灯箱只是接管了普通左键）。
  *
  * @param {string|null} src - 单图模式：要显示的图片地址；为空则不渲染任何东西
- * @param {string[]} [images] - 图集模式：传了非空数组就按图集处理（优先于 src）
+ * @param {string[]} [images] - 图集模式：传了非空数组就按图集处理（优先于 src）；某项可为 null（还没解密好）
+ * @param {{status: 'ready'|'loading'|'error', onRetry?: () => void}[]} [states] - 与 images 对齐的加载状态
  * @param {number} [index=0] - 图集模式：先看第几张（从 0 开始）
  * @param {string} alt
  * @param {() => void} onClose
  */
-export default function ImageLightbox({ src, images, index = 0, alt = '', onClose }) {
+export default function ImageLightbox({ src, images, states, index = 0, alt = '', onClose }) {
   const list = images?.length ? images : src ? [src] : []
   const total = list.length
   const [current, setCurrent] = useState(() => clampIndex(index, total))
@@ -118,6 +119,9 @@ export default function ImageLightbox({ src, images, index = 0, alt = '', onClos
   }
 
   const showNav = total > 1
+  const currentSrc = list[current]
+  const currentState = states?.[current]
+  const failed = !currentSrc && currentState?.status === 'error'
 
   // ⚠️ 用 portal 挂到 <body>，不要留在原地（2026-09-29 在真 iOS App 里量出来的坑）：
   //    灯箱原来是渲染在 `.moment-card` 里的，而手机上 `main` 是滚动容器
@@ -173,12 +177,37 @@ export default function ImageLightbox({ src, images, index = 0, alt = '', onClos
         </>
       )}
 
-      <img
-        className="lightbox-img"
-        src={list[current]}
-        alt={alt}
-        onClick={(e) => e.stopPropagation()}
-      />
+      {currentSrc ? (
+        <img
+          className="lightbox-img"
+          src={currentSrc}
+          alt={alt}
+          onClick={(e) => e.stopPropagation()}
+        />
+      ) : (
+        <div
+          className="lightbox-status"
+          role={failed ? 'alert' : 'status'}
+          aria-live="polite"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {failed ? (
+            <>
+              <p>图片没能显示</p>
+              {currentState?.onRetry && (
+                <button type="button" className="lightbox-retry" onClick={currentState.onRetry}>
+                  重试
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <span className="lightbox-spinner" aria-hidden="true" />
+              <p>正在解密图片…</p>
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 

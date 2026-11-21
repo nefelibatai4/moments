@@ -7,8 +7,9 @@ import { relativeTime } from '../lib/relativeTime'
 import { CARD_COLORS, normalizeCardColor } from '../lib/cardColors'
 import { useAuth } from '../lib/AuthContext'
 import { supabase } from '../supabaseClient'
-import { storagePathFromUrl } from '../lib/signedUrls'
-import { useContentImageUrls } from '../lib/imageCrypto'
+import { invalidateSignedUrl, storagePathFromUrl } from '../lib/signedUrls'
+import { clearMediaFailure, mediaFailureReason, useContentImageUrls } from '../lib/imageCrypto'
+import { dropRaw } from '../lib/mediaCache'
 import SignedImage from './SignedImage'
 import { encryptCircleText, momentKey } from '../lib/crypto'
 import { moodByKey } from '../lib/moods'
@@ -37,6 +38,8 @@ export default function MomentCard({
   // 看图用的下标：null = 没在看。不存 URL 而存下标，是因为图集里要能左右翻页，
   // 翻页时得知道"现在看到第几张了"（见 components/ImageLightbox.jsx）。
   const [viewerIndex, setViewerIndex] = useState(null)
+  // 灯箱重试：+1 后 useContentImageUrls 会重跑取图 effect（见 lib/imageCrypto.js 的 refreshKey）
+  const [mediaRetry, setMediaRetry] = useState(0)
   const [likePending, setLikePending] = useState(false)
   // 长文折叠（使用者 2026-10-14："发布不要有字数限制…超出的在动态页面自动折叠"）：
   // 写的时候完全不限，**读**的时候默认只露几行，点「全文」就地展开。
@@ -66,15 +69,38 @@ export default function MomentCard({
   // 还没就绪就不渲染 src（占位），拿到后同一个元素自动换成真图（`data-signed` 语义不变）。
   const signedImages = useContentImageUrls(allImages, {
     resolveKey: () => momentKey(moment.id, moment.user_id),
+    refreshKey: mediaRetry,
   })
   const shownImages = (allImages.length > 9 ? allImages.slice(0, 9) : allImages)
     .map((url) => ({ stored: url, url: signedImages.get(url) ?? null }))
+  // 灯箱和缩略图共用同一条“签名 → 下载 → 本机解密”管线。
+  // 还没就绪就传 null，由 ImageLightbox 显示加载/失败占位 ——
+  // 绝不回退到原始定位串（私有桶的公开地址必 403，只会裂图）。
+  const lightboxImages = allImages.map((url) => signedImages.get(url) ?? null)
+  const lightboxStates = allImages.map((url) => {
+    if (signedImages.has(url)) return { status: 'ready' }
+    const reason = mediaFailureReason(storagePathFromUrl(url))
+    return reason
+      ? { status: 'error', onRetry: () => retryLightboxImage(url) }
+      : { status: 'loading' }
+  })
   const moreCount = allImages.length - shownImages.length
   const likes = moment.likes ?? []
   // 乐观更新时先拿自己的昵称顶上（服务器返回后用真实值覆盖）
   const nickname = profile?.nickname
 
   const liked = !!session && likes.some((l) => l.user_id === session.user.id)
+
+  // 失败占位上的「重试」：清掉试错记账、本机密文缓存与旧签名，再让取图 effect 重跑一次。
+  // 与聊天页图片的既有重试口径一致（见 pages/ChatThread.jsx）。
+  function retryLightboxImage(stored) {
+    const path = storagePathFromUrl(stored)
+    if (!path) return
+    clearMediaFailure(path)
+    dropRaw(path).catch(() => {})
+    invalidateSignedUrl('moment-images', stored)
+    setMediaRetry((n) => n + 1)
+  }
 
   // 折叠测量：只在"折叠状态"下量（展开时 scrollHeight === clientHeight，量不出东西）。
   // 用 ResizeObserver 跟着宽度/字体/图片变化重算 —— 窗口一窄，行数就变。
@@ -500,7 +526,8 @@ export default function MomentCard({
       )}
       {viewerIndex != null && (
         <ImageLightbox
-          images={allImages.map((u) => signedImages.get(u) ?? u)}
+          images={lightboxImages}
+          states={lightboxStates}
           index={viewerIndex}
           alt={`${displayName} 发布的图片`}
           onClose={() => setViewerIndex(null)}

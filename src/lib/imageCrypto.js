@@ -452,7 +452,7 @@ export function useContentImageUrls(locators, { resolveKey, kind = 'image', refr
     })()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fingerprint, retry])
+  }, [fingerprint, retry, refreshKey])
 
   return useMemo(() => {
     const out = new Map()
