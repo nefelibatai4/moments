@@ -27,10 +27,18 @@
          color-scheme 让滚动条和表单控件在首屏就跟着主题走。 */
       html {
         color-scheme: dark;
-        background-color: #07080a;
       }
       html[data-theme="light"] {
         color-scheme: light;
+      }
+      /* ⚠️ 这层首屏底色只给普通网页 / PWA。
+         毛玻璃面板（?surface=glass）里整页必须透明，否则这层不透明底色会把
+         浮层的 backdrop-filter 整个盖住（毛玻璃看起来"完全没生效"）。
+         data-surface 由 src/lib/surface.js 在首屏渲染前写到 <html>。 */
+      html:not([data-surface="glass"]) {
+        background-color: #07080a;
+      }
+      html[data-theme="light"]:not([data-surface="glass"]) {
         background-color: #f7f8f8;
       }
     </style>

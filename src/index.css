@@ -2850,7 +2850,11 @@ html[data-surface="panel"] .share-section {
   display: none;
 }
 
-/* 毛玻璃形态：整页底色透明，才能让浮层的模糊透出来 */
+/* 毛玻璃形态：整页（html + body）底色透明，才能让浮层的模糊透出来。
+   ⚠️ html 也必须透明：index.html 的首屏内联底色是给普通网页防闪白的，
+      虽然那里已经用 :not([data-surface="glass"]) 排除了面板，这里仍显式兜一层，
+      避免以后调整内联样式或 CSS 加载顺序时回归（verify-extension-panel 的差分截图会抓）。 */
+html[data-surface="glass"],
 html[data-surface="glass"] body {
   background-color: transparent;
 }
