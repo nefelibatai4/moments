@@ -34,7 +34,7 @@
   // 那样浮层的毛玻璃就被整页底色盖住了，看起来"毛玻璃完全没生效"（真实踩过的 bug）。
   const SITE_URL = 'https://nefelibatai4.github.io/moments/chat?surface=glass'
   const CLOSE_ON_ESCAPE = true
-  // 等 iframe 里的网页报"我加载好了"。超时说明被宿主网页的 CSP 挡了 → 兜底。
+  // 等 iframe 里的应用报"我已经画出首帧了"。超时说明加载慢/失败 → 显示加载占位。
   const FRAME_READY_TIMEOUT_MS = 5000
 
   // 重复注入时先切换掉（点第二下 = 关掉）。
@@ -108,15 +108,27 @@
         padding: 10px;
         box-sizing: border-box;
         font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+        /* 加载占位跟随面板当前深浅（data-live 由 applyStyle 写入），
+           否则浅色主题下会先露出一块深色底 */
+        --fallback-bg: rgba(10, 11, 14, 0.86);
+        --fallback-fg: #f2f2f2;
+        --fallback-spinner-track: rgba(255, 255, 255, 0.22);
+      }
+      .sheet[data-live="light"] {
+        --fallback-bg: rgba(247, 248, 248, 0.94);
+        --fallback-fg: #1a1b1e;
+        --fallback-spinner-track: rgba(0, 0, 0, 0.16);
       }
       /* 面板本身才是毛玻璃：backdrop-filter 作用在它身上，模糊它背后的网页。
          高度：使用者 2026-09-23 明确要求"只保留上面四分之一"，所以是 25vh
          （下限 200px 是为了在很矮的窗口里仍然能用；上限不设，随屏幕走）。 */
       .panel {
         position: relative;
-        /* 内容没就绪之前先别显形（否则会看到一块长时间的黑底） */
+        /* 内容没就绪之前先别显形（否则会看到一块长时间的黑底）。
+           ⚠️ 这里用 opacity 而不是 visibility：visibility:hidden 会让 iframe 不参与
+           渲染/命中测试，既拖慢首帧，也让底部拖拽条在等待期间完全没反应。
+           未就绪时 panel 本身 pointer-events:none（点外面仍能关掉），只留拖拽条可交互。 */
         opacity: 0;
-        visibility: hidden;
         transition: opacity 0.16s ease, background 0.18s ease, backdrop-filter 0.18s ease;
         width: min(420px, 100%);
         height: max(200px, 25vh);
@@ -130,9 +142,10 @@
         display: flex;
         flex-direction: column;
         overflow: hidden;
-        transition: background 0.18s ease, backdrop-filter 0.18s ease;
       }
-      .panel.is-ready { opacity: 1; visibility: visible; }
+      .panel:not(.is-ready) { pointer-events: none; }
+      .panel:not(.is-ready) .grip { pointer-events: auto; }
+      .panel.is-ready { opacity: 1; }
       .panel[data-mode="solid"] {
         border-color: rgba(255, 255, 255, 0.08);
       }
@@ -192,11 +205,23 @@
         gap: 12px;
         padding: 24px;
         text-align: center;
-        color: #f2f2f2;
-        background: rgba(10, 11, 14, 0.86);
+        color: var(--fallback-fg);
+        background: var(--fallback-bg);
         font: 400 13px/1.6 -apple-system, system-ui, sans-serif;
       }
       .fallback.show { display: flex; }
+      .fallback-spinner {
+        width: 22px;
+        height: 22px;
+        border: 2px solid var(--fallback-spinner-track);
+        border-top-color: #4c8dff;
+        border-radius: 50%;
+        animation: fallback-spin 0.8s linear infinite;
+      }
+      @keyframes fallback-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) {
+        .fallback-spinner { animation-duration: 2.4s; }
+      }
       .fallback button {
         border: 0;
         border-radius: 18px;
@@ -206,7 +231,6 @@
         font: 600 13px/1.4 -apple-system, system-ui, sans-serif;
         cursor: pointer;
       }
-      .sheet[data-live="dark"] .fallback { color: #f2f2f2; }
     </style>
     <div class="sheet">
       <div class="panel" data-mode="glass">
@@ -215,8 +239,9 @@
           allow="clipboard-read; clipboard-write"
           referrerpolicy="no-referrer"
         ></iframe>
-        <div class="fallback">
-          <p class="fallback-text">这个网页不让外面嵌页面，面板打不开。</p>
+        <div class="fallback" role="status" aria-live="polite">
+          <span class="fallback-spinner" aria-hidden="true"></span>
+          <p class="fallback-text">正在加载面板…</p>
           <button type="button" class="fallback-open">在独立窗口打开</button>
         </div>
         <div class="grip" title="拖动调整高度（双击恢复默认）" aria-label="拖动调整面板高度">
@@ -329,11 +354,14 @@
   }
 
   // ---------------------------------------------------------------- 与扩展通信
-  // iframe 里的网页加载成功后，content.js（all_frames）会通过 background 广播
-  // `panel:frameReady`。收到就说明面板真的活了；一直收不到 → 被 CSP 挡了。
+  // iframe 里的网页**真正画出首帧**后，content.js（all_frames）会通过 background
+  // 广播 `panel:frameReady`。收到就说明面板有内容了，这时才淡入；一直收不到 →
+  // 加载慢/加载失败，走下面的 5 秒兜底占位。
   function onMessage(msg) {
     if (msg && msg.type === 'panel:frameReady') {
       clearTimeout(readyTimer)
+      // 如果 5 秒兜底已经先显示了占位，内容到达后要把它收起来
+      fallback.classList.remove('show')
       try { panel.classList.add('is-ready') } catch { /* 忽略 */ }
       log('面板里的网页已就绪')
     }
@@ -356,14 +384,16 @@
   // 见 scripts/verify-extension-panel.cjs 的实测断言）。所以这条超时剩下能代表的
   // 只有"网络慢 / 站点挂了"，而那两种情况**独立小窗同样打不开** ——
   // 自动弹一个同样是空白的窗口只会让人困惑，不如把选择权交给使用者。
+  //
+  // 注意：这里才**第一次**显形（正常情况由 frameReady 触发）。旧的 400ms 强制显形
+  // 会在网页还没渲染时把空面板露出来，正是"先黑一下再白屏"的来源，已移除。
+  // 兜底显形时显示带加载指示的占位，而不是一块裸的深色玻璃。
   let readyTimer = setTimeout(() => {
+    fallbackText.textContent = '面板加载较慢（可能是网络问题），正在继续尝试…'
     fallback.classList.add('show')
-    fallbackText.textContent = '面板里的网页没能加载出来（可能是网络问题）。'
+    try { panel.classList.add('is-ready') } catch { /* 忽略 */ }
+    log('等待网页首帧超时，先显示加载占位')
   }, FRAME_READY_TIMEOUT_MS)
-
-  // 内容迟迟没就绪时也要显形（不然一直隐藏，比黑屏更让人以为"点了没反应"）
-  const REVEAL_FALLBACK_MS = 400
-  setTimeout(() => { try { panel.classList.add('is-ready') } catch { /* 忽略 */ } }, REVEAL_FALLBACK_MS)
 
   // ---------------------------------------------------------------- 起
   //

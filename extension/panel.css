@@ -1,8 +1,11 @@
-/* 兜底小窗（panel.html）的样式。配色直接沿用 app 的深色主题变量，视觉上是同一个产品。
-   这里刻意不跟随系统深浅色：网页本身默认就是深色，状态条跟着深色才一致。
+/* 兜底小窗（panel.html）的样式。配色沿用 app 的主题变量，视觉上是同一个产品。
+   默认深色；当使用者在【我】里选了浅色面板（chrome.storage.local.panelTheme），
+   panel.js 会把 data-theme="light" 打在 <html> 上，状态条和窗口底色一起变浅 ——
+   否则浅色网页会被一圈深色窗口包住，观感又是"先黑一下再白屏"。
    （真毛玻璃在浮层那边，见 overlay.js —— 浏览器给扩展窗口的底色是不透明的，
      所以这个独立小窗做不出"透出背后网页"的效果，那正是改用浮层的原因。） */
 :root {
+  color-scheme: dark;
   --bg-page: #07080a;
   --text-primary: #f9f9f9;
   --text-secondary: #cecece;
@@ -12,6 +15,19 @@
   --accent-green: #5fc992;
   --border-standard: rgba(255, 255, 255, 0.08);
   --btn-secondary-hover: rgba(255, 255, 255, 0.06);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-page: #f7f8f8;
+  --text-primary: #1a1b1e;
+  --text-secondary: #3c4043;
+  --text-tertiary: #5f6368;
+  --text-muted: #80868b;
+  --accent-red: #d93025;
+  --accent-green: #188038;
+  --border-standard: rgba(0, 0, 0, 0.08);
+  --btn-secondary-hover: rgba(0, 0, 0, 0.06);
 }
 
 * {

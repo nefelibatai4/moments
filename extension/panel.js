@@ -8,6 +8,17 @@
 const dot = document.getElementById('dot')
 const statusText = document.getElementById('statusText')
 const refreshBtn = document.getElementById('refreshBtn')
+const rootEl = document.documentElement
+
+// 兜底小窗也跟随面板主题（默认深色）。主题存在扩展存储里，和浮层共用同一个值；
+// 这样浅色网页不会突然被一圈深色窗口包住。
+function applyTheme(theme) {
+  rootEl.setAttribute('data-theme', theme === 'light' ? 'light' : 'dark')
+}
+
+chrome.storage.local.get('panelTheme').then(({ panelTheme }) => {
+  applyTheme(panelTheme || 'dark')
+}).catch(() => { /* 存储读不到：保持默认深色 */ })
 
 function timeLabel(ts) {
   if (!ts) return ''
@@ -74,7 +85,9 @@ refreshBtn.addEventListener('click', async () => {
 
 // background 每次轮询都会更新 status，这里跟着刷，面板开着时数字是活的
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.status) render(changes.status.newValue)
+  if (area !== 'local') return
+  if (changes.panelTheme) applyTheme(changes.panelTheme.newValue)
+  if (changes.status) render(changes.status.newValue)
 })
 
 // ⚠️ 光靠 background 的每分钟轮询不够（2026-09-22 使用者反馈）：

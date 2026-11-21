@@ -7,7 +7,7 @@
 // all_frames: true 是必需的，两个地方都靠它：
 //   ① 面板（浮层 / 兜底小窗）里是用 iframe 嵌的网页，那个 iframe 里的会话也要同步出来；
 //   ② 浮层要靠 iframe 里的这个脚本报一句 `panel:frameReady`，
-//      才知道"面板真的加载出来了"，而不是被宿主网页的 CSP 挡住了。
+//      才知道"面板里的应用真的画出首帧了"；一直收不到由浮层的加载占位兜底。
 //
 // 这个脚本不需要知道 anon key，只需要知道 supabase 存会话用的那个 key 名。
 ;(() => {
@@ -347,7 +347,65 @@
     })
   } catch { /* 忽略 */ }
 
-  // 告诉扩展"这个页面（可能是浮层里的 iframe）已经加载好了"。
-  // 浮层等不到这句话就认为网页被宿主页面的 CSP 挡住 → 退回独立小窗。
-  if (window.top !== window) send({ type: 'panel:frameReady' })
+  // ---------------------------------------------------------------- 面板首帧就绪
+  //
+  // 以前这里在 document_start 就立刻上报 `panel:frameReady`。那时 iframe 里的应用
+  // 还是一片空白，浮层收到就显形了 —— 使用者看到的是"先黑一下，再白屏"。
+  //
+  // 现在等应用**真正挂载出内容**（#root 里有子节点）并过完两帧再报，浮层收到才淡入。
+  // 兜底分两层：① 这里给 rAF 加一个短定时器（隐藏的 iframe 里 rAF 可能被节流）；
+  //          ② 应用一直不渲染时不在这里硬报，交给浮层的 5 秒加载占位。
+  function whenPanelPainted(callback) {
+    let sent = false
+
+    function report() {
+      if (sent) return
+      sent = true
+      let fired = false
+      const fire = () => {
+        if (fired) return
+        fired = true
+        callback()
+      }
+      try {
+        // 两帧：确保 React 写入 DOM 之后浏览器真的画出了这一帧
+        requestAnimationFrame(() => requestAnimationFrame(fire))
+      } catch {
+        /* 极老浏览器没有 rAF，直接走下面的定时器 */
+      }
+      setTimeout(fire, 200)
+    }
+
+    const appReady = () => {
+      if (document.readyState === 'loading') return false
+      const root = document.getElementById('root')
+      return !!root && root.childElementCount > 0
+    }
+
+    if (appReady()) {
+      report()
+      return
+    }
+
+    let observer = null
+    const stopObserving = () => {
+      if (!observer) return
+      observer.disconnect()
+      observer = null
+    }
+    const check = () => {
+      if (!appReady()) return
+      stopObserving()
+      report()
+    }
+
+    observer = new MutationObserver(check)
+    observer.observe(document.documentElement, { childList: true, subtree: true })
+    document.addEventListener('DOMContentLoaded', check, { once: true })
+    // load 时再补查一次；仍然没有 #root 内容就保持隐藏，等浮层的 5 秒占位。
+    window.addEventListener('load', check, { once: true })
+  }
+
+  // 浮层等不到这句话就认为网页没有真正渲染出来（或加载失败）。
+  if (isPanelFrame) whenPanelPainted(() => send({ type: 'panel:frameReady' }))
 })()
