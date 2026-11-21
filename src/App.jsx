@@ -9,7 +9,6 @@ import { subscribeToPush } from './lib/usePushNotification'
 import { useUnreadCount } from './lib/useUnreadCount'
 import { touchSession } from './lib/userPresence'
 import { useViewportHeight } from './lib/useViewportHeight'
-import ViewportDebug from './components/ViewportDebug'
 import UnlockPrompt from './components/UnlockPrompt'
 import SplashScreen from './components/SplashScreen'
 import PageSkeleton from './components/PageSkeleton'
@@ -36,6 +35,19 @@ const ChatThread = lazy(() => import('./pages/ChatThread'))
 const GroupThread = lazy(() => import('./pages/GroupThread'))
 const LabPage = lazy(() => import('./lab/LabPage'))
 const UserProfile = lazy(() => import('./pages/UserProfile'))
+// 隐藏的手机视口自检面板：**只在开发态加载**。构建时 import.meta.env.DEV 被静态
+// 替换为 false，Rollup 会把这条动态 import 连同组件代码、样式一起从生产产物里删掉。
+// 触发方式与组件注释一致：URL 带 ?debug=1，或双击底部「动态」标题（500ms 内两下）。
+//
+// ⚠️ debug 参数要在**模块加载时**就读下来：未登录访问 `/?debug=1` 时 RequireAuth
+//    会把人重定向到 /login，查询串随之丢失；而懒加载组件要等重定向后才挂载。
+//    静态 import 时代没有这个时间差，这里补上，保证开发态行为不变。
+const DEBUG_PARAM = import.meta.env.DEV &&
+  typeof window !== 'undefined' &&
+  new URLSearchParams(window.location.search).get('debug') === '1'
+const ViewportDebug = import.meta.env.DEV
+  ? lazy(() => import('./components/ViewportDebug'))
+  : null
 
 export default function App() {
   const { session, approved, recovering } = useAccess()
@@ -151,8 +163,13 @@ export default function App() {
           </Routes>
         </Suspense>
       </main>
-        {/* 隐藏的手机视口自检面板：连点标题 5 次或 ?debug=1 打开（见组件注释） */}
-        <ViewportDebug />
+        {/* 隐藏的手机视口自检面板：仅开发态加载；?debug=1 或双击底部「动态」标题打开
+            （触发逻辑见 components/ViewportDebug.jsx）。生产构建里整段会被裁掉。 */}
+        {ViewportDebug && (
+          <Suspense fallback={null}>
+            <ViewportDebug defaultOpen={DEBUG_PARAM} />
+          </Suspense>
+        )}
     </div>
   )
 }

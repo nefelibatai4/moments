@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
+import './ViewportDebug.css'
 
 /**
- * 隐藏的"手机视口自检面板"。
+ * 隐藏的"手机视口自检面板"。**仅开发态可用**：App.jsx 用 import.meta.env.DEV
+ * 守卫这条动态 import，生产构建不会打入本组件及其样式。
  *
  * ── 为什么需要它（使用者 2026-09-30 的实际问题）
  * 手机上底栏"浮空"、键盘弹起时输入框"飞到最上面"，但在 Mac 的 Chrome 里、
@@ -12,16 +14,20 @@ import { useEffect, useState } from 'react'
  *
  * 开启方式（都不是可见入口）：
  *   1. URL 带 `?debug=1`（电脑上用）
- *   2. App 里**双击**底部「动态」标题 —— 手机上不用敲网址
+ *   2. App 里**双击**底部「动态」标题（`.app-header h1`，两次点击间隔 < 500ms）
+ *      —— 手机上不用敲网址
  * 关闭：再双击一次，或点面板右上角 ×。
  *
  * ⚠️ 面板是 `pointer-events: none`，**不挡操作**：开着它照样能进私聊、弹键盘 ——
  *    这正是量"键盘态"所需要的（第一版挡住了，使用者反馈"打开面板就打不开私聊了"）。
  *    它还自动记录**历史极值**，所以操作一遍、最后截一张图就够，不必抓拍瞬间。
  */
-export default function ViewportDebug() {
+export default function ViewportDebug({ defaultOpen = false }) {
+  // defaultOpen 由 App 在模块加载时读取 ?debug=1 后传入（避免鉴权重定向丢掉查询串）；
+  // 直接使用本组件时仍回退到当前 URL，行为保持一致。
   const [open, setOpen] = useState(() =>
-    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1'
+    defaultOpen ||
+    (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1')
   )
   const [tick, setTick] = useState(0)
   const [stats, setStats] = useState({ maxGap: 0, maxKb: 0, maxOffsetTop: 0, minAppH: 0, maxAppH: 0 })

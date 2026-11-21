@@ -15,14 +15,18 @@ import './lab.css'
 const BASE = import.meta.env.BASE_URL
 
 const EXPERIMENTS = [
-  {
-    id: 'viewport',
-    title: '视口自检',
-    meta: '调试',
-    desc: '把刘海、键盘、地址栏的真实尺寸摊开来看。手机上遇到「底栏浮空」「输入框飞走」时，先开它。',
-    action: '打开自检',
-    href: `${BASE}?debug=1`,
-  },
+  // 视口自检面板只在开发态打包（App.jsx 的动态 import 由 import.meta.env.DEV
+  // 守卫）。生产里这张卡不能留，否则会指向一个已被裁掉的面板。
+  ...(import.meta.env.DEV
+    ? [{
+        id: 'viewport',
+        title: '视口自检',
+        meta: '调试',
+        desc: '把刘海、键盘、地址栏的真实尺寸摊开来看。手机上遇到「底栏浮空」「输入框飞走」时，先开它。',
+        action: '打开自检',
+        href: `${BASE}?debug=1`,
+      }]
+    : []),
   {
     id: 'splash',
     title: '开屏动画',
