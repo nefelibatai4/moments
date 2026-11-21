@@ -35,6 +35,7 @@ export default function ChatList() {
   const [groupLoading, setGroupLoading] = useState(true)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [retryTick, setRetryTick] = useState(0)
   const [search, setSearch] = useState('')
 
   // 先用上次的快照把联系人画出来（见 lib/chatCache.js）。
@@ -53,103 +54,113 @@ export default function ChatList() {
   useEffect(() => {
     async function load() {
       const me = session.user.id
-      // 群聊摘要和联系人并行拉；群加载失败不影响 1:1 列表
-      const groupPromise = loadGroupSummaries(me).catch(() => ({ summaries: [] }))
-      const [profileRes, msgRes, unreadRes] = await Promise.all([
-        supabase.from('profiles').select('id, nickname, avatar_url, is_ai').neq('id', me),
-        supabase
-          .from('messages')
-          .select('sender_id, recipient_id, content, ciphertext, iv, created_at, read_at, image_url, recalled_at')
-          .or(`sender_id.eq.${me},recipient_id.eq.${me}`)
-          .order('created_at', { ascending: false })
-          .limit(500),
-        supabase
-          .from('messages')
-          .select('sender_id')
-          .eq('recipient_id', me)
-          .is('read_at', null)
-          .is('recalled_at', null),
-      ])
-      if (profileRes.error) setError(profileRes.error.message)
-      else {
-        const unreadCounts = {}
-        for (const m of (unreadRes.data || [])) {
-          unreadCounts[m.sender_id] = (unreadCounts[m.sender_id] || 0) + 1
-        }
+      try {
+        setError(null)
+        // 群摘要**不跟着联系人一起等**：它自己解密，先到先填；失败了也只是少一行，
+        // 并保留第一帧已经画出来的本机快照（群加载失败不影响 1:1 列表）。
+        loadGroupSummaries(me)
+          .then((gs) => {
+            if (gs?.summaries?.length) setGroups(gs.summaries)
+          })
+          .catch(() => { /* 群加载失败只是少一行，别把整页拖死 */ })
+          .finally(() => setGroupLoading(false))
 
-        const latestByPartner = {}
-        for (const m of (msgRes.data || [])) {
-          const partnerId = m.sender_id === me ? m.recipient_id : m.sender_id
-          if (!latestByPartner[partnerId]) {
-            latestByPartner[partnerId] = {
-              content: m.content,
-              ciphertext: m.ciphertext,
-              iv: m.iv,
-              created_at: m.created_at,
-              image_url: m.image_url,
-              recalled_at: m.recalled_at,
+        const [profileRes, msgRes, unreadRes] = await Promise.all([
+          supabase.from('profiles').select('id, nickname, avatar_url, is_ai').neq('id', me),
+          supabase
+            .from('messages')
+            .select('sender_id, recipient_id, content, ciphertext, iv, created_at, read_at, image_url, recalled_at')
+            .or(`sender_id.eq.${me},recipient_id.eq.${me}`)
+            .order('created_at', { ascending: false })
+            .limit(500),
+          supabase
+            .from('messages')
+            .select('sender_id')
+            .eq('recipient_id', me)
+            .is('read_at', null)
+            .is('recalled_at', null),
+        ])
+        // 三个数据源任一失败都要让使用者看见，同时仍把已经拿到的部分画出来
+        const queryError = profileRes.error || msgRes.error || unreadRes.error
+        if (queryError) setError(queryError.message)
+        if (!profileRes.error) {
+          const unreadCounts = {}
+          for (const m of (unreadRes.data || [])) {
+            unreadCounts[m.sender_id] = (unreadCounts[m.sender_id] || 0) + 1
+          }
+
+          const latestByPartner = {}
+          for (const m of (msgRes.data || [])) {
+            const partnerId = m.sender_id === me ? m.recipient_id : m.sender_id
+            if (!latestByPartner[partnerId]) {
+              latestByPartner[partnerId] = {
+                content: m.content,
+                ciphertext: m.ciphertext,
+                iv: m.iv,
+                created_at: m.created_at,
+                image_url: m.image_url,
+                recalled_at: m.recalled_at,
+              }
             }
           }
+
+          // 最后一条是密文时，解出预览（解不开就不显示预览，绝不显示乱码）
+          const decryptedLast = {}
+          await Promise.all(Object.entries(latestByPartner).map(async ([partnerId, last]) => {
+            if (!last.ciphertext || !last.iv) return
+            try {
+              const text = await decryptForPeer(partnerId, last)
+              // 表情/文件消息在列表里只显示「[表情]」「[文件]」（不把 [[s:xxx]]、
+              // {"v":1,"kind":"file",…} 这种内部标记露给使用者）
+              const isVideo = typeof text === 'string' && text.startsWith('{"v":1,"kind":"video"')
+              const fileEnvelope = typeof text === 'string' && text.startsWith('{"v":1,"kind":"file"')
+              decryptedLast[partnerId] = stickerIdFromContent(text)
+                ? '[表情]'
+                : (isVideo ? '[视频]' : (fileEnvelope ? '[文件]' : text))
+            } catch {
+              decryptedLast[partnerId] = null
+            }
+          }))
+
+          // AI 成员（Ace）不进 1:1 列表：它住在「私密圈后花园」那个群里，
+          // 这里再出现一个"Ace 私聊"只会让人以为有两个入口。
+          const humans = (profileRes.data ?? []).filter((p) => !p.is_ai)
+          const merged = humans.map((p) => ({
+            ...p,
+            lastMsg: (p.id in decryptedLast)
+              ? (decryptedLast[p.id] ?? '🔒 消息')
+              : (latestByPartner[p.id]?.content ?? null),
+            lastImage: latestByPartner[p.id]?.image_url ?? null,
+            // 附件是文件还是图片？看**解密后的正文**（文件名/类型都藏在密文里，
+            // 所以服务端只知道"有个附件"，由本机解密后才决定显示 [文件] 还是 [图片]）
+            // ⚠️ 上面已经把文件信封**转成** '[文件]' 了，这里要按转换后的值判断
+            //    （第一版按原始 JSON 前缀判断，永远为 false —— 实测踩到）
+            lastFile: decryptedLast[p.id] === '[文件]',
+            lastVideo: decryptedLast[p.id] === '[视频]',
+            lastRecalled: !!latestByPartner[p.id]?.recalled_at,
+            lastTime: latestByPartner[p.id]?.created_at ?? null,
+            unread: unreadCounts[p.id] || 0,
+          }))
+
+          merged.sort((a, b) => {
+            const tA = a.lastTime ? new Date(a.lastTime).getTime() : 0
+            const tB = b.lastTime ? new Date(b.lastTime).getTime() : 0
+            return tB - tA
+          })
+
+          setConversations(merged)
+          writeChatListSnapshot(me, merged)
         }
-
-        // 最后一条是密文时，解出预览（解不开就不显示预览，绝不显示乱码）
-        const decryptedLast = {}
-        await Promise.all(Object.entries(latestByPartner).map(async ([partnerId, last]) => {
-          if (!last.ciphertext || !last.iv) return
-          try {
-            const text = await decryptForPeer(partnerId, last)
-            // 表情/文件消息在列表里只显示「[表情]」「[文件]」（不把 [[s:xxx]]、
-            // {"v":1,"kind":"file",…} 这种内部标记露给使用者）
-            const isVideo = typeof text === 'string' && text.startsWith('{"v":1,"kind":"video"')
-            const fileEnvelope = typeof text === 'string' && text.startsWith('{"v":1,"kind":"file"')
-            decryptedLast[partnerId] = stickerIdFromContent(text)
-              ? '[表情]'
-              : (isVideo ? '[视频]' : (fileEnvelope ? '[文件]' : text))
-          } catch {
-            decryptedLast[partnerId] = null
-          }
-        }))
-
-        // AI 成员（Ace）不进 1:1 列表：它住在「私密圈后花园」那个群里，
-        // 这里再出现一个"Ace 私聊"只会让人以为有两个入口。
-        const humans = (profileRes.data ?? []).filter((p) => !p.is_ai)
-        const merged = humans.map((p) => ({
-          ...p,
-          lastMsg: (p.id in decryptedLast)
-            ? (decryptedLast[p.id] ?? '🔒 消息')
-            : (latestByPartner[p.id]?.content ?? null),
-          lastImage: latestByPartner[p.id]?.image_url ?? null,
-          // 附件是文件还是图片？看**解密后的正文**（文件名/类型都藏在密文里，
-          // 所以服务端只知道"有个附件"，由本机解密后才决定显示 [文件] 还是 [图片]）
-          // ⚠️ 上面已经把文件信封**转成** '[文件]' 了，这里要按转换后的值判断
-          //    （第一版按原始 JSON 前缀判断，永远为 false —— 实测踩到）
-          lastFile: decryptedLast[p.id] === '[文件]',
-          lastVideo: decryptedLast[p.id] === '[视频]',
-          lastRecalled: !!latestByPartner[p.id]?.recalled_at,
-          lastTime: latestByPartner[p.id]?.created_at ?? null,
-          unread: unreadCounts[p.id] || 0,
-        }))
-
-        merged.sort((a, b) => {
-          const tA = a.lastTime ? new Date(a.lastTime).getTime() : 0
-          const tB = b.lastTime ? new Date(b.lastTime).getTime() : 0
-          return tB - tA
-        })
-
-        setConversations(merged)
-        writeChatListSnapshot(me, merged)
-        // 联系人先出来就能结束"加载中"；群那行有自己的占位行，不用等解密
+      } catch (err) {
+        // 网络被拦断时 supabase-js 会抛异常（参考 Timeline 的既有修法）
+        setError(err?.message || '网络请求失败')
+      } finally {
+        // 无论成功/失败都要落回 false，否则整页永远停在"加载中…"
         setLoading(false)
       }
-      // 群摘要**不跟着联系人一起等**：它自己解密，先到先填；失败了也只是少一行
-      groupPromise.then((gs) => {
-        if (gs?.summaries) setGroups(gs.summaries)
-        setGroupLoading(false)
-      })
-      setLoading(false)
     }
     load()
-  }, [session.user.id])
+  }, [session.user.id, retryTick])
 
   const filtered = useMemo(() => {
     if (!search.trim()) return conversations
@@ -164,11 +175,23 @@ export default function ChatList() {
     return groups.filter((g) => (g.thread?.name ?? '').toLowerCase().includes(q))
   }, [groups, search])
 
+  function retryLoad() {
+    setLoading(true)
+    setRetryTick((n) => n + 1)
+  }
+
   if (loading) return <p className="status-text">加载中…</p>
-  if (error) return <p className="status-text">加载失败：{error}</p>
 
   return (
     <div className="chat-page">
+      {error && (
+        <div className="status-text" role="alert">
+          <p className="error-text">加载失败：{error}</p>
+          <button className="maint-retry" type="button" onClick={retryLoad}>
+            重试
+          </button>
+        </div>
+      )}
       <div className="chat-search">
         <input
           type="text"
@@ -218,7 +241,7 @@ export default function ChatList() {
         </ul>
       )}
       {filtered.length === 0 ? (
-        <p className="status-text">还没有聊天记录。</p>
+        !error && <p className="status-text">还没有聊天记录。</p>
       ) : (
         <ul className="chat-list">
           {filtered.map((c) => (
