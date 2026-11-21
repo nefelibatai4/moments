@@ -36,6 +36,83 @@ const BUCKET = 'moment-images'
 const urlCache = new Map()     // locator → blob: 地址
 const MAX_CACHED = 120
 
+/**
+ * ── blob 地址的回收策略（2026-11-23，审计 #7）────────────────────
+ * 以前超过 120 条就按插入顺序 `revokeObjectURL` 最旧的那条 —— 但长列表里那条
+ * 可能**还挂在 DOM 上**（`<img src>` 仍然指着它）。地址一被回收，图就裂了；
+ * 滚动/回滚时尤其明显（看起来"偶发"，其实是"刚好被挤到上限之外"）。
+ *
+ * 现在分三层保护，目标不变（没用的地址要回收，防止内存膨胀）：
+ *   1. **租约（lease）**：`useContentImageUrls` 的每个挂载实例把它正在渲染的
+ *      对象路径登记进来（引用计数）。有租约的条目**永远不淘汰**。
+ *   2. **最近使用（lastUsed）**：渲染时读到的地址记一笔时间。淘汰只碰
+ *      60 秒内没被读过的条目 —— 覆盖"已经渲染、租约 effect 还没跑"的那一帧，
+ *      也顺带变成按访问时间淘汰（真正的 LRU，而不是插入顺序）。
+ *   3. **延迟回收**：被淘汰的地址不立刻 revoke，先等 30 秒；期间如果它又被
+ *      挂载/读到了，就放回缓存，绝不把仍在用的地址回收掉。
+ *
+ * 因此 `MAX_CACHED` 约束的是**可淘汰条目**：如果一屏里同时挂着超过 120 张图，
+ * 缓存会暂时超过上限（这些都是正在用的，回收必裂图）；等它们卸载后，
+ * 下一次淘汰会把总量降回上限。真正意义上的"上限"仍然成立：没人用的旧图会被清掉。
+ */
+const leaseCounts = new Map()   // locator → 仍挂载的 hook 实例数
+const lastUsed = new Map()      // locator → 最后一次被渲染读取的时间
+const RECENT_USE_MS = 60 * 1000
+const REVOKE_GRACE_MS = 30 * 1000
+const pendingRevokes = new Map() // blob: 地址 → 延迟回收定时器
+let trimTimer = null
+
+function isLeased(locator) {
+  return (leaseCounts.get(locator) ?? 0) > 0
+}
+
+/** 延迟回收：宽限期内又有人用（或又被缓存）就留下，否则才真正 revoke */
+function retireBlob(locator, url) {
+  if (!url || pendingRevokes.has(url)) return
+  const timer = setTimeout(() => {
+    pendingRevokes.delete(url)
+    // 宽限期内这个地址又被缓存回来了 → 继续用
+    if (urlCache.get(locator) === url) return
+    // 仍被挂载实例引用、且没有重新解出新地址 → 放回缓存（暂时超额，等卸载后再降回上限）
+    if (isLeased(locator) && !urlCache.has(locator)) {
+      urlCache.set(locator, url)
+      lastUsed.set(locator, Date.now())
+      for (const cb of cacheListeners) { try { cb(locator) } catch { /* 忽略 */ } }
+      return
+    }
+    try { URL.revokeObjectURL(url) } catch { /* 忽略 */ }
+  }, REVOKE_GRACE_MS)
+  pendingRevokes.set(url, timer)
+}
+
+/**
+ * 把缓存压回上限：只淘汰**没有租约、且 60 秒内没被读过**的条目。
+ * 全都是正在用的就暂时不动 —— 回收在用的地址只会制造裂图。
+ */
+function trimCache() {
+  if (urlCache.size <= MAX_CACHED) return
+  const now = Date.now()
+  let recentSkipped = false
+  for (const [locator, url] of [...urlCache]) {
+    if (urlCache.size <= MAX_CACHED) break
+    if (isLeased(locator)) continue
+    if (now - (lastUsed.get(locator) ?? 0) < RECENT_USE_MS) { recentSkipped = true; continue }
+    urlCache.delete(locator)
+    lastUsed.delete(locator)
+    retireBlob(locator, url)
+  }
+  // 最近用过的条目还不能动，但它们很快会变成"可淘汰"；到点再压一次
+  if (urlCache.size > MAX_CACHED && recentSkipped) scheduleTrim()
+}
+
+function scheduleTrim() {
+  if (trimTimer) return
+  trimTimer = setTimeout(() => {
+    trimTimer = null
+    trimCache()
+  }, RECENT_USE_MS + 1000)
+}
+
 /** 头几个字节是不是已知图片格式（用来区分"老明文图"与"密文"） */
 export function looksLikeImage(bytes) {
   const b = bytes
@@ -253,6 +330,7 @@ export function mediaDiagnostics(locator) {
     attempts: attemptCounts.get(locator) ?? 0,
     noKey: noKeyAttempts.get(locator) ?? 0,
     cached: urlCache.has(locator),
+    inUse: leaseCounts.get(locator) ?? 0,
     path: storagePathFromUrl(locator) ? 'yes' : 'no',
   }
 }
@@ -302,14 +380,36 @@ export function resetImageAttemptBudget() {
 
 /** 登出/换账号时释放内存里所有 `blob:` 地址（否则会把上一个人的内容留在内存里） */
 export function clearImageCache() {
+  if (trimTimer) { clearTimeout(trimTimer); trimTimer = null }
+  // 已经淘汰、但还在 30 秒宽限期里的地址同样要立刻回收（登出不能把内容留在内存里）
+  for (const [url, timer] of pendingRevokes) {
+    try { clearTimeout(timer) } catch { /* 忽略 */ }
+    try { URL.revokeObjectURL(url) } catch { /* 忽略 */ }
+  }
+  pendingRevokes.clear()
   for (const url of urlCache.values()) {
     try { URL.revokeObjectURL(url) } catch { /* 忽略 */ }
   }
   urlCache.clear()
+  leaseCounts.clear()
+  lastUsed.clear()
   attemptCounts.clear()
   noKeyAttempts.clear()
   // 本机缓存的密文也一起清（换账号/退出登录时不该留在设备上）
   clearRawCache().catch(() => {})
+}
+
+/**
+ * 诊断用：当前 blob 缓存状态（验收脚本用它确认"正在用的没有被回收"）。
+ * `size` 可以短暂大于 `max`（挂载中的图都受保护），`inUse` 是这些受保护对象数。
+ */
+export function blobCacheStats() {
+  return {
+    size: urlCache.size,
+    max: MAX_CACHED,
+    inUse: leaseCounts.size,
+    pendingRevoke: pendingRevokes.size,
+  }
 }
 
 /**
@@ -323,14 +423,19 @@ export function clearImageCache() {
 const cacheListeners = new Set()
 
 function remember(locator, url) {
-  urlCache.set(locator, url)
-  for (const cb of cacheListeners) { try { cb(locator) } catch { /* 订阅方自己的错 */ } }
-  while (urlCache.size > MAX_CACHED) {
-    const oldest = urlCache.keys().next().value
-    const dead = urlCache.get(oldest)
-    urlCache.delete(oldest)
-    try { URL.revokeObjectURL(dead) } catch { /* 忽略 */ }
+  const prev = urlCache.get(locator)
+  if (prev && prev !== url) {
+    // 同一对象重新解出了新地址：旧地址进入延迟回收，别马上 revoke（可能还有实例在用）
+    urlCache.delete(locator)
+    retireBlob(locator, prev)
+  } else if (prev === url) {
+    // 再插一次让 Map 的迭代顺序变成"最近使用"（插入顺序淘汰的基础）
+    urlCache.delete(locator)
   }
+  urlCache.set(locator, url)
+  lastUsed.set(locator, Date.now())
+  trimCache()
+  for (const cb of cacheListeners) { try { cb(locator) } catch { /* 订阅方自己的错 */ } }
 }
 
 /**
@@ -346,6 +451,8 @@ export function useContentImageUrls(locators, { resolveKey, kind = 'image', refr
   // ⚠️ 依赖用"定位符 → 签名地址"的字符串指纹，而不是 Map/数组本身：
   //    `list` 每次渲染都是新数组、`signed` 的 Map 也可能重建，直接进依赖会无限循环。
   const fingerprint = list.map((l) => `${l}→${signed.get(l) ?? ''}`).join('|')
+  // 只按"对象列表"变化登记租约（签名地址变化不需要重新登记）
+  const locatorKey = JSON.stringify(list)
   const [version, setVersion] = useState(0)
   const [retry, setRetry] = useState(0)
 
@@ -355,6 +462,27 @@ export function useContentImageUrls(locators, { resolveKey, kind = 'image', refr
     cacheListeners.add(cb)
     return () => { cacheListeners.delete(cb) }
   }, [, refreshKey])
+
+  /**
+   * 挂载期间给这批对象"占座"：只要还有 hook 实例在渲染某个路径，它的 blob 地址
+   * 就不会被淘汰/回收（审计 #7：长列表滚动时偶发裂图的根因）。
+   * 用引用计数而不是布尔值：卡片 + 灯箱、StrictMode 双挂载都可能同时引用同一个对象。
+   */
+  useEffect(() => {
+    const leased = new Set(list.filter((l) => storagePathFromUrl(l)))
+    for (const l of leased) leaseCounts.set(l, (leaseCounts.get(l) ?? 0) + 1)
+    trimCache()
+    return () => {
+      for (const l of leased) {
+        const n = (leaseCounts.get(l) ?? 0) - 1
+        if (n > 0) leaseCounts.set(l, n)
+        else { leaseCounts.delete(l); lastUsed.delete(l) }
+      }
+      // 卸载后可能已经低于上限：让淘汰把没用的旧地址清掉
+      trimCache()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locatorKey])
 
   useEffect(() => {
     let cancelled = false
@@ -461,7 +589,11 @@ export function useContentImageUrls(locators, { resolveKey, kind = 'image', refr
       // 它们不需要签名、更不需要解密。漏掉这一步，外链图会整片不显示。
       if (!storagePathFromUrl(locator)) { out.set(locator, locator); continue }
       const cached = urlCache.get(locator)
-      if (cached) out.set(locator, cached)
+      if (cached) {
+        // 记"最近被渲染读取"：淘汰时会跳过这些条目（覆盖 render → 租约 effect 的空窗）
+        lastUsed.set(locator, Date.now())
+        out.set(locator, cached)
+      }
     }
     return out
     // eslint-disable-next-line react-hooks/exhaustive-deps
