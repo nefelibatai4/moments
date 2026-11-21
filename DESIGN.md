@@ -266,3 +266,261 @@ When refining existing screens generated with this design system:
 3. Ensure shadows have both outer and inset layers — single-layer shadows look flat and wrong
 4. Confirm Inter has OpenType features `calt`, `kern`, `liga`, `ss03` enabled
 5. Test that hover states use opacity transitions (0.6) not color swaps — this is a core interaction pattern
+
+## 10. Moments 颜色令牌表（实现层）
+
+本节是 `src/index.css` 的**唯一颜色来源**。组件只允许引用 `var(--token)`；
+`scripts/verify-color-tokens.cjs` 会扫描非注释、非令牌定义行，硬编码颜色必须为 0。
+
+> **同值**：表示深/浅主题使用完全相同的值，浅色主题直接继承 `:root` 的声明，
+> 不在 `[data-theme="light"]` 里重复一份（避免两处漂移）。
+> 只有 `--moment-glow*`、`--panel-preview-*` 四项需要深浅两套值。
+
+### 10.1 既有核心令牌（值未改动）
+
+| 令牌 | 深色 | 浅色 | 用途 |
+|------|------|------|------|
+| `--bg-page` | `#07080a` | `#f7f8f8` | 页面底色 |
+| `--bg-card` | `#101111` | `#ffffff` | 卡片 / 骨架卡片 |
+| `--bg-elevated` | `#191a1b` | `#f3f4f5` | 浮层、菜单、输入区 |
+| `--bg-input` | `#07080a` | `#f7f8f8` | 输入框 |
+| `--bg-badge` | `#1b1c1e` | `#e8e9ea` | 徽标 / 头像底 |
+| `--text-primary` | `#f9f9f9` | `#18191a` | 主文字 |
+| `--text-secondary` | `#cecece` | `#434345` | 次级文字 |
+| `--text-tertiary` | `#9c9c9d` | `#6a6b6c` | 三级文字 |
+| `--text-muted` | `#6a6b6c` | `#9c9c9d` | 弱化文字 |
+| `--accent-blue` | `#55b3ff` | `#0066cc` | 链接 / 交互 |
+| `--accent-red` | `#ff6363` | `#cc3333` | 危险 / 点赞 |
+| `--accent-green` | `#5fc992` | `#339955` | 成功文字 |
+| `--border-subtle` | `rgba(255,255,255,0.06)` | `rgba(0,0,0,0.06)` | 最轻描边 |
+| `--border-standard` | `rgba(255,255,255,0.08)` | `rgba(0,0,0,0.08)` | 标准描边 |
+| `--border-strong` | `rgba(255,255,255,0.1)` | `rgba(0,0,0,0.12)` | 强描边 |
+| `--feed-divider` | `rgba(255,255,255,0.075)` | `#ececee` | 信息流 7px 色带 |
+| `--btn-primary-bg` | `hsla(0,0%,100%,0.815)` | `#18191a` | 主按钮底 |
+| `--btn-primary-text` | `#18191a` | `#ffffff` | 主按钮文字 |
+| `--btn-secondary-bg` | `rgba(255,255,255,0.04)` | `rgba(0,0,0,0.04)` | 次按钮底 |
+| `--btn-secondary-hover` | `rgba(255,255,255,0.06)` | `rgba(0,0,0,0.06)` | 次按钮 hover |
+| `--btn-ghost-bg` | `transparent` | `transparent` | 幽灵按钮底 |
+| `--card-shadow-outer` | `rgb(27,28,30) 0 0 0 1px` | `rgba(0,0,0,0.06) 0 0 0 1px` | 卡片外圈 |
+| `--card-shadow-inner` | `rgb(7,8,10) 0 0 0 1px inset` | `none` | 卡片内圈 |
+| `--popup-shadow` | 黑 50% 外圈 + 白 10% 光晕 | 黑 8% 外圈 + 黑 8% 投影 | 浮层阴影 |
+| `--focus-ring` | `hsla(202,100%,67%,0.15) 0 0 0 3px` | `hsla(202,100%,50%,0.15) 0 0 0 3px` | 焦点环 |
+| `--hover-wrap-bg` | `rgba(255,255,255,0.03)` | `rgba(0,0,0,0.03)` | 微光 / hover 底 |
+| `--panel-scrim` | `rgba(10,11,14,0.42)` | `rgba(247,248,248,0.5)` | 插件玻璃面板顶栏 |
+| `--moment-tint-*` | `oklch(0.30–0.32 …)` | `oklch(0.96–0.965 …)` | 每条动态的色卡 |
+
+### 10.2 新增扩展令牌
+
+#### 前景 / 媒体 / 兜底
+
+| 令牌 | 深色 | 浅色 | 用途 |
+|------|------|------|------|
+| `--text-on-color` | `#ffffff` | 同值 | 彩色底 / 媒体底上的白字 |
+| `--media-black` | `#000000` | 同值 | 视频 / 视频封面黑底 |
+| `--accent-doll` | `#3b82f6` | 同值 | 玩偶/心情旧组件的默认主色 |
+| `--border-fallback` | `rgba(0,0,0,0.08)` | 同值 | 旧组件 `--border` 兜底 |
+| `--border-fallback-strong` | `rgba(0,0,0,0.14)` | 同值 | 旧组件 `--border` 强兜底 |
+
+#### 遮罩 / 半透明控制层
+
+| 令牌 | 深色 | 浅色 | 用途 |
+|------|------|------|------|
+| `--control-overlay` | `rgba(0,0,0,0.28)` | 同值 | 图片/气泡上的圆形按钮底 |
+| `--scrim-media` | `rgba(0,0,0,0.55)` | 同值 | 图片 +N / 视频角标遮罩 |
+| `--scrim-toast` | `rgba(0,0,0,0.45)` | 同值 | 灯箱计数提示条 |
+| `--scrim-control` | `rgba(0,0,0,0.5)` | 同值 | 视频全屏关闭按钮底 |
+| `--scrim-lightbox` | `rgba(0,0,0,0.86)` | 同值 | 图片灯箱背景 |
+| `--scrim-viewer` | `rgba(0,0,0,0.92)` | 同值 | 视频全屏背景 |
+
+#### 媒体 / 玻璃上的白色 alpha 阶
+
+| 令牌 | 深色 | 浅色 | 用途 |
+|------|------|------|------|
+| `--on-media-12` | `rgba(255,255,255,0.12)` | 同值 | 灯箱重试按钮底 |
+| `--on-media-14` | `rgba(255,255,255,0.14)` | 同值 | 回复引用条底 |
+| `--on-media-16` | `rgba(255,255,255,0.16)` | 同值 | 灯箱关闭 / 翻页按钮底 |
+| `--on-media-18` | `rgba(255,255,255,0.18)` | 同值 | 玻璃预览描边 / 内高光 |
+| `--on-media-22` | `rgba(255,255,255,0.22)` | 同值 | 灯箱 spinner 轨道 |
+| `--on-media-24` | `rgba(255,255,255,0.24)` | 同值 | 灯箱重试 hover / 视频关闭描边 |
+| `--on-media-28` | `rgba(255,255,255,0.28)` | 同值 | 灯箱关闭 hover |
+| `--on-media-30` | `rgba(255,255,255,0.3)` | 同值 | 灯箱翻页 hover |
+| `--on-media-35` | `rgba(255,255,255,0.35)` | 同值 | 灯箱重试描边 |
+
+#### 中性灰 alpha 阶
+
+| 令牌 | 深色 | 浅色 | 用途 |
+|------|------|------|------|
+| `--neutral-8` | `rgba(127,127,127,0.08)` | 同值 | 媒体重试 hover |
+| `--neutral-12` | `rgba(127,127,127,0.12)` | 同值 | 群提示条底 |
+| `--neutral-16` | `rgba(127,127,127,0.16)` | 同值 | 群人数徽标底 |
+| `--neutral-18` | `rgba(127,127,127,0.18)` | 同值 | 使用量进度槽 / 头像占位 |
+| `--neutral-toggle-off` | `rgba(127,127,127,0.3)` | 同值 | 开关关闭态 |
+| `--neutral-dashed` | `rgba(127,127,127,0.45)` | 同值 | 图片重试虚线描边 |
+
+#### 浮层阴影（整条 shadow 收进令牌）
+
+| 令牌 | 深色 | 浅色 | 用途 |
+|------|------|------|------|
+| `--shadow-popover-soft` | `0 8px 28px rgba(0,0,0,0.18)` | 同值 | 表情面板 |
+| `--shadow-popover` | `0 8px 24px rgba(0,0,0,0.28)` | 同值 | 评论 / 消息菜单 |
+| `--shadow-toast` | `0 2px 8px rgba(0,0,0,0.15)` | 同值 | 卡片上的浮动按钮 |
+| `--shadow-toggle` | `0 1px 3px rgba(0,0,0,0.25)` | 同值 | 开关滑块 |
+| `--shadow-glass` | `0 8px 24px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.18)` | 同值 | 玻璃预览卡 |
+| `--shadow-unlock` | `0 14px 36px rgba(0,0,0,0.5)` | 同值 | 解锁提示 |
+
+#### 动态柔光 / 面板预览（深浅不同）
+
+| 令牌 | 深色 | 浅色 | 用途 |
+|------|------|------|------|
+| `--moment-glow` | `rgba(122,162,255,0.16)` | `rgba(0,0,0,0.05)` | 卡片鼠标柔光（有颜色卡） |
+| `--moment-glow-soft` | `rgba(122,162,255,0.12)` | `rgba(0,0,0,0.04)` | 默认色卡片柔光 |
+| `--panel-preview-text` | `#f4f4f5` | `#1a1f33` | 面板预览标题 |
+| `--panel-preview-meta` | `rgba(255,255,255,0.72)` | `rgba(26,31,51,0.7)` | 面板预览说明 |
+
+#### AI / 群聊暖色
+
+| 令牌 | 深色 | 浅色 | 用途 |
+|------|------|------|------|
+| `--ai-bg-soft` | `rgba(255,159,28,0.1)` | 同值 | @Ace 芯片底 |
+| `--ai-bg` | `rgba(255,159,28,0.12)` | 同值 | 设备未就绪提示条 |
+| `--ai-bg-strong` | `rgba(255,159,28,0.14)` | 同值 | AI 等待中气泡 |
+| `--ai-bg-emphasis` | `rgba(255,159,28,0.18)` | 同值 | AI 徽标 / hover |
+| `--ai-bg-gradient` | `rgba(255,159,28,0.22)` | 同值 | 群头像渐变起点 |
+| `--ai-border` | `rgba(255,159,28,0.35)` | 同值 | 暖色提示条描边 |
+| `--ai-border-emphasis` | `rgba(255,159,28,0.5)` | 同值 | @Ace 芯片描边 |
+| `--ai-marker` | `rgba(255,159,28,0.55)` | 同值 | AI 气泡左侧细线 |
+| `--ai-marker-emphasis` | `rgba(255,159,28,0.85)` | 同值 | 等待中气泡左线 |
+| `--ai-fill` | `rgba(255,159,28,0.9)` | 同值 | 群头像渐变实色 |
+| `--ai-text` | `#b9701a` | 同值 | AI 徽标文字 |
+| `--ai-text-emphasis` | `#9a5f12` | 同值 | 等待中气泡文字 |
+| `--ai-pink-bg` | `rgba(255,110,160,0.22)` | 同值 | 群头像渐变终点 |
+| `--ai-pink-fill` | `rgba(255,110,160,0.9)` | 同值 | 群头像渐变实色终点 |
+
+#### 成功 / 危险提示
+
+| 令牌 | 深色 | 浅色 | 用途 |
+|------|------|------|------|
+| `--success-strong` | `#3aa76d` | 同值 | 开关打开 / Ace 在线 / 隐身条 |
+| `--success-bg` | `rgba(58,167,109,0.14)` | 同值 | 隐身预览提示条底 |
+| `--success-border` | `rgba(58,167,109,0.35)` | 同值 | 隐身预览提示条描边 |
+| `--danger-wash` | `rgba(220,60,60,0.1)` | 同值 | 群错误提示底 |
+
+#### 暖纸色（维护页 / 开屏页）
+
+| 令牌 | 深色 | 浅色 | 用途 |
+|------|------|------|------|
+| `--paper-bg-start` | `#fdf9f3` | 同值 | 暖纸渐变起点 |
+| `--paper-bg-mid` | `#f8efe3` | 同值 | 暖纸渐变中段 |
+| `--paper-bg-end` | `#f3e7d7` | 同值 | 暖纸渐变终点 |
+| `--paper-ink` | `#3b322a` | 同值 | 暖纸主文字 |
+| `--paper-ink-strong` | `rgba(59,50,42,0.82)` | 同值 | 暖纸强调文字 |
+| `--paper-ink-muted` | `rgba(59,50,42,0.66)` | 同值 | 暖纸说明 |
+| `--paper-ink-soft` | `rgba(59,50,42,0.62)` | 同值 | 暖纸徽标文字 |
+| `--paper-ink-faint` | `rgba(59,50,42,0.58)` | 同值 | 暖纸备注 |
+| `--paper-ink-ghost` | `rgba(59,50,42,0.48)` | 同值 | 开屏副标题 |
+| `--paper-ink-label` | `rgba(59,50,42,0.44)` | 同值 | 暖纸单位标签 |
+| `--paper-ink-fine` | `rgba(59,50,42,0.4)` | 同值 | 暖纸细则 |
+| `--paper-wash` | `rgba(59,50,42,0.06)` | 同值 | 暖纸徽标底 |
+| `--paper-border` | `rgba(59,50,42,0.08)` | 同值 | 暖纸徽标描边 |
+| `--paper-border-strong` | `rgba(59,50,42,0.18)` | 同值 | 暖纸按钮描边 |
+| `--paper-btn-bg` | `rgba(255,255,255,0.6)` | 同值 | 暖纸按钮底 |
+| `--paper-glow` | `rgba(255,214,170,0.28)` | 同值 | 开屏暖光 |
+| `--paper-glow-soft` | `rgba(255,214,170,0.22)` | 同值 | 维护页暖光 |
+| `--paper-glow-fade` | `rgba(255,214,170,0)` | 同值 | 暖光透明终点 |
+| `--paper-rule` | `rgba(120,92,66,0.55)` | 同值 | 开屏细横线 |
+| `--paper-rule-fade` | `rgba(120,92,66,0)` | 同值 | 细横线透明终点 |
+
+#### 使用量 / 装饰 / 下雨
+
+| 令牌 | 深色 | 浅色 | 用途 |
+|------|------|------|------|
+| `--usage-bar-start` | `#6fa8dc` | 同值 | 流量条渐变起点 |
+| `--usage-bar-end` | `#4a86c8` | 同值 | 流量条渐变终点 |
+| `--usage-day-bar` | `rgba(111,168,220,0.55)` | 同值 | 七日柱状图 |
+| `--decor-violet` | `#7c5cff` | 同值 | 面板装饰光斑 |
+| `--decor-violet-fade` | `rgba(124,92,255,0)` | 同值 | 紫光斑透明终点 |
+| `--decor-cyan` | `#22d3ee` | 同值 | 面板装饰光斑 |
+| `--decor-cyan-fade` | `rgba(34,211,238,0)` | 同值 | 青光斑透明终点 |
+| `--mood-rain-top` | `rgba(18,32,48,0.34)` | 同值 | 下雨卡片压暗层顶 |
+| `--mood-rain-mid` | `rgba(24,44,66,0.26)` | 同值 | 下雨卡片压暗层中 |
+| `--mood-rain-bottom` | `rgba(12,24,38,0.38)` | 同值 | 下雨卡片压暗层底 |
+
+### 10.3 绿色合并取舍（视觉零变化的唯一例外）
+
+改动前 `src/index.css` 有 3 个近似绿：
+
+| 原值 | 原用途 | 归入 |
+|------|--------|------|
+| `#5fc992` | 成功文字（`--accent-green`） | 保留，不动 |
+| `#3aa76d` | 开关打开态、隐身预览条 | `--success-strong` |
+| `#2f9e6b` | Ace 在线小字 | `--success-strong` |
+
+**取舍**：`#3aa76d` 与 `#2f9e6b` 的 RGB 只差 `(11, 9, 2)`，在 11px 小字上
+ΔE 远低于可感知阈值，因此合并为 `--success-strong: #3aa76d`；`#5fc992`
+仍保留为 `--accent-green` 专管"成功文字"，因为把成功文字也压到 `#3aa76d`
+会产生可见的亮度变化。像素对比实测：合并只影响"在线"两个字和圆点，
+最大单通道差 11、差异像素占比 0.009%，关键页面截图无可见回归。
+
+### 10.4 令牌化验收
+
+| 脚本 | 作用 |
+|------|------|
+| `node scripts/verify-color-tokens.cjs` | 硬编码颜色扫描 = 0；令牌完整性；深/浅主题 35 项关键组件 computed style × 令牌 |
+| `node scripts/verify-color-visual.cjs` | 组件全家桶改前/改后像素对比；隐藏在线状态后要求 maxΔ=0 |
+| `node scripts/verify-color-pages.cjs` | 真实动态/私聊/【我】页面深/浅 + 手机/桌面截图对比（maxΔ≤2） |
+
+## 11. z-index 语义层级（实现层）
+
+`src/index.css` 的 `:root` 是**全站 z-index 的唯一来源**。组件只能用
+`z-index: var(--z-*)`，不得再写裸数字；确实需要新层时，按“谁盖住谁”在
+下表中插值，并同步本节与 `scripts/verify-zindex-scale.cjs`。
+
+本节的数值**沿用改造前的历史值**，任务只做“语义命名 + 集中定义”，
+因此层叠行为零变化。判断层级时先看语义，不要只背数字。
+
+### 11.1 层级表（从下到上）
+
+| 令牌 | 值 | 语义 | 当前使用位置 |
+|------|----|------|--------------|
+| `--z-base` | `1` | 媒体容器内最底层 | 视频封面 `img` |
+| `--z-raised` | `2` | 媒体容器内已就绪内容 | 视频 `video[data-video-loaded="1"]` |
+| `--z-chrome` | `3` | 局部 chrome（角标、粘性搜索框） | 视频角标、桌面私聊粘性搜索框 |
+| `--z-inline-control` | `5` | 行内浮动控件 | 聊天“回到底部”、双击点赞动画 |
+| `--z-inline-menu` | `6` | 行内 ⋯ 菜单容器 | 评论/私聊消息操作菜单 |
+| `--z-popover` | `10` | 卡片上的展开菜单 | 动态卡片 `⋯` 展开菜单 |
+| `--z-sticky` | `20` | 顶部吸顶导航（基础/插件形态） | `.app-header` 基础规则 |
+| `--z-nav` | `30` | 桌面竖栏 / 手机底栏 / 面板内嵌控件 | 桌面 `≥601px` 左侧竖栏、手机底栏、表情面板 |
+| `--z-gate` | `40` | 整页门禁 | 维护页 `.maint-screen` |
+| `--z-prompt` | `60` | 一次性提示 | 设备未就绪 `.unlock-prompt` |
+| `--z-notice` | `80` | 非阻塞提示条 | 新版本提示 `.update-notice` |
+| `--z-splash` | `90` | 开屏 | `.splash-screen` |
+| `--z-lightbox` | `100` | 图片灯箱 | `.lightbox`（portal 到 `body`） |
+| `--z-modal` | `110` | 确认弹层 | `.confirm-overlay` |
+| `--z-debug` | `300` | 开发态调试面板 | `.viewport-debug`（仅 DEV 加载） |
+| `--z-viewer` | `400` | 视频全屏查看器 | `.moment-video-lightbox` |
+
+### 11.2 必须保持的覆盖关系
+
+1. **开屏 > 提示条 > 常规内容**：`--z-splash(90) > --z-notice(80) > --z-sticky/--z-nav`，
+   开屏期间新版本提示条不抢镜，但提示条仍高于动态页内容与导航。
+2. **遮罩/弹层 > 内容**：图片灯箱 `--z-lightbox(100)` 高于底部输入行、
+   手机底栏与吸顶导航；确认弹层 `--z-modal(110)` 又高于灯箱。
+3. **灯箱 → 确认弹层 → 调试面板 → 视频查看器** 依次升高：
+   `100 < 110 < 300 < 400`。调试面板必须能在灯箱打开时出现；视频全屏查看器
+   是最高业务层。
+4. **吸顶搜索框**：桌面私聊第三列的 `.chat-search` 用 `--z-chrome(3)` +
+   `position: sticky`，只压住本列消息，低于导航（`--z-nav`）与所有浮层。
+5. **插件 surface 特例**：桌面竖栏的 `--z-nav(30)` 只写在
+   `html:not([data-surface])` 分支里；插件 `glass/panel` 形态不命中该分支，
+   继续沿用基础 `.app-header` 的 `--z-sticky(20)`。这是刻意差异，不是遗漏。
+6. **灯箱在手机端必须 portal 到 `body`**（踩坑 #66）：`z-index` 只在同一个
+   层叠上下文里比较，滚动容器会给灯箱单独建层；改层级时不要把它移回 `main`。
+
+### 11.3 验收
+
+```bash
+node scripts/verify-zindex-scale.cjs
+```
+
+脚本做两件事：静态扫描 `src/index.css`（注释与 `:root` 令牌定义除外）确认
+没有裸 `z-index` 数值；再解析令牌表断言 11.2 的全部大小关系与插件特例源码结构。
