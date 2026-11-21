@@ -59,6 +59,14 @@ export default function ImageLightbox({ src, images, states, index = 0, alt = ''
   // 那一下会落到背景上 → 刚滑完图就被关掉。记个时间戳把它吃掉。
   const lastSwipeRef = useRef(0)
 
+  // 焦点管理（aria-modal 要名副其实）：
+  //   * 打开时把焦点从触发元素移进灯箱（第一个可聚焦元素：关闭按钮）；
+  //   * Tab / Shift+Tab 只在灯箱内部循环，不跑到背后的页面；
+  //   * 关闭（点 ×、点背景、Esc）后焦点回到打开它的那个元素。
+  // 记触发元素用的是**打开那一刻**的 activeElement，所以点图和键盘回车都能还原。
+  const overlayRef = useRef(null)
+  const triggerRef = useRef(null)
+
   // 换到"当前这张 ± delta"（越界就停在边界）。
   // 读 currentRef 而不是 state，是为了让这个函数不随翻页变化 ——
   // 否则下面挂 keydown 的 effect 每翻一页都要重挂一次监听。
@@ -97,6 +105,75 @@ export default function ImageLightbox({ src, images, states, index = 0, alt = ''
     }
   }, [total, step])
 
+  useEffect(() => {
+    if (total === 0) return undefined
+    const node = overlayRef.current
+    if (!node) return undefined
+
+    // 打开前谁有焦点，关闭后就还给谁（null 表示打开时焦点在 body —— 无处可还）。
+    const previous = document.activeElement
+    triggerRef.current = previous instanceof HTMLElement && previous !== document.body ? previous : null
+
+    const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    // 每次按键现算：翻页会让「上一张/下一张」在禁用/可用之间切换，
+    // 失败占位还会动态长出「重试」。缓存一份会拿到过时的可聚焦列表。
+    const focusables = () => Array.from(node.querySelectorAll(FOCUSABLE))
+      .filter((el) => el instanceof HTMLElement && el.getClientRects().length > 0)
+    const focusFirst = () => {
+      const first = focusables()[0]
+      ;(first || node).focus({ preventScroll: true })
+    }
+
+    // 打开就先聚焦到灯箱内（关闭按钮），屏幕阅读器随即能读到 aria-label。
+    focusFirst()
+
+    const onTab = (e) => {
+      if (e.key !== 'Tab') return
+      const items = focusables()
+      if (items.length === 0) {
+        // 理论上不会发生（至少有关闭按钮），兜底把焦点留在对话框上。
+        e.preventDefault()
+        node.focus({ preventScroll: true })
+        return
+      }
+      const first = items[0]
+      const last = items[items.length - 1]
+      const active = document.activeElement
+      const activeIndex = items.indexOf(active)
+      // 焦点不在灯箱里（程序化聚焦、屏幕阅读器游标等），或落在一个刚变成 disabled
+      // 的按钮上（翻到最后一张时「下一张」会禁用，焦点仍留在它上面）：
+      // 先拉回可 Tab 的那一组，否则浏览器会从它继续往后跑到背后的页面。
+      if (activeIndex === -1) {
+        e.preventDefault()
+        ;(e.shiftKey ? last : first).focus({ preventScroll: true })
+        return
+      }
+      if (e.shiftKey && activeIndex === 0) {
+        e.preventDefault()
+        last.focus({ preventScroll: true })
+      } else if (!e.shiftKey && activeIndex === items.length - 1) {
+        e.preventDefault()
+        first.focus({ preventScroll: true })
+      }
+    }
+    // 兜底：任何把焦点送到灯箱外的操作（脚本 focus、浏览器快捷键）都拉回来，
+    // 不然 aria-modal 只是一句空话。
+    const onFocusIn = (e) => {
+      if (!node.contains(e.target)) focusFirst()
+    }
+
+    document.addEventListener('keydown', onTab)
+    document.addEventListener('focusin', onFocusIn)
+    return () => {
+      document.removeEventListener('keydown', onTab)
+      document.removeEventListener('focusin', onFocusIn)
+      const trigger = triggerRef.current
+      triggerRef.current = null
+      // 触发元素可能已经随列表更新被卸载（例如关灯箱的同时卡片被删）——别对着空气聚焦。
+      if (trigger && trigger.isConnected) trigger.focus({ preventScroll: true })
+    }
+  }, [total])
+
   if (total === 0) return null
 
   function onTouchStart(e) {
@@ -133,10 +210,12 @@ export default function ImageLightbox({ src, images, states, index = 0, alt = ''
   //    挂在 body 上就与任何祖先的图层规则无关了。
   const overlay = (
     <div
+      ref={overlayRef}
       className="lightbox"
       role="dialog"
       aria-modal="true"
       aria-label={showNav ? `查看图片（第 ${current + 1} 张，共 ${total} 张）` : '查看图片'}
+      tabIndex={-1}
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
       onClick={() => {
