@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import MomentExpandMenu from './MomentExpandMenu'
 import CommentSection from './CommentSection'
 import ImageLightbox from './ImageLightbox'
+import ConfirmDialog from './ConfirmDialog'
 import { mapLink } from '../lib/mapLink'
 import { relativeTime } from '../lib/relativeTime'
 import { CARD_COLORS, normalizeCardColor } from '../lib/cardColors'
@@ -33,6 +34,8 @@ export default function MomentCard({
   const [commentBoxOpen, setCommentBoxOpen] = useState(false)
   const [anonCommentOpen, setAnonCommentOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  // 删除确认弹层：点菜单里的「删除」只打开它，确认后才真的删（替代原生 confirm）。
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deleteError, setDeleteError] = useState(null)
   const [editing, setEditing] = useState(false)
   // 看图用的下标：null = 没在看。不存 URL 而存下标，是因为图集里要能左右翻页，
@@ -50,6 +53,8 @@ export default function MomentCard({
   // 双击点赞：`burst` 是那颗心的位置（相对卡片），`id` 换了就重播动画
   const [burst, setBurst] = useState(null)
   const cardRef = useRef(null)
+  // 打开确认弹层前的焦点（菜单项点完马上会被卸载，留作关闭后的回归线索）
+  const deleteTriggerRef = useRef(null)
   const lastTapRef = useRef(0)
   const brushRaf = useRef(0)
   const [draft, setDraft] = useState(moment.content ?? '')
@@ -256,8 +261,31 @@ export default function MomentCard({
     }
   }
 
+  // 点菜单「删除」：先开项目风格确认弹层，不直接删（原生 confirm 已弃用）。
+  // 取消/点遮罩/Esc 都走 cancelDelete，动态一条不动；只有确认键才进 handleDelete。
+  function requestDelete() {
+    if (deleting) return
+    deleteTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setDeleteError(null)
+    setDeleteConfirmOpen(true)
+  }
+
+  function cancelDelete() {
+    if (deleting) return
+    setDeleteConfirmOpen(false)
+  }
+
+  // 关闭弹层后把焦点还回去：原来的「删除」菜单项已随菜单卸载，
+  // 就回到这张卡片的 ⋯ 触发器（不留焦点在 body 上，键盘用户不用重新 Tab 一整页）。
+  function deleteReturnFocus() {
+    const opener = deleteTriggerRef.current
+    deleteTriggerRef.current = null
+    if (opener?.isConnected) return opener
+    return cardRef.current?.querySelector('.expand-trigger') ?? null
+  }
+
   async function handleDelete() {
-    if (!window.confirm('确定要删除这条动态吗？')) return
+    if (deleting) return
     setDeleting(true)
     setDeleteError(null)
     try {
@@ -276,10 +304,12 @@ export default function MomentCard({
       if (!deleted || deleted.length === 0) {
         throw new Error('删除失败：这条动态不存在，或你没有删除权限')
       }
+      setDeleteConfirmOpen(false)
       onDeleted?.(moment.id)
     } catch (err) {
       setDeleteError(err.message)
       setDeleting(false)
+      setDeleteConfirmOpen(false)
     }
   }
 
@@ -324,7 +354,7 @@ export default function MomentCard({
             onRequestAnonymousComment={() => { setAnonCommentOpen(true); setCommentBoxOpen(false) }}
             isOwner={isOwner}
             onEdit={startEdit}
-            onDelete={handleDelete}
+            onDelete={requestDelete}
             deleting={deleting}
           />
         )}
@@ -531,6 +561,16 @@ export default function MomentCard({
           index={viewerIndex}
           alt={`${displayName} 发布的图片`}
           onClose={() => setViewerIndex(null)}
+        />
+      )}
+      {deleteConfirmOpen && (
+        <ConfirmDialog
+          title="删除这条动态？"
+          description="删除后无法恢复。"
+          pending={deleting}
+          onConfirm={handleDelete}
+          onCancel={cancelDelete}
+          returnFocus={deleteReturnFocus}
         />
       )}
     </article>

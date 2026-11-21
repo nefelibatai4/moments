@@ -2670,6 +2670,109 @@ button:disabled {
   letter-spacing: 0.06em;
 }
 
+/* 删除确认弹层（见 components/ConfirmDialog.jsx）
+   替代原生 window.confirm：遮罩用页面色混合（不新增硬编码色），
+   弹层沿用 DESIGN.md 的 16px 圆角 + Level 5 浮层阴影 + 内高光。 */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  /* 盖住灯箱（100）与底部输入行 */
+  z-index: 110;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--bg-page) 72%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.confirm-overlay:focus {
+  outline: none;
+}
+
+.confirm-panel {
+  width: min(360px, 100%);
+  padding: 20px;
+  border: 1px solid var(--border-standard);
+  border-radius: 16px;
+  background: var(--bg-card);
+  /* 外圈 + 浮层阴影 + 顶部内高光：Raycast 的"玻璃抬起"层次 */
+  box-shadow: var(--popup-shadow), inset 0 1px 0 0 var(--border-subtle);
+  animation: confirm-in 0.16s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+.confirm-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  line-height: 1.4;
+}
+
+.confirm-desc {
+  margin: 6px 0 0;
+  color: var(--text-tertiary);
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.55;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.confirm-actions button {
+  border: 1px solid transparent;
+  border-radius: 86px;
+  padding: 7px 18px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.confirm-actions button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.confirm-cancel {
+  background: var(--btn-ghost-bg);
+  color: var(--text-secondary);
+  border-color: var(--border-strong);
+}
+
+.confirm-cancel:hover:not(:disabled) {
+  background: var(--btn-secondary-hover);
+  opacity: 1;
+}
+
+.confirm-danger {
+  background: color-mix(in srgb, var(--accent-red) 16%, transparent);
+  border-color: color-mix(in srgb, var(--accent-red) 38%, transparent);
+  color: var(--accent-red);
+}
+
+.confirm-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-red) 24%, transparent);
+  opacity: 1;
+}
+
+@keyframes confirm-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .chat-input-row button {
   border: none;
   background: var(--accent-blue);
