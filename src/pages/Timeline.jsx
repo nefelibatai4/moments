@@ -5,6 +5,7 @@ import { readTimelineSnapshot, writeTimelineSnapshot } from '../lib/timelineSnap
 import { decryptTimelineRows, onUnlockChange, unlockStateVersion } from '../lib/crypto'
 import { sweepCirclePlaintext, sweepMyMessages } from '../lib/circleSync'
 import { sweepImagePlaintext } from '../lib/imageSync'
+import { useTimelineScrollRestore } from '../lib/timelineScroll'
 import MomentCard from '../components/MomentCard'
 import MomentSkeleton from '../components/MomentSkeleton'
 
@@ -29,6 +30,14 @@ export default function Timeline() {
   // 用回调 ref 而不是 useRef：首屏渲染的是"加载中…"，哨兵元素还没进 DOM，
   // 用 useRef + [] 依赖的 effect 会在挂载时拿到 null，观察器就永远不生效了。
   const [sentinelEl, setSentinelEl] = useState(null)
+  // 从私聊/别的路由回到时间线时，恢复上次的浏览位置（见 lib/timelineScroll.js）。
+  // 必须等正文（不是骨架屏）进 DOM 再恢复，否则浏览器会把越界的 scrollTop 钳到 0。
+  const timelineElRef = useRef(null)
+  useTimelineScrollRestore({
+    userId,
+    ready: !loading && moments.length > 0,
+    timelineRef: timelineElRef,
+  })
 
   // 先用上次的快照把内容画出来（见 lib/timelineSnapshot.js）。
   // ⚠️ 必须用 useLayoutEffect 而不是 useEffect：后者在**浏览器画完第一帧之后**才跑，
@@ -290,7 +299,7 @@ export default function Timeline() {
   if (moments.length === 0) return <p className="status-text">还没有动态。</p>
 
   return (
-    <div className="timeline">
+    <div className="timeline" ref={timelineElRef}>
       {moments.map((m) => (
         <MomentCard
           key={m.id}
