@@ -43,26 +43,46 @@ export default function Profile() {
   const [darkMode, setDarkMode] = useState(getTheme() === 'dark')
   const [error, setError] = useState(null)
   const [message, setMessage] = useState(null)
+  // 资料加载失败单独记：不能和"保存失败"共用一个 error，否则重试会把两者混在一起。
+  // 加载失败必须让使用者看见（以前是静默吞掉，只显示空昵称），并给一个重试入口。
+  const [loadError, setLoadError] = useState(null)
+  const [retryTick, setRetryTick] = useState(0)
   // 玩偶形象：与头像各放各的（使用者 2026-10-14：玩偶是玩偶，头像是头像）
   const [doll, setDoll] = useState(null)
 
   useEffect(() => {
+    let cancelled = false
     async function load() {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('nickname, avatar_url, signature, doll')
-        .eq('id', session.user.id)
-        .single()
-      if (!error && data) {
-        setNickname(data.nickname)
-        setAvatarUrl(data.avatar_url)
-        setSignature(data.signature ?? '')
-        setDoll(data.doll ?? null)
+      setLoadError(null)
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('nickname, avatar_url, signature, doll')
+          .eq('id', session.user.id)
+          .single()
+        if (error) throw error
+        if (!cancelled && data) {
+          setNickname(data.nickname)
+          setAvatarUrl(data.avatar_url)
+          setSignature(data.signature ?? '')
+          setDoll(data.doll ?? null)
+        }
+      } catch (err) {
+        // 网络被拦断时 supabase-js 会抛异常；HTTP 错误则走上面的 throw（参考 ChatList A4）
+        if (!cancelled) setLoadError(err?.message || '网络请求失败')
+      } finally {
+        // 无论成功/失败都要落回 false，否则整页永远停在"加载中…"
+        if (!cancelled) setLoading(false)
       }
-      setLoading(false)
     }
     load()
-  }, [session.user.id])
+    return () => { cancelled = true }
+  }, [session.user.id, retryTick])
+
+  function retryLoad() {
+    setLoading(true)
+    setRetryTick((n) => n + 1)
+  }
 
   async function handleAvatarChange(e) {
     const file = e.target.files[0]
@@ -217,6 +237,15 @@ export default function Profile() {
     <div className="profile-page">
       <h2>我</h2>
 
+      {/* 资料加载失败：和 ChatList A4 同一套错误态（role=alert + 重试），不再静默显示空昵称 */}
+      {loadError && (
+        <div className="status-text" role="alert">
+          <p className="error-text">加载失败：{loadError}</p>
+          <button className="maint-retry" type="button" onClick={retryLoad}>
+            重试
+          </button>
+        </div>
+      )}
 
       <div className="profile-avatar-section">
         <button
