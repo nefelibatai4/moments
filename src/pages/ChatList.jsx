@@ -47,7 +47,7 @@ function previewFromText(text) {
  * 把"最后一条消息"变成侧栏要显示的几个字段。
  * 全量加载与 Realtime 单行刷新共用，避免两条路径的预览规则漂移。
  */
-async function previewForMessage(partnerId, last) {
+async function previewForMessage(partnerId, last, knownText = null) {
   if (!last) {
     return {
       lastMsg: null,
@@ -67,7 +67,9 @@ async function previewForMessage(partnerId, last) {
     return { ...base, lastMsg: last.content ?? null, lastFile: false, lastVideo: false }
   }
   try {
-    const text = await decryptForPeer(partnerId, last)
+    // Realtime INSERT 已经为"先打一帧"解过一次密；定向查询拿到同一条消息时
+    // 把明文传进来，避免同一条密文在 120ms 内被解两次（见 refreshConversation）。
+    const text = knownText ?? await decryptForPeer(partnerId, last)
     return { ...base, ...previewFromText(text) }
   } catch {
     // 解不开就不显示内容，也绝不显示乱码
@@ -100,6 +102,51 @@ export default function ChatList({
   const [retryTick, setRetryTick] = useState(0)
   const [search, setSearch] = useState('')
   const groupsRef = useRef([])
+  const activeRowRef = useRef(null)
+  const pendingActiveScrollRef = useRef(false)
+  // partnerId → { id, ciphertext, iv, text }：给 Realtime 与定向查询共用一份解密结果。
+  const decryptedPreviewRef = useRef(new Map())
+
+  // 只有 activeId/activeGroup 变化或目标行刚渲染出来时才滚动一次。
+  // 这样使用者自己把列表滚走之后，后续 Realtime 更新不会把选中行硬拉回来。
+  useEffect(() => {
+    pendingActiveScrollRef.current = true
+  }, [activeId, activeGroup])
+
+  useEffect(() => {
+    if (!pendingActiveScrollRef.current) return
+    const row = activeRowRef.current
+    if (!row) return
+    if (!row.isConnected) {
+      activeRowRef.current = null
+      return
+    }
+    const scroller = row.closest('.chat-page--pane')
+    if (!scroller) return
+    // 只调容器的 scrollTop，不调用 focus()/click()：
+    // 深链或刷新时滚动选中行，不能抢走键盘焦点，也不能触发额外的已读写入。
+    const raf = window.requestAnimationFrame(() => {
+      const rowRect = row.getBoundingClientRect()
+      const boxRect = scroller.getBoundingClientRect()
+      const searchEl = scroller.querySelector('.chat-search')
+      const stickyBottom = searchEl ? searchEl.getBoundingClientRect().bottom : boxRect.top
+      const visibleTop = Math.max(boxRect.top, stickyBottom) + 2
+      const visibleBottom = boxRect.bottom - 2
+      if (rowRect.top < visibleTop) {
+        scroller.scrollTop -= visibleTop - rowRect.top
+      } else if (rowRect.bottom > visibleBottom) {
+        scroller.scrollTop += rowRect.bottom - visibleBottom
+      }
+      pendingActiveScrollRef.current = false
+    })
+    return () => window.cancelAnimationFrame(raf)
+    // conversations/groups 变化会让"目标行第一次出现"这一帧也跑到这里；
+    // search 只用于过滤后重新出现时补一次，不参与"把滚走的行拉回来"。
+  }, [activeId, activeGroup, conversations, groups, search])
+
+  const setActiveRowRef = useCallback((node) => {
+    activeRowRef.current = node
+  }, [])
 
   // 先用上次的快照把联系人画出来（见 lib/chatCache.js）。
   // ⚠️ useLayoutEffect：要在**第一帧之前**就把内容放进去，否则先闪一下"加载中"。
@@ -283,6 +330,13 @@ export default function ChatList({
       if (plainPreview) return
       decryptForPeer(partnerId, m).then((text) => {
         if (cancelled) return
+        // 定向查询马上会拿到同一条消息；把这次解出的明文留一份，
+        // 用 id + 密文 + iv 校验后复用，避免同一条消息在 120ms 内解两遍。
+        if (m.id) {
+          decryptedPreviewRef.current.set(partnerId, {
+            id: m.id, ciphertext: m.ciphertext ?? null, iv: m.iv ?? null, text,
+          })
+        }
         const preview = previewFromText(text)
         setConversations((prev) => {
           const idx = prev.findIndex((c) => c.id === partnerId)
@@ -301,7 +355,7 @@ export default function ChatList({
       const [latestRes, unreadRes] = await Promise.all([
         supabase
           .from('messages')
-          .select('sender_id, recipient_id, content, ciphertext, iv, created_at, image_url, recalled_at')
+          .select('id, sender_id, recipient_id, content, ciphertext, iv, created_at, image_url, recalled_at')
           .or(`and(sender_id.eq.${me},recipient_id.eq.${partnerId}),and(sender_id.eq.${partnerId},recipient_id.eq.${me})`)
           .order('created_at', { ascending: false })
           .limit(1)
@@ -317,7 +371,18 @@ export default function ChatList({
       // 同一个人的请求可能乱序返回（A→B→A）；只认最后一次
       if (cancelled || convSeq.get(partnerId) !== seq) return
       if (latestRes.error || unreadRes.error) return
-      const preview = await previewForMessage(partnerId, latestRes.data)
+      const latest = latestRes.data
+      const cachedDecrypt = decryptedPreviewRef.current.get(partnerId)
+      const sameMessage = !!latest && !!cachedDecrypt &&
+        cachedDecrypt.id === latest.id &&
+        cachedDecrypt.ciphertext === (latest.ciphertext ?? null) &&
+        cachedDecrypt.iv === (latest.iv ?? null)
+      if (sameMessage) decryptedPreviewRef.current.delete(partnerId)
+      const preview = await previewForMessage(
+        partnerId,
+        latest,
+        sameMessage ? cachedDecrypt.text : null,
+      )
       if (cancelled || convSeq.get(partnerId) !== seq) return
       setConversations((prev) => {
         const idx = prev.findIndex((c) => c.id === partnerId)
@@ -472,9 +537,10 @@ export default function ChatList({
           </button>
         </div>
       )}
-      <div className="chat-search">
+      <div className="chat-search" role="search">
         <input
           type="text"
+          aria-label="搜索联系人"
           placeholder="搜索联系人…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -507,6 +573,7 @@ export default function ChatList({
                 className={`chat-list-item chat-group-item${activeGroup ? ' is-active' : ''}`}
                 aria-current={activeGroup ? 'page' : undefined}
                 data-group-id={g.id}
+                ref={activeGroup ? setActiveRowRef : undefined}
               >
                 <span className="chat-list-avatar chat-group-avatar" aria-hidden="true">
                   <span className="chat-group-avatar-glyph">❀</span>
@@ -547,6 +614,7 @@ export default function ChatList({
                 to={`/chat/${c.id}`}
                 className={`chat-list-item${activeId === c.id ? ' is-active' : ''}`}
                 aria-current={activeId === c.id ? 'page' : undefined}
+                ref={activeId === c.id ? setActiveRowRef : undefined}
               >
                 <span className="chat-list-avatar">
                   {c.avatar_url ? <SignedImage bucket="avatars" stored={c.avatar_url} alt="" /> : c.nickname.slice(0, 1)}

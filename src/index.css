@@ -345,6 +345,14 @@ button:disabled {
   text-decoration: none;
 }
 
+/* 键盘可达：所有导航项（含 h1 里的「动态」）都要有看得见的焦点环。
+   插件面板与手机底栏同一套 DOM，因此这条规则对三种形态都生效。 */
+.app-header .nav-item:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+
 /* 导航栏未读私聊角标 */
 .app-header nav a.nav-chat-link {
   display: inline-flex;
@@ -3464,6 +3472,17 @@ html:not([data-surface]) .app-container:not(.authed) {
   to { transform: translateX(100%); }
 }
 
+/* 减少动效：骨架不再跑微光，保留一层静态底色告诉使用者"这里在加载"。
+   通用规则会把时长压到 0.01ms，但无限循环的位移仍可能触发一帧闪动；
+   直接去掉 animation 比依赖时长覆盖更确定。 */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after {
+    animation: none;
+    transform: none;
+    opacity: 0.35;
+  }
+}
+
 .skeleton-avatar {
   width: 38px;
   height: 38px;
@@ -3622,6 +3641,9 @@ html[data-surface] .page-skeleton-card + .page-skeleton-card {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+  /* 会话行的 hover 底色和骨架微光都属于"装饰性动效"，直接关掉，
+     不让减少动效的用户看到任何过渡。 */
+  .chat-list-item { transition: none; }
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -5179,6 +5201,9 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
     padding: 12px 8px 0;
     overflow-y: auto;
     overscroll-behavior: contain;
+    /* 键盘 Tab 到被吸顶搜索框挡住的会话行时，浏览器原生滚动会把它送到
+       搜索框下方而不是藏进搜索框背后（手动 scrollIntoView 也按同一留白计算）。 */
+    scroll-padding-top: 58px;
   }
 
   html:not([data-surface]) .chat-workspace.is-wide .chat-page--pane .chat-search {
@@ -5187,6 +5212,19 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
     z-index: var(--z-chrome);
     padding: 2px 4px 10px;
     background-color: var(--bg-card);
+  }
+
+  /* 键盘焦点可见：会话行 / 搜索框 / 左侧竖栏都在深色底上，
+     只改边框颜色在弱视或低对比屏上不够，所以统一补一圈设计令牌的焦点环。 */
+  html:not([data-surface]) .chat-workspace.is-wide .chat-sidebar .chat-list-item:focus-visible,
+  html:not([data-surface]) .chat-workspace.is-wide .chat-sidebar .chat-search input:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 2px;
+  }
+
+  html:not([data-surface]) .chat-workspace.is-wide .chat-sidebar .chat-search input:focus-visible {
+    border-color: var(--accent-blue);
+    box-shadow: var(--focus-ring);
   }
 
   /* 第三列：完整对话。 */

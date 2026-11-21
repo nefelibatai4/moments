@@ -105,7 +105,7 @@ export default function App() {
           </Link>
         </h1>
         {session && approved && (
-          <nav>
+          <nav aria-label="主导航">
             <Link to="/publish" className="nav-item">
               <NavIcon name="publish" />
               <span className="nav-label">发布</span>
