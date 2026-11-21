@@ -27,7 +27,12 @@ function truncate(text, max = 30) {
   return text.length > max ? text.slice(0, max) + '…' : text
 }
 
-export default function ChatList() {
+export default function ChatList({
+  // 宽屏三栏时作为第二列常驻；窄屏保持原来的整页列表。
+  embedded = false,
+  activeId = null,
+  activeGroup = false,
+} = {}) {
   const session = useAuth()
   const [conversations, setConversations] = useState([])
   const [groups, setGroups] = useState([])
@@ -183,7 +188,7 @@ export default function ChatList() {
   if (loading) return <p className="status-text">加载中…</p>
 
   return (
-    <div className="chat-page">
+    <div className={`chat-page${embedded ? ' chat-page--pane' : ''}`}>
       {error && (
         <div className="status-text" role="alert">
           <p className="error-text">加载失败：{error}</p>
@@ -216,7 +221,12 @@ export default function ChatList() {
           )}
           {shownGroups.map(({ thread: g, latest, unread, lastTime }) => (
             <li key={g.id}>
-              <Link to="/garden" className="chat-list-item chat-group-item" data-group-id={g.id}>
+              <Link
+                to="/garden"
+                className={`chat-list-item chat-group-item${activeGroup ? ' is-active' : ''}`}
+                aria-current={activeGroup ? 'page' : undefined}
+                data-group-id={g.id}
+              >
                 <span className="chat-list-avatar chat-group-avatar" aria-hidden="true">
                   <span className="chat-group-avatar-glyph">❀</span>
                 </span>
@@ -252,7 +262,11 @@ export default function ChatList() {
               onMouseEnter={() => prefetchThread(session?.user?.id, c.id)}
               onTouchStart={() => prefetchThread(session?.user?.id, c.id)}
             >
-              <Link to={`/chat/${c.id}`} className="chat-list-item">
+              <Link
+                to={`/chat/${c.id}`}
+                className={`chat-list-item${activeId === c.id ? ' is-active' : ''}`}
+                aria-current={activeId === c.id ? 'page' : undefined}
+              >
                 <span className="chat-list-avatar">
                   {c.avatar_url ? <SignedImage bucket="avatars" stored={c.avatar_url} alt="" /> : c.nickname.slice(0, 1)}
                 </span>

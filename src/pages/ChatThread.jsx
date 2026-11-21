@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useOutletContext } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
 import { isPanelSurface } from '../lib/surface'
 import { requestUnlock } from '../lib/unlockSignal'
@@ -316,6 +316,8 @@ async function insertMessageWithRetry(row) {
 export default function ChatThread() {
   const session = useAuth()
   const { userId } = useParams()
+  // 宽屏三栏时列表常驻左侧，返回键没有意义；窄屏/插件仍保留原来的 44px 热区。
+  const { wide = false } = useOutletContext() ?? {}
   const [otherProfile, setOtherProfile] = useState(null)
   // ⚠️ 两层：`rawMessages` 是数据库里那一行（密文），`messages` 是解密后给界面用的。
   //    落盘缓存、实时补丁、撤回/编辑都只碰 raw，明文永远不出内存。
@@ -984,9 +986,9 @@ export default function ChatThread() {
   })
 
   return (
-    <div className="chat-thread" onPaste={handlePaste}>
+    <div className={`chat-thread${wide ? ' chat-thread--pane' : ''}`} onPaste={handlePaste}>
       <div className="chat-thread-header">
-        <Link to="/chat" className="chat-back-btn">←</Link>
+        {!wide && <Link to="/chat" className="chat-back-btn">←</Link>}
         {/* 头像点开看大图（灯箱），昵称点开看个人名片。两件事分开，
             因为"想看这个人是谁"和"想看这张图"是两种意图，混在一个点击上
             会让其中一种永远点不到。 */}

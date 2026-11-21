@@ -29,6 +29,8 @@ const Profile = lazy(() => import('./pages/Profile'))
 // 时间线 / 私聊 / 插件都不加载它（那边只渲染光栅化后的头像 `<img>`）。
 const Doll = lazy(() => import('./pages/Doll'))
 const ChatList = lazy(() => import('./pages/ChatList'))
+// 桌面宽屏三栏外壳：/chat、/chat/:userId、/garden 共用；窄屏仍只渲染列表或会话。
+const ChatWorkspace = lazy(() => import('./pages/ChatWorkspace'))
 const ChatThread = lazy(() => import('./pages/ChatThread'))
 const GroupThread = lazy(() => import('./pages/GroupThread'))
 const LabPage = lazy(() => import('./lab/LabPage'))
@@ -134,10 +136,14 @@ export default function App() {
             <Route path="/publish" element={<RequireAuth><Publish /></RequireAuth>} />
             <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
             <Route path="/doll" element={<RequireAuth><Doll /></RequireAuth>} />
-            <Route path="/chat" element={<RequireAuth><ChatList /></RequireAuth>} />
-            <Route path="/chat/:userId" element={<RequireAuth><ChatThread /></RequireAuth>} />
-            {/* 私密圈后花园：三人群聊（我 + 对方 + Ace）。群密钥一人一份，见 lib/groupChat.js */}
-            <Route path="/garden" element={<RequireAuth><GroupThread /></RequireAuth>} />
+            {/* 会话工作区：宽屏三栏，窄屏仍是原来的单列跳转。
+                URL 语义不变：/chat 无选中、/chat/:userId 私聊、/garden 群聊。 */}
+            <Route element={<RequireAuth><ChatWorkspace /></RequireAuth>}>
+              <Route path="/chat" element={<ChatList />} />
+              <Route path="/chat/:userId" element={<ChatThread />} />
+              {/* 私密圈后花园：三人群聊（我 + 对方 + Ace）。群密钥一人一份，见 lib/groupChat.js */}
+              <Route path="/garden" element={<GroupThread />} />
+            </Route>
             {/* 实验室：未定稿的试验田。页面与样式都在 src/lab/，权限仍走 RequireAuth。 */}
             <Route path="/lab" element={<RequireAuth><LabPage /></RequireAuth>} />
             <Route path="/user/:userId" element={<RequireAuth><UserProfile /></RequireAuth>} />

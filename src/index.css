@@ -4840,3 +4840,194 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
 /* 群入口的占位行（第一帧就有，解密完自动换成真实内容） */
 .chat-group-item.is-placeholder { pointer-events: none; }
 .chat-group-item.is-placeholder .chat-list-preview { opacity: 0.6; }
+
+/* ══════════════════════════════════════════════════════════════
+   私聊工作区：桌面宽屏三栏（第一期骨架）
+   ══════════════════════════════════════════════════════════════
+
+   第一列 = 现有的 .app-header 左侧竖栏（92px，由上面的 601px 分支负责）
+   第二列 = .chat-sidebar 里常驻的 ChatList
+   第三列 = .chat-pane 里的 ChatThread / GroupThread，或 /chat 的空态
+
+   三条硬约束（改之前先读）：
+   ① 只在 html:not([data-surface]) 且 ≥1024px 生效 → 601–1023 与手机完全不动；
+   ② 插件 surface 即使在 1100/1400px 的 iframe 里也不出现三栏（CSS 守卫 + JS 守卫）；
+   ③ 高度链 main → workspace → pane → thread 每层都要 min-height:0，
+      否则消息区会塌成内容高；两侧各自滚动，桌面不出现整页双滚动。
+   ⚠️ 1024 这个阈值与 ChatWorkspace.jsx 的 WIDE_QUERY 必须保持一致。
+   ────────────────────────────────────────────────────────────── */
+
+.chat-workspace {
+  min-width: 0;
+  /* 窄屏（≤1023 / 手机 / 插件）必须让子页面**直接参与 main 的 flex 高度链**。
+     多包一层 div 会把 `.chat-thread` 的 flex:1 截断，实测 400×541 消息区只剩 10px。
+     display:contents 让包装层不生成盒子；宽屏分支再覆盖成 display:flex。 */
+  display: contents;
+}
+
+@media (min-width: 1024px) {
+  html:not([data-surface]) {
+    --chat-list-w: 300px;
+  }
+
+  /* 三栏外壳自身撑满视口；max-width 1440 让超宽屏仍保持可读的对话宽度。 */
+  html:not([data-surface]) .app-container:has(.chat-workspace) {
+    max-width: 1440px;
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    /* 用 100vh 当外壳高度，底部不再留 iOS home indicator 的 40px；
+       顶部安全区仍通过 --safe-top 让出来。 */
+    padding: calc(16px + var(--safe-top)) 16px 0;
+    overflow: hidden;
+  }
+
+  html:not([data-surface]) .app-container:has(.chat-workspace) main {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  html:not([data-surface]) .chat-workspace {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  html:not([data-surface]) .chat-workspace.is-wide {
+    border: 1px solid var(--border-standard);
+    border-radius: 14px;
+    background-color: var(--bg-card);
+  }
+
+  /* 第二列：常驻会话列表。列表自己滚动，搜索框吸在列顶。 */
+  html:not([data-surface]) .chat-workspace.is-wide .chat-sidebar {
+    flex: 0 0 var(--chat-list-w);
+    width: var(--chat-list-w);
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-right: 1px solid var(--border-standard);
+  }
+
+  html:not([data-surface]) .chat-workspace.is-wide .chat-page--pane {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+    margin: 0;
+    padding: 12px 8px 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  html:not([data-surface]) .chat-workspace.is-wide .chat-page--pane .chat-search {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    padding: 2px 4px 10px;
+    background-color: var(--bg-card);
+  }
+
+  /* 第三列：完整对话。 */
+  html:not([data-surface]) .chat-workspace.is-wide .chat-pane {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  html:not([data-surface]) .chat-workspace.is-wide .chat-pane .chat-thread {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+    margin-top: 0;
+  }
+
+  html:not([data-surface]) .chat-workspace.is-wide .chat-pane .chat-thread-header {
+    padding: 8px 12px;
+  }
+
+  html:not([data-surface]) .chat-workspace.is-wide .chat-pane .chat-messages {
+    padding: 10px 12px 0;
+  }
+
+  html:not([data-surface]) .chat-workspace.is-wide .chat-pane .chat-input-row {
+    padding: 11px 12px;
+  }
+
+  /* 选中行：细的左缘高亮，行宽不变。 */
+  html:not([data-surface]) .chat-workspace.is-wide .chat-list-item.is-active {
+    background-color: var(--hover-wrap-bg);
+    box-shadow: inset 2px 0 0 var(--accent-blue);
+  }
+
+  /* /chat 未选中时的右栏空态：**不挂载 ChatThread**，因此不会写 read_at。 */
+  html:not([data-surface]) .chat-empty-pane {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 32px;
+    text-align: center;
+  }
+
+  html:not([data-surface]) .chat-empty-icon {
+    width: 46px;
+    height: 46px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 4px;
+    border: 1px solid var(--border-standard);
+    border-radius: 50%;
+    color: var(--text-tertiary);
+    background-color: var(--hover-wrap-bg);
+  }
+
+  html:not([data-surface]) .chat-empty-pane h2 {
+    font-size: 1.02rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    letter-spacing: 0.01em;
+  }
+
+  html:not([data-surface]) .chat-empty-pane p {
+    max-width: 280px;
+    font-size: 0.82rem;
+    line-height: 1.6;
+    color: var(--text-muted);
+  }
+
+  html:not([data-surface]) .chat-pane-status {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+/* 列宽随桌面宽度分档（只改一个变量，三栏结构不变）。 */
+@media (min-width: 1280px) {
+  html:not([data-surface]) {
+    --chat-list-w: 320px;
+  }
+}
+
+@media (min-width: 1536px) {
+  html:not([data-surface]) {
+    --chat-list-w: 340px;
+  }
+}

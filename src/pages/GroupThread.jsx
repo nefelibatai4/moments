@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useOutletContext } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import SignedImage from '../components/SignedImage'
 import { onUnlockChange } from '../lib/crypto'
@@ -42,6 +42,7 @@ function initial(name) { return (name ?? '?').slice(0, 1) }
 
 export default function GroupThread() {
   const session = useAuth()
+  const { wide = false } = useOutletContext() ?? {}
   const me = session?.user?.id
   const [thread, setThread] = useState(null)
   const [messages, setMessages] = useState([])
@@ -229,7 +230,7 @@ export default function GroupThread() {
     return (
       <div className="chat-thread group-thread">
         <div className="chat-thread-header">
-          <Link to="/chat" className="chat-back-btn">←</Link>
+          {!wide && <Link to="/chat" className="chat-back-btn">←</Link>}
           <span className="chat-header-name">私密圈后花园</span>
         </div>
         <p className="status-text">打开中…</p>
@@ -241,7 +242,7 @@ export default function GroupThread() {
     return (
       <div className="chat-thread group-thread">
         <div className="chat-thread-header">
-          <Link to="/chat" className="chat-back-btn">←</Link>
+          {!wide && <Link to="/chat" className="chat-back-btn">←</Link>}
           <span className="chat-header-name">私密圈后花园</span>
         </div>
         <p className="status-text">这个群还没有建立，或者你不在群里。</p>
@@ -252,7 +253,7 @@ export default function GroupThread() {
   return (
     <div className="chat-thread group-thread" data-group-thread={thread.id}>
       <div className="chat-thread-header">
-        <Link to="/chat" className="chat-back-btn">←</Link>
+        {!wide && <Link to="/chat" className="chat-back-btn">←</Link>}
         {/* 头像是"哪几个人"的三张小圆点 —— 但这三人本来就固定，占地方反而挤标题，
             所以只留标题 + 人数 + Ace 在不在（2026-11-18 截图后删掉）*/}
         <span className="chat-header-name group-header-name">
