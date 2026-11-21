@@ -3229,6 +3229,71 @@ html:not([data-surface]) .app-container:not(.authed) {
   width: 55%;
 }
 
+/* ── 路由 / 鉴权等待的通用占位 ──
+   外观沿用上面 Timeline 骨架的同一套 `.skeleton` 微光与卡片令牌，
+   但**刻意不挂 .timeline**（原因见 PageSkeleton.jsx 顶部注释）：
+   手机端 `:has(.timeline)` 会把 main 的左右内边距清零，
+   等真实页面渲染出来又恢复，反而多一次横向跳动。 */
+.page-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+  pointer-events: none;
+}
+
+.page-skeleton-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 16px 20px;
+  box-shadow: var(--card-shadow-outer), var(--card-shadow-inner);
+}
+
+.page-skeleton-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+/* 手机端与信息流一致：通栏块流 + 7px 粗分割线（与 .moment-skeleton-card 同款） */
+@media (max-width: 600px) {
+  html:not([data-surface]) .page-skeleton {
+    gap: 0;
+    border-top: 7px solid var(--feed-divider);
+  }
+  html:not([data-surface]) .page-skeleton-card {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 14px 16px;
+  }
+  html:not([data-surface]) .page-skeleton-card + .page-skeleton-card {
+    border-top: 7px solid var(--feed-divider);
+  }
+}
+
+/* 插件面板（毛玻璃浮层 / 兜底小窗）：同样的块流，但内边距更紧凑 */
+html[data-surface] .page-skeleton {
+  gap: 0;
+  border-top: 7px solid var(--feed-divider);
+}
+
+html[data-surface] .page-skeleton-card {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 12px 0;
+}
+
+html[data-surface] .page-skeleton-card + .page-skeleton-card {
+  border-top: 7px solid var(--feed-divider);
+}
+
 /* ── 卡片进场 ──
    卡片按 id 做 key，所以只有"新出现的卡片"会播这个动画；
    已有的卡片重新渲染不会重播（React 不会重新挂载它们）。

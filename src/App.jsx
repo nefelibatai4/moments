@@ -12,6 +12,7 @@ import { useViewportHeight } from './lib/useViewportHeight'
 import ViewportDebug from './components/ViewportDebug'
 import UnlockPrompt from './components/UnlockPrompt'
 import SplashScreen from './components/SplashScreen'
+import PageSkeleton from './components/PageSkeleton'
 import { isSplashTarget, shouldShowSplash } from './lib/splash'
 
 // 按路由做代码分割：首屏只需要 React + 路由 + Supabase + 时间线，
@@ -120,7 +121,7 @@ export default function App() {
         {/* 「这台设备还没就绪」的一次性提示（只有确实解不开、且本机没有缓存时才会出现；
             固定定位、不参与布局，正常使用的人一辈子看不到它） */}
         {authed && <UnlockPrompt />}
-        <Suspense fallback={<p className="status-text">加载中…</p>}>
+        <Suspense fallback={<PageSkeleton label="页面正在加载" />}>
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
