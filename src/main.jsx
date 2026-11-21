@@ -8,6 +8,7 @@ import { initTheme } from './lib/theme.js'
 import { initSurface } from './lib/surface.js'
 import { initExtensionBridge } from './lib/extensionBridge.js'
 import { registerServiceWorker } from './lib/serviceWorker.js'
+import { checkForUpdate } from './lib/updateNotice.js'
 import { SHUTDOWN_ENABLED } from './lib/shutdown.js'
 import ClosingCountdown from './pages/ClosingCountdown.jsx'
 import SplashScreen from './components/SplashScreen.jsx'
@@ -30,27 +31,14 @@ registerServiceWorker()
 // 流量计量（2026-10-20）：包一层 fetch，把响应字节数记在本机（【我】→ 流量与存储）
 installTrafficMeter()
 
-// ── 版本自检（2026-11-16）──────────────────────────────────────────────
+// ── 版本自检（2026-11-16，2026-11-21 改为不打断浏览）──────────────────
 // 为什么需要：Pages 的 HTML 有 10 分钟缓存，插件面板常常"打开的还是上一版"——
 // 于是同样的 bug 你这边改完了、对方那边看起来没变（我们为此反复解释了好几轮）。
-// 这里启动后读一次 dist/version.json（SW 放行、不走缓存），不一致就**自动刷新一次**。
-if (typeof window !== 'undefined' && typeof __APP_BUILD__ === 'string' && __APP_BUILD__ !== 'dev') {
-  const KEY = 'moments_version_reloaded'
-  try {
-    const url = `${import.meta.env.BASE_URL}version.json?cb=${Date.now()}`
-    fetch(url, { cache: 'no-store' })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => {
-        const latest = j && j.build
-        if (!latest || latest === __APP_BUILD__) return
-        if (sessionStorage.getItem(KEY) === '1') return   // 每次打开只自重载一次
-        sessionStorage.setItem(KEY, '1')
-        console.info('[version] 发现新版本，正在刷新:', __APP_BUILD__, '→', latest)
-        window.location.reload()
-      })
-      .catch(() => {})
-  } catch { /* 忽略 */ }
-}
+// 这里启动后读一次 dist/version.json（SW 放行、不走缓存）。
+// ⚠️ 不要在这里 location.reload()：那会让正在浏览/输入的人经历"二次加载闪烁"。
+// 现在只交给 updateNotice 弹一条不阻塞的提示，点了「立即刷新」才换壳；
+// 不点也没关系 —— sw.js 的导航请求是网络优先，下次自然打开就是新版本。
+checkForUpdate(typeof __APP_BUILD__ === 'string' ? __APP_BUILD__ : null)
 
 // 启动时把"未读提示样式"下发一次给扩展（扩展自己也有持久化，这里只是对齐）
 import('./lib/unreadStyle.js').then((m) => m.announceUnreadStyle()).catch(() => {})
