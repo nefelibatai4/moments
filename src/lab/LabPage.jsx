@@ -39,7 +39,7 @@ const EXPERIMENTS = [
     id: 'garden',
     title: '私密圈后花园',
     meta: '已在用',
-    desc: '两个人的私密圈 + Ace，三人群聊。消息在设备上加密，服务端只存密文。',
+    desc: '两个人的私密圈 + Ace，三人群聊。消息只对参与者可见，服务端看不到内容。',
     action: '去后花园',
     to: '/garden',
   },

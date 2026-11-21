@@ -282,7 +282,7 @@ export default function ImageLightbox({ src, images, states, index = 0, alt = ''
           ) : (
             <>
               <span className="lightbox-spinner" aria-hidden="true" />
-              <p>正在解密图片…</p>
+              <p>正在加载图片…</p>
             </>
           )}
         </div>
