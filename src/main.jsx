@@ -9,8 +9,6 @@ import { initSurface } from './lib/surface.js'
 import { initExtensionBridge } from './lib/extensionBridge.js'
 import { registerServiceWorker } from './lib/serviceWorker.js'
 import { checkForUpdate } from './lib/updateNotice.js'
-import { SHUTDOWN_ENABLED } from './lib/shutdown.js'
-import ClosingCountdown from './pages/ClosingCountdown.jsx'
 import SplashScreen from './components/SplashScreen.jsx'
 import Maintenance from './pages/Maintenance.jsx'
 import { MAINTENANCE_ENABLED, probeBackend } from './lib/maintenance.js'
@@ -96,14 +94,21 @@ function Boot({ children }) {
 
 // 网站关闭倒计时（临时状态）：只渲染这一个页面 ——
 // 不挂路由、不挂 AuthProvider，因此**不会**发起任何鉴权/数据请求，后端数据一条不动。
-if (SHUTDOWN_ENABLED) {
-  createRoot(document.getElementById('root')).render(
-    <StrictMode>
-      <Boot>
-        <ClosingCountdown />
-      </Boot>
-    </StrictMode>,
-  )
+//
+// ⚠️ 倒计时组件必须走**条件动态 import**（审计低#21），条件用构建期字面量 `__SHUTDOWN_ENABLED__`
+//    （vite.config.js 从 lib/shutdown.js 读入并 define，真源仍是那一个开关）：
+//    停用态 Rollup 会在发现动态 import 之前就删掉整个分支，组件 JS / CSS 都不会
+//    进入生产产物；将来改回 true（必要时重启 dev server）会自动拆出独立 chunk 按需加载。
+if (__SHUTDOWN_ENABLED__) {
+  import('./pages/ClosingCountdown.jsx').then(({ default: ClosingCountdown }) => {
+    createRoot(document.getElementById('root')).render(
+      <StrictMode>
+        <Boot>
+          <ClosingCountdown />
+        </Boot>
+      </StrictMode>,
+    )
+  })
 } else {
   createRoot(document.getElementById('root')).render(
     <StrictMode>

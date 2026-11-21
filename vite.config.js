@@ -3,6 +3,10 @@ import { join } from 'node:path'
 import { execSync } from 'node:child_process'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+// 关闭倒计时的开关仍在 src/lib/shutdown.js（唯一真源）；构建时读进来做成
+// `__SHUTDOWN_ENABLED__` 字面量，好让 Rollup 在**发现动态 import 之前**就删掉
+// 整个停用分支（审计低#21：否则会留下没人引用的 ClosingCountdown chunk）。
+import { SHUTDOWN_ENABLED } from './src/lib/shutdown.js'
 
 /**
  * 给 Service Worker 盖版本号（待办 #6）。
@@ -99,6 +103,7 @@ export default defineConfig({
   // 导致"线上产物和 dist 一致"这条核对失效（2026-10-29 实测踩到）。
   define: {
     __APP_BUILD__: JSON.stringify(GIT_SHA),
+    __SHUTDOWN_ENABLED__: JSON.stringify(SHUTDOWN_ENABLED),
   },
   base: process.env.VITE_APP_BASE || '/moments/',
   plugins: [versionFilePlugin(), react(), serviceWorkerVersion(), supabasePreconnect()],

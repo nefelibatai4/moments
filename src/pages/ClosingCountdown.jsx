@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { SHUTDOWN_AT, TOGETHER_START, daysTogether, isShutdownPassed } from '../lib/shutdown'
+// 样式跟着组件走：停用态整个组件不构建，这些规则也就不进首屏 entry（审计低#21）
+import './ClosingCountdown.css'
 
 // 网站关闭倒计时（2026-10-18 使用者要求的临时状态）
 //
