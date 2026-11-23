@@ -6,8 +6,10 @@ import { useLayoutEffect, useRef, useState } from 'react'
  * 位置不用固定坐标，也不浮到浏览器边缘：
  *   - DOM 上就渲染在 `.chat-bubble` 里面，所以天然跟着气泡走；
  *   - 横向贴着「远离头像」的一侧（自己：左内侧；对方：右内侧）；
- *   - 纵向按视口空间决定靠上还是靠下，靠近视口底部时向上翻；
- *   - 气泡装不下时只把气泡撑到刚好容下菜单（关闭即还原），因此菜单几何始终落在气泡矩形内。
+ *     气泡太窄放不下时改贴另一侧，让菜单向消息区空白处展开；
+ *   - 纵向按消息区/视口空间决定靠上还是靠下，靠近底部时向上翻；
+ *   - **不修改气泡的宽高**：菜单是绝对定位的浮层，可以溢出气泡，但会被限制在
+ *     消息区可视范围内（`.chat-messages`），因此不会撑大数据、也不会把气泡顶变形。
  *
  * 这是 CSS Anchor Positioning 的等价 JS 实现（getBoundingClientRect + clamp），
  * 不依赖 Chrome 125+ 的 anchor-name，Safari / 插件 / Capacitor 同样可用。
@@ -29,43 +31,47 @@ export default function BubbleMenu({ items, isMine, onClose, label = '消息操�
     const bubble = menu.closest('.chat-bubble')
     if (!wrap || !bubble) return undefined
 
-    const prevMinWidth = bubble.style.minWidth
-    const prevMinHeight = bubble.style.minHeight
+    // 菜单是气泡里的绝对定位浮层，但“可见范围”是整块消息区（含上下滚动裁切）。
+    const list = menu.closest('.chat-messages') ?? document.documentElement
 
     const place = () => {
       const menuW = menu.offsetWidth
       const menuH = menu.offsetHeight
       if (!menuW || !menuH) return
 
-      // 气泡太窄/太矮时临时撑开，保证菜单落在气泡矩形内；关闭时还原。
-      const needW = menuW + EDGE * 2
-      const needH = menuH + 22
-      if (bubble.getBoundingClientRect().width < needW) bubble.style.minWidth = `${Math.ceil(needW)}px`
-      if (bubble.getBoundingClientRect().height < needH) bubble.style.minHeight = `${Math.ceil(needH)}px`
-
       const wrapRect = wrap.getBoundingClientRect()
       const bubbleRect = bubble.getBoundingClientRect()
+      const listRect = list.getBoundingClientRect()
+      const viewportW = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth)
+      const viewportH = Math.min(window.innerHeight, document.documentElement.clientHeight || window.innerHeight)
+
+      // 可放置的矩形 = 消息区 ∩ 视口，再留出 EDGE 的呼吸空间。
+      const minLeft = Math.max(listRect.left, 0) + EDGE
+      const maxLeft = Math.max(minLeft, Math.min(listRect.right, viewportW) - EDGE - menuW)
+      const minTop = Math.max(listRect.top, 0) + EDGE
+      const maxTop = Math.max(minTop, Math.min(listRect.bottom, viewportH) - EDGE - menuH)
 
       // 远离头像那一侧：自己头像在右 → 菜单贴左；对方头像在左 → 菜单贴右。
-      let left = isMine ? EDGE : wrapRect.width - menuW - EDGE
-      left = Math.max(EDGE, Math.min(left, wrapRect.width - menuW - EDGE))
+      // 气泡太窄时改贴另一侧，让菜单朝消息区空白处展开，避免压到头像/被裁掉。
+      let leftAbs = isMine
+        ? wrapRect.left + EDGE
+        : wrapRect.right - EDGE - menuW
+      if (isMine && leftAbs > maxLeft) {
+        leftAbs = wrapRect.right - EDGE - menuW
+      } else if (!isMine && leftAbs < minLeft) {
+        leftAbs = wrapRect.left + EDGE
+      }
+      leftAbs = Math.max(minLeft, Math.min(leftAbs, maxLeft))
 
-      const spaceBelow = window.innerHeight - bubbleRect.bottom
-      const spaceAbove = bubbleRect.top
+      const spaceBelow = Math.min(listRect.bottom, viewportH) - bubbleRect.bottom
+      const spaceAbove = bubbleRect.top - Math.max(listRect.top, 0)
       const flip = spaceBelow < menuH + EDGE + FLIP_SAFE_GAP && spaceAbove > spaceBelow
-      const preferTop = flip ? EDGE : wrapRect.height - menuH - EDGE
+      let topAbs = flip ? wrapRect.top + EDGE : wrapRect.bottom - menuH - EDGE
+      topAbs = Math.max(minTop, Math.min(topAbs, maxTop))
 
-      // 先限制在气泡内，再尽量限制在视口内；气泡本身被视口裁掉时以气泡内为准。
-      const insideMin = EDGE
-      const insideMax = Math.max(insideMin, wrapRect.height - menuH - EDGE)
-      const viewMin = Math.max(insideMin, -wrapRect.top + EDGE)
-      const viewMax = Math.min(insideMax, window.innerHeight - wrapRect.top - menuH - EDGE)
-      const top = viewMax >= viewMin
-        ? Math.max(viewMin, Math.min(preferTop, viewMax))
-        : Math.max(insideMin, Math.min(preferTop, insideMax))
-
-      menu.style.left = `${Math.round(left)}px`
-      menu.style.top = `${Math.round(top)}px`
+      // 坐标换算成相对 .chat-msg-menu-wrap（= 气泡 padding box）的值。
+      menu.style.left = `${Math.round(leftAbs - wrapRect.left)}px`
+      menu.style.top = `${Math.round(topAbs - wrapRect.top)}px`
       menu.style.visibility = 'visible'
       setPlacement(flip ? 'top' : 'bottom')
     }
@@ -78,8 +84,6 @@ export default function BubbleMenu({ items, isMine, onClose, label = '消息操�
     return () => {
       window.removeEventListener('resize', onViewportChange)
       window.removeEventListener('scroll', onViewportChange, true)
-      bubble.style.minWidth = prevMinWidth
-      bubble.style.minHeight = prevMinHeight
     }
   }, [isMine])
 
