@@ -247,9 +247,27 @@ async function generateIdentityJwks() {
 
 /**
  * 首次登录（或服务器上还没有密钥行）时，生成 DEK + 身份密钥，并用 KEK 包好上传。
+ *
+ * ⚠️ **只允许"真·第一次"**（2026-11-23 的事故，见 PITFALLS #140）：
+ *    AI 账号 Ace 的身份密钥是 `scripts/ace-setup.mjs` 在**网页之外**生成的（私钥在钥匙串），
+ *    `user_keys` 里从来没有它的行。有人用 Ace 的账号打开网页端后，这里判定"服务器上没有密钥行"，
+ *    直接生成了一套**新**身份并覆盖 `profiles.public_key` —— 于是用旧公钥包过的群密钥
+ *    （`group_keys.wrapped_by = Ace`）谁也解不开了，群里所有消息变成"在这台设备上读不到"。
+ *    所以这里加两道闸：服务器上**已经有** user_keys 行、或**已经有**身份公钥，一律拒绝覆盖，
+ *    让人用恢复流程处理，而不是静默换一套身份（换身份＝历史消息永久失联，且没有任何提示）。
  * @returns {Promise<{dek: CryptoKey, identity: {privateKey: CryptoKey, publicJwk: object}}>}
  */
 async function createAndUploadKeys(userId, password, email) {
+  const { data: existingKeys } = await supabase
+    .from('user_keys').select('user_id').eq('user_id', userId).maybeSingle()
+  if (existingKeys) {
+    throw new Error('服务器上已经有这个账号的密钥行，拒绝覆盖：请用登录解锁（或恢复流程）')
+  }
+  const { data: existingProfile } = await supabase
+    .from('profiles').select('public_key').eq('id', userId).maybeSingle()
+  if (existingProfile?.public_key) {
+    throw new Error('这个账号的身份密钥不在本机：拒绝生成新身份（会让历史消息永久读不到）')
+  }
   const kekSalt = toB64(crypto.getRandomValues(new Uint8Array(16)))
   const kek = await deriveKek(password, email, kekSalt)
 
