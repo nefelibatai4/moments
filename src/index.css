@@ -3157,6 +3157,19 @@ html[data-surface="glass"] body {
   background-color: transparent;
 }
 
+/* ⚠️ 毛玻璃还有个隐藏杀手：`color-scheme: dark` 会让 Chromium 把 iframe 的
+   **画布底色**（canvas base color）刷成 #121212 —— 即使 html/body 都设了 transparent。
+   那一层不透明的画布会把浮层的 backdrop-filter 完全挡在外面，现象是"毛玻璃退化成一块纯黑"。
+   2026-11-23 实测（扩展浮层 + 红底宿主页，取面板中心像素）：
+     color-scheme: dark  → rgb(18,18,18)（黑，取样到的是画布）
+     color-scheme: normal / light → rgb(120,6,8)（真·半透明板压在红底上）
+   所以面板形态里把 color-scheme 设成 normal（原生滚动条/控件走浏览器默认；
+   App 自己的控件颜色本来都由 --bg-… / --text-… 显式给出，不依赖它）。
+   兜底小窗（surface=panel）不需要透明，保留主题的 color-scheme。 */
+html[data-surface="glass"] {
+  color-scheme: normal;
+}
+
 /* 顶部导航要有一点点底色才压得住滚动上来的内容。
    面板本身已经在做模糊了，这里就不再叠一层 backdrop-filter（省一次合成）。 */
 html[data-surface="glass"] {
@@ -5426,13 +5439,4 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
   background: var(--btn-primary-bg);
   color: var(--btn-primary-text);
   opacity: 0.9;
-}
-
-/* ── 面板"背景板"：兜底小窗（surface=panel）里由网页画底色 ──────────
-   2026-11-23 使用者："想要背景板也一起变化"。
-   浮层形态（surface=glass）**必须**保持透明，否则会把浮层的毛玻璃盖住；
-   而兜底小窗的窗口本身不透明，浮层那层透不出来，所以底色得由网页自己画。 */
-html[data-panel-board="1"],
-html[data-panel-board="1"] body {
-  background-color: var(--panel-board, var(--bg-page));
 }

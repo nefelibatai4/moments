@@ -52,10 +52,11 @@
   // 与 src/lib/panelBackground.js 的 panelBgStyle() **必须保持一致**：
   // 扩展没有打包器，import 不到网页代码，只能各写一份。
   // scripts/verify-extension-panel.cjs 里有一条等价性断言盯着它们别漂移。
-  const DEFAULT_SETTINGS = { mode: 'glass', tint: 'theme', blur: 12 }
+  // 面板深浅**只**跟主题走（2026-11-23 起不再有 tint：使用者实测"底色"和浅色/深色模式打架）
+  const DEFAULT_SETTINGS = { mode: 'glass', blur: 12 }
 
   function panelBgStyle(settings, theme) {
-    const dark = settings.tint === 'theme' ? theme !== 'light' : settings.tint === 'dark'
+    const dark = theme !== 'light'
     if (settings.mode === 'solid') {
       return { background: dark ? '#07080a' : '#f7f8f8', backdropFilter: 'none' }
     }
@@ -305,7 +306,7 @@
     panel.style.webkitBackdropFilter = style.backdropFilter
     panel.dataset.mode = settings.mode
     // 给浮层自己记一份"当前是深还是浅"，测试与调试都用得上
-    const dark = settings.tint === 'theme' ? theme !== 'light' : settings.tint === 'dark'
+    const dark = theme !== 'light'
     sheet.dataset.live = dark ? 'dark' : 'light'
   }
 
@@ -406,7 +407,7 @@
     if (mounted) return
     mounted = true
     applyStyle()
-    const dark = settings.tint === 'theme' ? theme !== 'light' : settings.tint === 'dark'
+    const dark = theme !== 'light'
     sheet.dataset.firstLive = dark ? 'dark' : 'light'
     document.documentElement.appendChild(root)
   }

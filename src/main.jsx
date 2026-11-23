@@ -6,7 +6,6 @@ import App from './App.jsx'
 import { AuthProvider } from './lib/AuthContext.jsx'
 import { initTheme } from './lib/theme.js'
 import { initSurface } from './lib/surface.js'
-import { applyPanelBoard } from './lib/panelBackground.js'
 import { initExtensionBridge } from './lib/extensionBridge.js'
 import { registerServiceWorker } from './lib/serviceWorker.js'
 import { checkForUpdate } from './lib/updateNotice.js'
@@ -19,8 +18,6 @@ import { resetImageAttemptBudget } from './lib/imageCrypto.js'
 // 两个都要在首屏渲染前定好，否则会闪一下（主题闪白 / 毛玻璃面板闪出不透明底色）
 initTheme()
 initSurface()
-// 兜底小窗里由网页自己画「面板底色」；浮层形态保持透明（靠浮层的毛玻璃）
-applyPanelBoard()
 
 // 在插件面板里时，由扩展把会话/主题递进来（面板不该依赖那一层 iframe 自己的存储）
 initExtensionBridge()

@@ -34,6 +34,7 @@ export default function PanelBackgroundSettings() {
       <p className="panel-bg-hint">
         控制电脑上插件面板（点扩展图标浮出来的那一层）的背景。
         「毛玻璃」会让你正在看的网页透过面板、并以模糊的方式可见；「纯色」则是一块不透明的底色。
+        面板的深浅跟随下面那个「浅色/深色模式」开关（不再单独设底色 —— 两个旋钮会打架）。
       </p>
 
       <div className="panel-bg-row">
@@ -59,36 +60,6 @@ export default function PanelBackgroundSettings() {
       </div>
 
       <div className="panel-bg-row">
-        <span className="panel-bg-label">底色</span>
-        <div className="panel-bg-choices" role="group" aria-label="底色">
-          <button
-            type="button"
-            className={choice(settings.tint === 'theme')}
-            aria-pressed={settings.tint === 'theme'}
-            onClick={() => update({ tint: 'theme' })}
-          >
-            跟随主题
-          </button>
-          <button
-            type="button"
-            className={choice(settings.tint === 'dark')}
-            aria-pressed={settings.tint === 'dark'}
-            onClick={() => update({ tint: 'dark' })}
-          >
-            深色
-          </button>
-          <button
-            type="button"
-            className={choice(settings.tint === 'light')}
-            aria-pressed={settings.tint === 'light'}
-            onClick={() => update({ tint: 'light' })}
-          >
-            浅色
-          </button>
-        </div>
-      </div>
-
-      <div className="panel-bg-row">
         <span className="panel-bg-label">模糊程度</span>
         <div className="panel-bg-slider">
           <input
@@ -106,9 +77,9 @@ export default function PanelBackgroundSettings() {
       </div>
       {settings.mode !== 'glass' && (
         <p className="panel-bg-note">
-          纯色模式下模糊不起作用（没有透出来的东西可模糊）。纯色**本身不带颜色**——
-          它的颜色由下面的「底色」决定；「跟随主题」时，浅色主题下纯色就是浅色（#f7f8f8），
-          想要深色面板请把底色选成「深色」。
+          纯色模式下模糊不起作用（没有透出来的东西可模糊）。面板的深浅**只由主题决定**：
+          浅色模式下纯色就是浅色（#f7f8f8），深色模式下就是深色（#07080a）。
+          想换深浅，用页面最下面那个「浅色/深色模式」开关。
         </p>
       )}
 

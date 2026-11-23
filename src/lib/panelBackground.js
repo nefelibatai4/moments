@@ -7,21 +7,24 @@
  * 这个设置的唯一存放处** —— 面板里的 iframe、普通标签页、扩展浮层读到的都是
  * 同一份（浮层自己读不到，由 content script 转交，见 extension/content.js）。
  *
- * ── 设置项（三项，刻意不做颜色选择器）────────────────────────────
+ * ── 设置项（两项，刻意不做颜色选择器）────────────────────────────
  *   mode: 'glass' 毛玻璃（浮层半透明 + 模糊背后的网页）| 'solid' 纯色
- *   tint: 'theme' 跟随【我】的深/浅色主题 | 'dark' | 'light'
  *   blur: 0–30，模糊程度（只在 glass 下生效；0 = 只是染色，网页完全清晰）
  *
- * 纯色模式下 tint 的语义变成"面板底色"（不透明），这也是"背景颜色切换"这句话的落点。
+ * ── 为什么**没有**「底色」这一项（2026-11-23 移除，别再加回来）──────
+ * 曾经有一项 tint: 'theme' | 'dark' | 'light'，想让它独立决定面板的深浅。
+ * 使用者的实测结论是"和下面的浅色/深色模式冲突" —— 因为：
+ *   ① 面板底色用的就是主题那两个颜色（深 #07080a / 浅 #f7f8f8），
+ *      与页面底色**完全相同** → 深色模式下选"深色"和"跟随主题"看不出任何区别；
+ *   ② 它只换背景、不换文字（文字跟着主题走）→ 浅色模式 + 深色底色 = 黑底近黑字。
+ * 现在统一：**颜色只由「浅色/深色模式」决定**（【我】页面最下面那个开关），
+ * 面板背景只负责"透不透/糊不糊"。一个开关管一件事，两个旋钮不会再打架。
  */
-
-import { getTheme } from './theme.js'
 
 export const PANEL_BG_KEY = 'moments_panel_bg'
 
 export const PANEL_BG_DEFAULTS = {
   mode: 'glass',
-  tint: 'theme',
   // 12px 是"看得出是毛玻璃、但背后内容依然能辨认"的位置
   blur: 12,
 }
@@ -38,19 +41,18 @@ export function getPanelBg() {
   }
 }
 
+/** 只收 mode/blur；旧版本存下的 tint 会被自然丢掉（颜色交给主题说了算）。 */
 export function normalizePanelBg(input) {
   const mode = input?.mode === 'solid' ? 'solid' : 'glass'
-  const tint = input?.tint === 'dark' || input?.tint === 'light' ? input.tint : 'theme'
   const rawBlur = Number(input?.blur)
   const blur = Number.isFinite(rawBlur) ? Math.min(30, Math.max(0, Math.round(rawBlur))) : PANEL_BG_DEFAULTS.blur
-  return { mode, tint, blur }
+  return { mode, blur }
 }
 
 export function setPanelBg(patch) {
   const next = normalizePanelBg({ ...getPanelBg(), ...patch })
   localStorage.setItem(PANEL_BG_KEY, JSON.stringify(next))
   announcePanelBg(next)
-  applyPanelBoard()   // 兜底小窗里是网页自己画底色，改完立刻重画
   return next
 }
 
@@ -62,11 +64,11 @@ export function setPanelBg(patch) {
  *    所以只能各写一份。防漂移靠 `scripts/verify-extension-panel.cjs` 里的等价性断言：
  *    它会比对「网页预览」与「浮层实际渲染」算出来的 backdrop-filter 是否一模一样。
  *
- * @param {{mode:'glass'|'solid', tint:'theme'|'dark'|'light', blur:number}} settings
- * @param {'dark'|'light'|undefined} theme 网页当前主题（tint 为 theme 时才有用）
+ * @param {{mode:'glass'|'solid', blur:number}} settings
+ * @param {'dark'|'light'|undefined} theme 网页当前主题（面板深浅**只**由它决定）
  */
 export function panelBgStyle(settings, theme) {
-  const dark = settings.tint === 'theme' ? theme !== 'light' : settings.tint === 'dark'
+  const dark = theme !== 'light'
 
   if (settings.mode === 'solid') {
     return { background: dark ? '#07080a' : '#f7f8f8', backdropFilter: 'none' }
@@ -99,47 +101,5 @@ export function announcePanelBg(settings = getPanelBg()) {
     window.postMessage({ source: 'moments-app', type: 'panel-bg', settings }, '*')
   } catch {
     /* 极端情况下 postMessage 不可用也不该影响设置本身已存好 */
-  }
-}
-
-/**
- * 面板里那块"背景板"的颜色（2026-11-23 使用者："想要背景板也一起变化"）。
- *
- * 为什么和 `panelBgStyle` 分开：`panelBgStyle` 是**浮层那一层**的样式（毛玻璃要透明、
- * 要 backdrop-filter）；而"背景板"是**网页自己的底色** —— 在兜底小窗（surface=panel）
- * 里，窗口是不透明的，浮层那层透明根本透不出来，所以必须由网页把底色画上去，
- * 否则切"纯色/深色"在小窗里毫无变化（这就是他看到的"背景板不变"）。
- * 颜色语义与「底色」一致：深色 #07080a / 浅色 #f7f8f8。
- */
-export function panelBoardColor(settings, theme) {
-  const dark = settings.tint === 'theme' ? theme !== 'light' : settings.tint === 'dark'
-  return dark ? '#07080a' : '#f7f8f8'
-}
-
-/** 只在兜底小窗（surface=panel）里把网页底色画成面板底色；浮层形态必须保持透明（靠浮层的毛玻璃）。 */
-export function applyPanelBoard() {
-  try {
-    const surface = document.documentElement.getAttribute('data-surface')
-    const root = document.documentElement
-    if (surface !== 'panel') {
-      root.removeAttribute('data-panel-board')
-      root.style.removeProperty('--panel-board')
-      return
-    }
-    // 以**已经生效**的 data-theme 为准（扩展下发的主题只改属性、不写 localStorage，
-    // 只看 getTheme() 会让底色停在旧主题上）；属性还没打上时退回读存储。
-    const applied = root.getAttribute('data-theme')
-    const color = panelBoardColor(getPanelBg(), applied || getTheme())
-    root.setAttribute('data-panel-board', '1')
-    root.style.setProperty('--panel-board', color)
-    // 面板里切浅/深色（底色=跟随主题）时，图案要跟着重画；用 MutationObserver 而不是
-    // 让 theme.js 反向 import 这里 —— 那会形成循环依赖。
-    if (!applyPanelBoard.watching) {
-      applyPanelBoard.watching = true
-      new MutationObserver(() => applyPanelBoard())
-        .observe(root, { attributes: true, attributeFilter: ['data-theme'] })
-    }
-  } catch {
-    /* 样式失败不影响功能 */
   }
 }

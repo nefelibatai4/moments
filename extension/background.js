@@ -20,7 +20,7 @@ const POLL_MINUTES = 1
 // 兜底小窗。0.1.0 里它是 action 弹窗，现在只在浮层不可用时才出现。
 const PANEL_PAGE = 'panel.html'
 const PANEL_WINDOW_KEY = 'panelWindowId'
-const PANEL_DEFAULT_SETTINGS = { mode: 'glass', tint: 'theme', blur: 12 }
+const PANEL_DEFAULT_SETTINGS = { mode: 'glass', blur: 12 }
 // 面板高度：默认由 CSS 决定（上方 1/4 屏），用户拖过之后记在这里（单位 px）
 const PANEL_HEIGHT_KEY = 'panelHeightPx'
 const BADGE_COLOR = '#ff6363' // 与 app 的 --accent-red 一致

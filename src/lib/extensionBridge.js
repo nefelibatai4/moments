@@ -1,6 +1,5 @@
 import { supabase } from '../supabaseClient'
 import { applyTheme } from './theme'
-import { applyPanelBoard } from './panelBackground'
 
 /**
  * 扩展 → 网页的「全局状态」通道（只在插件的面板里起作用）。
@@ -82,8 +81,6 @@ function handle(message) {
   if (message.panelBg) {
     try {
       localStorage.setItem('moments_panel_bg', JSON.stringify(message.panelBg))
-      // 扩展递下来的面板底色：兜底小窗里要立刻重画网页底色（浮层形态不动，保持透明）
-      applyPanelBoard()
     } catch {
       /* 存储不可用也不影响浮层本身（它取的是扩展里那份） */
     }
