@@ -66,7 +66,9 @@ export function decodeGroupBody(row, plain) {
   try {
     const parsed = JSON.parse(plain)
     if (parsed && parsed.v === 1 && typeof parsed.kind === 'string') {
-      return { kind: parsed.kind, text: parsed.text ?? '', state: parsed.state, by: parsed.by }
+      // 保留 body 里的全部字段：approval 卡片要 approvalId / task / status / expiresAt，
+      // 只挑 kind/text/state/by 会把它们丢掉（那卡片就永远显示不出"通过/不通过"）
+      return { ...parsed, kind: parsed.kind, text: parsed.text ?? '' }
     }
   } catch { /* 普通文本 */ }
   return { kind: 'text', text: String(plain) }
@@ -118,7 +120,7 @@ export async function sendGroupMessage(threadId, key, body, replyToId = null, se
     .select('id, thread_id, sender_id, ciphertext, iv, scheme, reply_to_id, recalled_at, created_at')
     .single()
   if (error) return { error: error.message }
-  return { row: { ...data, body: { kind: 'text', text: body.text ?? '' } } }
+  return { row: { ...data, body: { ...body, kind: body.kind ?? 'text', text: body.text ?? '' } } }
 }
 
 /** 撤回自己的消息（RPC 无需：直接 UPDATE 自己那行） */

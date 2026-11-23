@@ -4,6 +4,7 @@ import { useAuth } from '../lib/AuthContext'
 import SignedImage from '../components/SignedImage'
 import BubbleAvatar from '../components/BubbleAvatar'
 import BubbleMenu from '../components/BubbleMenu'
+import GroupApprovalCard from '../components/GroupApprovalCard'
 import useBubbleMenu from '../lib/useBubbleMenu'
 import ImageLightbox from '../components/ImageLightbox'
 import { resolveSignedUrl } from '../lib/signedUrls'
@@ -59,6 +60,8 @@ export default function GroupThread() {
   const [retryTick, setRetryTick] = useState(0)
   const [error, setError] = useState(null)
   const [draft, setDraft] = useState('')
+  // 「通过/不通过」点了之后先在本机记下（桥会把卡片那条消息改写成 approved/rejected）
+  const [approvalAnswers, setApprovalAnswers] = useState({})
   const [sending, setSending] = useState(false)
   const [replyTo, setReplyTo] = useState(null)
   // 气泡操作菜单：右键 / 触屏长按打开，菜单渲染在气泡内部（见 BubbleMenu）
@@ -171,7 +174,13 @@ export default function GroupThread() {
   // 「Ace 不在线」不再作为消息显示：顶部实时状态已经说明了。
   // 旧数据里的那几条 offline 行留在服务器（不改历史），只是不渲染。
   const visible = useMemo(
-    () => messages.filter((m) => !(m.body?.kind === 'ai_state' && m.body.state === 'offline')),
+    () => messages.filter((m) => {
+      if (m.body?.kind === 'ai_state' && m.body.state === 'offline') return false
+      // 「通过/不通过」是**操作凭据**（给桥看的），不是聊天内容：卡片本身会显示结果，
+      // 列表里再冒一条空气泡只会让人以为"我发了一条空消息"。
+      if (m.body?.kind === 'approval_answer') return false
+      return true
+    }),
     [messages],
   )
   const byId = useMemo(() => new Map(visible.map((m) => [m.id, m])), [visible])
@@ -203,6 +212,19 @@ export default function GroupThread() {
   }
 
   const others = useMemo(() => (thread?.members ?? []).filter((m) => m.id !== me), [thread, me])
+  // 只有建群人（i4）能点「通过」；服务端另有校验（桥只认 i4 的 sender_id）
+  const canDecide = !!thread?.created_by && thread.created_by === me
+
+  // 点「通过/不通过」：往群里写一条 approval_answer（自己那一行），桥收到后决定要不要开工
+  const answerApproval = async (body, approve) => {
+    const t = threadRef.current
+    if (!t || !keyRef.current) throw new Error('这台设备还没拿到群钥匙，先退出重进一次')
+    const res = await sendGroupMessage(t.id, keyRef.current, {
+      kind: 'approval_answer', approvalId: body.approvalId, approve,
+    }, null, me)
+    if (res.error) throw new Error(res.error)
+    setApprovalAnswers((prev) => ({ ...prev, [body.approvalId]: approve ? 'approved' : 'rejected' }))
+  }
 
   const send = async (e) => {
     e?.preventDefault()
@@ -327,6 +349,22 @@ export default function GroupThread() {
                       <span className="group-ai-state-text">{AI_STATE_TEXT[body.state] ?? ''}</span>
                     )}
                   </div>
+                </div>
+              ) : body.kind === 'approval' ? (
+                // 确认卡片：放在 Ace 那一侧（它就是 Ace 提的请求），头像/名字与它说话时一致
+                <div className="chat-bubble-row theirs from-ai group-approval-row">
+                  <span className="group-sender-avatar is-ai">
+                    {mine?.avatar_url
+                      ? <SignedImage bucket="avatars" stored={mine.avatar_url} alt="" />
+                      : initial(mine?.nickname)}
+                  </span>
+                  <GroupApprovalCard
+                    body={body}
+                    canDecide={canDecide}
+                    answered={approvalAnswers[body.approvalId]}
+                    onAnswer={(approve) => answerApproval(body, approve)}
+                    nickname={mine?.nickname ?? 'Ace'}
+                  />
                 </div>
               ) : (
                 <div className={`chat-bubble-row ${isMine ? 'mine' : 'theirs'}${mine?.is_ai && !isMine ? ' from-ai' : ''}`}>

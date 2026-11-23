@@ -4929,6 +4929,61 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
   color: var(--ai-text-emphasis);
 }
 .group-ai-state-row.state-offline { opacity: 0.62; }
+
+/* ── 「需要你确认」卡片：Ace 想动手时弹的那张（2026-11-23 使用者要求）────────
+   为什么不复用气泡：它要能点（两个按钮），而且一眼看出"这是要你拍板的事"，
+   不是一句普通聊天。所以给它自己的边框 + 更实的底色。 */
+.group-approval-row { align-items: flex-start; }
+.group-approval {
+  max-width: min(340px, 100%);
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-standard);
+  border-left: 2px solid var(--ai-marker);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.group-approval-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.group-approval-title { font-size: 0.92rem; font-weight: 600; color: var(--text-primary); }
+.group-approval-owner { font-size: 0.75rem; color: var(--text-muted); }
+.group-approval-task {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  /* 描述可能挺长，别把面板撑爆 */
+  max-height: 9.5em;
+  overflow: auto;
+}
+.group-approval-actions { display: flex; align-items: center; gap: 8px; }
+.group-approval-btn {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border-standard);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.group-approval-btn--yes {
+  background: var(--btn-primary);
+  border-color: var(--btn-primary);
+  color: var(--btn-primary-text);
+}
+.group-approval-btn:hover:not(:disabled) { border-color: var(--text-secondary); color: var(--text-primary); }
+.group-approval-btn--yes:hover:not(:disabled) { color: var(--btn-primary-text); opacity: 0.92; }
+.group-approval-btn:disabled { opacity: 0.55; cursor: default; }
+.group-approval-btn:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+.group-approval-status { font-size: 0.8rem; color: var(--text-muted); }
+.group-approval--approved { border-left-color: var(--accent-blue); }
+.group-approval--rejected, .group-approval--expired { opacity: 0.72; }
+.group-approval-error { margin: 0; font-size: 0.78rem; color: var(--danger, #ff6b6b); }
+
 .group-ai-state-text { white-space: pre-wrap; }
 
 /* 「思考中」+ 三个点：点是一直跳的，文字让人一眼知道在等什么 */
