@@ -30,7 +30,7 @@ import {
 const RECALL_WINDOW_MS = 2 * 60 * 1000
 const AI_STATE_TEXT = {
   thinking: '',
-  working: '我正在查询相关代码',
+  working: '动手前先读一下相关文件…',
   waiting: '等你说"执行"',
   offline: 'Ace 不在线',
 }
@@ -346,7 +346,8 @@ export default function GroupThread() {
                         <span className="group-ai-dots" aria-label="Ace 正在思考"><i /><i /><i /></span>
                       </span>
                     ) : (
-                      <span className="group-ai-state-text">{AI_STATE_TEXT[body.state] ?? ''}</span>
+                      // 桥在干活时会持续改写这一行（text = 当前进度）；有 text 就显示 text
+                      <span className="group-ai-state-text">{body.text || AI_STATE_TEXT[body.state] || ''}</span>
                     )}
                   </div>
                 </div>
