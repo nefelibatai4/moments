@@ -107,8 +107,6 @@ export default function GroupThread() {
   const [retryTick, setRetryTick] = useState(0)
   const [error, setError] = useState(null)
   const [draft, setDraft] = useState('')
-  // 「通过/不通过」点了之后先在本机记下（桥会把卡片那条消息改写成 approved/rejected）
-  const [approvalAnswers, setApprovalAnswers] = useState({})
   const [sending, setSending] = useState(false)
   const [replyTo, setReplyTo] = useState(null)
   // 气泡操作菜单：右键 / 触屏长按打开，菜单渲染在气泡内部（见 BubbleMenu）
@@ -344,17 +342,6 @@ export default function GroupThread() {
   // 只有建群人（i4）能点「通过」；服务端另有校验（桥只认 i4 的 sender_id）
   const canDecide = !!thread?.created_by && thread.created_by === me
 
-  // 点「通过/不通过」：往群里写一条 approval_answer（自己那一行），桥收到后决定要不要开工
-  const answerApproval = async (body, approve) => {
-    const t = threadRef.current
-    if (!t || !keyRef.current) throw new Error('这台设备还没拿到群钥匙，先退出重进一次')
-    const res = await sendGroupMessage(t.id, keyRef.current, {
-      kind: 'approval_answer', approvalId: body.approvalId, approve,
-    }, null, me)
-    if (res.error) throw new Error(res.error)
-    setApprovalAnswers((prev) => ({ ...prev, [body.approvalId]: approve ? 'approved' : 'rejected' }))
-  }
-
   const send = async (e) => {
     e?.preventDefault()
     const text = draft.trim()
@@ -497,13 +484,7 @@ export default function GroupThread() {
                       ? <SignedImage bucket="avatars" stored={mine.avatar_url} alt="" />
                       : initial(mine?.nickname)}
                   </span>
-                  <GroupApprovalCard
-                    body={body}
-                    canDecide={canDecide}
-                    answered={approvalAnswers[body.approvalId]}
-                    onAnswer={(approve) => answerApproval(body, approve)}
-                    nickname={mine?.nickname ?? 'Ace'}
-                  />
+                  <GroupApprovalCard body={body} nickname={mine?.nickname ?? 'Ace'} />
                 </div>
               ) : (
                 <div className={`chat-bubble-row ${isMine ? 'mine' : 'theirs'}${mine?.is_ai && !isMine ? ' from-ai' : ''}`}>
