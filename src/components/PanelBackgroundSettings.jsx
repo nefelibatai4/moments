@@ -105,7 +105,11 @@ export default function PanelBackgroundSettings() {
         </div>
       </div>
       {settings.mode !== 'glass' && (
-        <p className="panel-bg-note">纯色模式下模糊不起作用（没有透出来的东西可模糊）。</p>
+        <p className="panel-bg-note">
+          纯色模式下模糊不起作用（没有透出来的东西可模糊）。纯色**本身不带颜色**——
+          它的颜色由下面的「底色」决定；「跟随主题」时，浅色主题下纯色就是浅色（#f7f8f8），
+          想要深色面板请把底色选成「深色」。
+        </p>
       )}
 
       {/* 预览：仿"电子书 + 压在书上的一张玻璃卡片"。
