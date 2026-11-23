@@ -13,6 +13,9 @@ import { safeStorageKey } from '../lib/sanitizeFilename'
 import { compressImage } from '../lib/compressImage'
 import ImageLightbox from '../components/ImageLightbox'
 import SignedImage from '../components/SignedImage'
+import BubbleAvatar from '../components/BubbleAvatar'
+import BubbleMenu from '../components/BubbleMenu'
+import useBubbleMenu from '../lib/useBubbleMenu'
 import { objectLocator, resolveSignedUrl, storagePathFromUrl } from '../lib/signedUrls'
 import { fetchAndDecryptImage, uploadEncryptedImage, useContentImageUrls } from '../lib/imageCrypto'
 import { compressVideo } from '../lib/compressVideo'
@@ -322,6 +325,8 @@ export default function ChatThread() {
   // 宽屏三栏时列表常驻左侧，返回键没有意义；窄屏/插件仍保留原来的 44px 热区。
   const { wide = false } = useOutletContext() ?? {}
   const [otherProfile, setOtherProfile] = useState(null)
+  // 自己的头像：气泡旁的小圆头像需要它。按登录用户读一次，不在每次渲染/每条消息里查。
+  const [myProfile, setMyProfile] = useState(null)
   // ⚠️ 两层：`rawMessages` 是数据库里那一行（密文），`messages` 是解密后给界面用的。
   //    落盘缓存、实时补丁、撤回/编辑都只碰 raw，明文永远不出内存。
   const [rawMessages, setRawMessages] = useState([])
@@ -345,8 +350,8 @@ export default function ChatThread() {
   const [fileToSend, setFileToSend] = useState(null)
   const [videoToSend, setVideoToSend] = useState(null)
   const [uploadHint, setUploadHint] = useState(null)
-  // 消息操作菜单（⋯）展开在哪条消息上；null = 全收起
-  const [menuFor, setMenuFor] = useState(null)
+  // 气泡操作菜单：右键 / 触屏长按打开，菜单渲染在气泡内部（见 BubbleMenu）
+  const { openId: menuFor, bubbleMenuProps, closeMenu } = useBubbleMenu()
   // 正在内联编辑的消息：{ id, text }
   const [editing, setEditing] = useState(null)
   // 正在引用的消息，发送时写进 reply_to_id
@@ -380,6 +385,20 @@ export default function ChatThread() {
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
   const me = session.user.id
+
+  // 自己的昵称/头像只读一次（按登录用户），供每条自己消息旁的小头像使用。
+  useEffect(() => {
+    let cancelled = false
+    supabase
+      .from('profiles')
+      .select('nickname, avatar_url')
+      .eq('id', me)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!cancelled && !error) setMyProfile(data ?? null)
+      })
+    return () => { cancelled = true }
+  }, [me])
 
   const imagePreviewUrl = useMemo(
     () => (imageFile ? URL.createObjectURL(imageFile) : null),
@@ -541,20 +560,6 @@ export default function ChatThread() {
     const timer = setInterval(() => setNow(Date.now()), 30000)
     return () => clearInterval(timer)
   }, [])
-
-  // 点别处 / 按 Esc 收起操作菜单。
-  // ⋯ 按钮与菜单项自己 stopPropagation，否则「再点一次 ⋯ 收起」会被这里立刻又关掉。
-  useEffect(() => {
-    if (!menuFor) return
-    const close = () => setMenuFor(null)
-    const onKey = (e) => { if (e.key === 'Escape') setMenuFor(null) }
-    document.addEventListener('click', close)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('click', close)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [menuFor])
 
   // 补拉本地没有的「被引用的原消息」
   const missingQuoteIds = useMemo(() => {
@@ -1029,7 +1034,7 @@ export default function ChatThread() {
             </button>
           </div>
         )}
-        {rows.map(({ message: m, label, showLabel }, i) => {
+        {rows.map(({ message: m, label, showLabel }) => {
           const isMine = m.sender_id === me
           const isRecalled = !!m.recalled_at
           const age = now - new Date(m.created_at).getTime()
@@ -1041,9 +1046,6 @@ export default function ChatThread() {
           const hasMenu = canRecall || canEdit || canQuote
           const isEditing = editing?.id === m.id
           const quoted = isRecalled ? null : resolveQuoted(m)
-          // 最后一条贴着输入框，菜单往下弹会被滚动容器裁掉。
-          // 而"刚发出去的消息"恰恰是最常要撤回/编辑的那条，所以它改成往上弹。
-          const menuUp = i === rows.length - 1
 
           return (
             <div key={m.id} data-mid={m.id}>
@@ -1054,63 +1056,49 @@ export default function ChatThread() {
                 </div>
               ) : (
                 <div className={`chat-bubble-row ${isMine ? 'mine' : 'theirs'}`}>
-                  <div className={`chat-bubble ${isMine ? 'mine' : 'theirs'}${stickerIdFromContent(m.content) ? ' has-sticker' : ''}`}>
-                    {hasMenu && (
+                  {!isMine && (
+                    <BubbleAvatar
+                      className="chat-bubble-avatar"
+                      stored={otherProfile?.avatar_url}
+                      nickname={otherProfile?.nickname}
+                      side="theirs"
+                      label="对方头像"
+                      onOpen={async () => {
+                        const url = await resolveSignedUrl('avatars', otherProfile?.avatar_url)
+                        if (url) setLightboxSrc(url)
+                      }}
+                    />
+                  )}
+                  <div
+                    className={`chat-bubble ${isMine ? 'mine' : 'theirs'}${stickerIdFromContent(m.content) ? ' has-sticker' : ''}`}
+                    onContextMenu={(e) => e.preventDefault()}
+                    {...(hasMenu ? bubbleMenuProps(m.id) : {})}
+                  >
+                    {hasMenu && menuFor === m.id && (
                       <div className="chat-msg-menu-wrap">
-                        <button
-                          type="button"
-                          className="chat-msg-more"
-                          aria-label="消息操作"
-                          onClick={(e) => {
-                            // 不 stopPropagation 的话，document 上那个"点别处收起"
-                            // 会立刻把它关掉，表现为按钮点了没反应
-                            e.stopPropagation()
-                            setMenuFor(menuFor === m.id ? null : m.id)
-                          }}
-                        >
-                          ⋯
-                        </button>
-                        {menuFor === m.id && (
-                          <div
-                            className={`chat-msg-menu${menuUp ? ' up' : ''}`}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {canEdit && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditing({ id: m.id, text: m.content ?? '' })
-                                  setMenuFor(null)
-                                }}
-                              >
-                                编辑
-                              </button>
-                            )}
-                            {canQuote && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setReplyTarget(m)
-                                  setMenuFor(null)
-                                }}
-                              >
-                                引用
-                              </button>
-                            )}
-                            {canRecall && (
-                              <button
-                                type="button"
-                                className="danger"
-                                onClick={() => {
-                                  setMenuFor(null)
-                                  handleRecall(m)
-                                }}
-                              >
-                                撤回
-                              </button>
-                            )}
-                          </div>
-                        )}
+                        <BubbleMenu
+                          isMine={isMine}
+                          label="消息操作"
+                          onClose={closeMenu}
+                          items={[
+                            ...(canEdit ? [{
+                              key: 'edit',
+                              label: '编辑',
+                              onSelect: () => setEditing({ id: m.id, text: m.content ?? '' }),
+                            }] : []),
+                            ...(canQuote ? [{
+                              key: 'quote',
+                              label: '引用',
+                              onSelect: () => setReplyTarget(m),
+                            }] : []),
+                            ...(canRecall ? [{
+                              key: 'recall',
+                              label: '撤回',
+                              danger: true,
+                              onSelect: () => handleRecall(m),
+                            }] : []),
+                          ]}
+                        />
                       </div>
                     )}
 
@@ -1243,6 +1231,19 @@ export default function ChatThread() {
                       </span>
                     )}
                   </div>
+                  {isMine && (
+                    <BubbleAvatar
+                      className="chat-bubble-avatar"
+                      stored={myProfile?.avatar_url}
+                      nickname={myProfile?.nickname ?? session.user?.email}
+                      side="mine"
+                      label="我的头像"
+                      onOpen={async () => {
+                        const url = await resolveSignedUrl('avatars', myProfile?.avatar_url)
+                        if (url) setLightboxSrc(url)
+                      }}
+                    />
+                  )}
                 </div>
               )}
             </div>

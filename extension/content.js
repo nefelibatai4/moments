@@ -194,11 +194,15 @@
   // 没有就是默认值，不该当成用户的意见往外报。
   function readTheme() {
     try {
-      if (!localStorage.getItem('moments_theme')) return null
-      return document.documentElement.getAttribute('data-theme') || null
+      if (localStorage.getItem('moments_theme')) {
+        return document.documentElement.getAttribute('data-theme') || null
+      }
     } catch {
-      return null
+      /* 面板 iframe 里存储可能被拦：下面退回 DOM 上的"显式选择"标记 */
     }
+    // 2026-11-22 修：以前这里直接 null，导致"在面板里切了浅色，扩展永远不知道"（panelTheme 一直是 dark）。
+    const explicit = document.documentElement.getAttribute('data-theme-user')
+    return explicit === 'light' || explicit === 'dark' ? explicit : null
   }
 
   let lastPanelSent = null

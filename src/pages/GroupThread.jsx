@@ -2,6 +2,11 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Link, useOutletContext } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import SignedImage from '../components/SignedImage'
+import BubbleAvatar from '../components/BubbleAvatar'
+import BubbleMenu from '../components/BubbleMenu'
+import useBubbleMenu from '../lib/useBubbleMenu'
+import ImageLightbox from '../components/ImageLightbox'
+import { resolveSignedUrl } from '../lib/signedUrls'
 import { onUnlockChange } from '../lib/crypto'
 import { usePinLatestOnViewport } from '../lib/usePinLatestOnViewport'
 import ChatPaneSkeleton from '../components/ChatPaneSkeleton'
@@ -56,10 +61,13 @@ export default function GroupThread() {
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [replyTo, setReplyTo] = useState(null)
-  const [menuFor, setMenuFor] = useState(null)
+  // 气泡操作菜单：右键 / 触屏长按打开，菜单渲染在气泡内部（见 BubbleMenu）
+  const { openId: menuFor, bubbleMenuProps, closeMenu } = useBubbleMenu()
   const [atBottom, setAtBottom] = useState(true)
   const [aceOnline, setAceOnline] = useState(null)
   const [notice, setNotice] = useState(null)
+  // 点气泡旁的小头像看大图（复用私聊/动态同一个灯箱）
+  const [lightboxSrc, setLightboxSrc] = useState(null)
   const listRef = useRef(null)
   const inputRef = useRef(null)
   const keyRef = useRef(null)
@@ -134,12 +142,6 @@ export default function GroupThread() {
     const t2 = setTimeout(bump, 400)
     return () => { cancelAnimationFrame(raf); clearTimeout(t1); clearTimeout(t2) }
   }, [loading, scrollToBottom])
-
-  useEffect(() => {
-    const onDoc = () => setMenuFor(null)
-    document.addEventListener('click', onDoc)
-    return () => document.removeEventListener('click', onDoc)
-  }, [])
 
   // ── Ace 在不在线：读心跳（不在线时叫它就会白等，所以要看得见）─────
   useEffect(() => {
@@ -226,7 +228,6 @@ export default function GroupThread() {
   }
 
   const doRecall = async (id) => {
-    setMenuFor(null)
     const res = await recallGroupMessage(id)
     if (res.error) { setError(res.error); return }
     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, recalled_at: new Date().toISOString(), body: { kind: 'recalled' } } : m)))
@@ -330,13 +331,23 @@ export default function GroupThread() {
               ) : (
                 <div className={`chat-bubble-row ${isMine ? 'mine' : 'theirs'}${mine?.is_ai && !isMine ? ' from-ai' : ''}`}>
                   {!isMine && (
-                    <span className={`group-sender-avatar${mine?.is_ai ? ' is-ai' : ''}`}>
-                      {mine?.avatar_url
-                        ? <SignedImage bucket="avatars" stored={mine.avatar_url} alt="" />
-                        : initial(mine?.nickname)}
-                    </span>
+                    <BubbleAvatar
+                      className={`group-sender-avatar${mine?.is_ai ? ' is-ai' : ''}`}
+                      stored={mine?.avatar_url}
+                      nickname={mine?.nickname}
+                      side="theirs"
+                      label={mine?.is_ai ? 'Ace 头像' : '对方头像'}
+                      onOpen={async () => {
+                        const url = await resolveSignedUrl('avatars', mine?.avatar_url)
+                        if (url) setLightboxSrc(url)
+                      }}
+                    />
                   )}
-                  <div className={`chat-bubble ${isMine ? 'mine' : 'theirs'}`}>
+                  <div
+                    className={`chat-bubble ${isMine ? 'mine' : 'theirs'}`}
+                    onContextMenu={(e) => e.preventDefault()}
+                    {...(hasMenu ? bubbleMenuProps(m.id) : {})}
+                  >
                     {!isMine && (
                       <span className="group-sender-name">
                         {mine?.nickname ?? '成员'}
@@ -356,29 +367,42 @@ export default function GroupThread() {
                         {body.streaming ? <span className="group-stream-caret" aria-hidden="true" /> : null}
                       </span>
                     )}
-                    {hasMenu && (
+                    {hasMenu && menuFor === m.id && (
                       <div className="chat-msg-menu-wrap">
-                        <button
-                          type="button"
-                          className="chat-msg-more"
-                          aria-label="消息操作"
-                          onClick={(e) => { e.stopPropagation(); setMenuFor(menuFor === m.id ? null : m.id) }}
-                        >
-                          ⋯
-                        </button>
-                        {menuFor === m.id && (
-                          <div className={`chat-msg-menu${isMine ? ' align-right' : ''}`} role="menu">
-                            {canQuote && (
-                              <button type="button" role="menuitem" onClick={() => { setReplyTo(m); setMenuFor(null); inputRef.current?.focus() }}>引用</button>
-                            )}
-                            {canRecall && (
-                              <button type="button" role="menuitem" className="danger" onClick={() => doRecall(m.id)}>撤回</button>
-                            )}
-                          </div>
-                        )}
+                        <BubbleMenu
+                          isMine={isMine}
+                          label="消息操作"
+                          onClose={closeMenu}
+                          items={[
+                            ...(canQuote ? [{
+                              key: 'quote',
+                              label: '引用',
+                              onSelect: () => { setReplyTo(m); inputRef.current?.focus() },
+                            }] : []),
+                            ...(canRecall ? [{
+                              key: 'recall',
+                              label: '撤回',
+                              danger: true,
+                              onSelect: () => doRecall(m.id),
+                            }] : []),
+                          ]}
+                        />
                       </div>
                     )}
                   </div>
+                  {isMine && (
+                    <BubbleAvatar
+                      className="group-sender-avatar"
+                      stored={mine?.avatar_url}
+                      nickname={mine?.nickname ?? session?.user?.email}
+                      side="mine"
+                      label="我的头像"
+                      onOpen={async () => {
+                        const url = await resolveSignedUrl('avatars', mine?.avatar_url)
+                        if (url) setLightboxSrc(url)
+                      }}
+                    />
+                  )}
                 </div>
               )}
             </div>
@@ -460,6 +484,8 @@ export default function GroupThread() {
         />
         <button type="submit" disabled={sending || !draft.trim()}>{sending ? '…' : '发送'}</button>
       </form>
+
+      <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </div>
   )
 }

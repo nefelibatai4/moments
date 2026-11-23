@@ -31,6 +31,9 @@ export function setTheme(theme) {
     // 存不进去不影响这次会话的外观（属性照样设上）
   }
   document.documentElement.setAttribute('data-theme', theme)
+  // 2026-11-22：给扩展一个"这是使用者主动选的"标记。
+  // 面板 iframe 的 localStorage 可能是分区的/被拦的，扩展读不到那个键就只能靠这个属性。
+  try { document.documentElement.setAttribute('data-theme-user', theme) } catch { /* 忽略 */ }
   // 广播"使用者主动改了主题"。面板帧里的 content.js 只认这一类主动修改
   // （它的 data-theme 也可能只是扩展下发下来的副本，不该被当成使用者的意见上报）
   try {
@@ -43,6 +46,7 @@ export function setTheme(theme) {
 /** 只应用外观、不写存储：用于扩展把"全局主题"递进来的场景（见 lib/extensionBridge.js） */
 export function applyTheme(theme) {
   if (theme !== 'light' && theme !== 'dark') return
+  // 扩展递下来的主题**不算**使用者的主动选择，不打 data-theme-user（否则会和扩展互相覆盖）
   document.documentElement.setAttribute('data-theme', theme)
 }
 

@@ -971,7 +971,7 @@ button:disabled {
 }
 
 /* ── 评论 ⋯ 操作菜单（点赞 / 回复 / 编辑 / 删除） ──
-   与私信的 .chat-msg-menu 同一套交互模式：hover 显形、触屏常显、
+   评论仍保留 hover 显形的 ⋯；私信气泡已改为右键/长按（见 .chat-msg-menu）。
    菜单面板样式共用同一组视觉变量。 */
 
 /* 菜单容器：锚在评论行的右上角 */
@@ -2260,6 +2260,8 @@ button:disabled {
 
 .chat-bubble-row {
   display: flex;
+  /* 头像贴气泡底边：两侧都从底部对齐（自己/对方都是） */
+  align-items: flex-end;
   margin-bottom: 2px;
 }
 
@@ -2271,6 +2273,50 @@ button:disabled {
   justify-content: flex-start;
 }
 
+/* 气泡旁的小圆头像（小红书式：每条消息自己带一个）。
+   与群聊的 .group-sender-avatar 同尺寸，但私聊是新增元素，单独一套类名。 */
+.chat-bubble-avatar {
+  flex: 0 0 auto;
+  align-self: flex-end;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-badge);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 0;
+  cursor: default;
+}
+
+/* 只有真头像才可点开大图；占位圆不显示放大光标 */
+.chat-bubble-avatar[data-has-avatar="1"] {
+  cursor: zoom-in;
+}
+
+.chat-bubble-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.chat-bubble-row.theirs .chat-bubble-avatar { margin-right: 6px; }
+.chat-bubble-row.mine .chat-bubble-avatar { margin-left: 6px; }
+
+.chat-bubble-avatar:focus-visible,
+.group-sender-avatar:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
 .chat-bubble {
   max-width: 75%;
   padding: 8px 14px;
@@ -2279,8 +2325,24 @@ button:disabled {
   line-height: 1.5;
   word-break: break-word;
   white-space: pre-wrap;
-  /* 操作菜单（⋯）要绝对定位在气泡右上角 */
+  /* 菜单层（.chat-msg-menu-wrap）要相对气泡定位 */
   position: relative;
+  /* 触屏长按由 JS 接管，别让 iOS 再弹系统 callout（复制/存储图片） */
+  -webkit-touch-callout: none;
+}
+
+/* 触屏设备没有 hover：长按是唯一入口，所以按住时不要进入文字选择态，
+   否则系统选择手柄/菜单会和我们的气泡菜单打架。桌面仍可正常选中文字。 */
+@media (hover: none) {
+  .chat-bubble {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+
+.chat-bubble:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
 }
 
 .chat-bubble.mine {
@@ -2382,70 +2444,43 @@ button:disabled {
   letter-spacing: 0.2px;
 }
 
-/* 消息操作菜单（⋯）：气泡右上角。
-   桌面端 hover 才出现；触屏设备根本没有 hover，所以用 @media (hover: none) 让它常显 ——
-   否则手机和 iOS app 上"编辑 / 引用 / 撤回"等于不存在。 */
+/* 消息操作菜单：右键 / 触屏长按触发，不再有 hover 才出现的 ⋯。
+   菜单层铺满气泡，菜单本身由 JS（BubbleMenu）在气泡矩形内定位：
+   横向远离头像一侧，纵向按视口空间翻上/翻下。 */
 .chat-msg-menu-wrap {
   position: absolute;
-  top: 2px;
-  right: 2px;
+  inset: 0;
   z-index: var(--z-inline-menu);
-}
-
-.chat-msg-more {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  /* 气泡有蓝底（自己）也有浅底（对方），半透明黑 + 白字两边都读得清 */
-  background: var(--control-overlay);
-  color: var(--text-on-color);
-  font-size: 0.8rem;
-  line-height: 1;
-  cursor: pointer;
-  opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s ease;
-}
-
-.chat-bubble-row:hover .chat-msg-more,
-.chat-msg-more:focus-visible {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-@media (hover: none) {
-  .chat-msg-more {
-    opacity: 1;
-    pointer-events: auto;
-  }
 }
 
 .chat-msg-menu {
   position: absolute;
-  top: 24px;
-  right: 0;
-  display: flex;
-  flex-direction: column;
-  min-width: 84px;
-  padding: 4px;
+  top: 0;
+  left: 4px;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+  width: max-content;
+  max-width: calc(100vw - 16px);
+  padding: 3px;
   border-radius: 10px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-standard);
   box-shadow: var(--shadow-popover);
+  pointer-events: auto;
+  /* 先隐藏，等 useLayoutEffect 量好气泡/视口再显示，避免闪一下再跳位 */
+  visibility: hidden;
 }
 
 .chat-msg-menu button {
   border: none;
   background: transparent;
   color: var(--text-primary);
-  text-align: left;
+  text-align: center;
   font-size: 0.85rem;
-  padding: 7px 10px;
+  padding: 5px 9px;
   border-radius: 6px;
   cursor: pointer;
   white-space: nowrap;
@@ -2455,15 +2490,14 @@ button:disabled {
   background: var(--btn-secondary-hover);
 }
 
+.chat-msg-menu button:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: -1px;
+}
+
 .chat-msg-menu button.danger {
   /* 撤回是破坏性操作，用 danger 红（与评论删除按钮一致） */
   color: var(--accent-red);
-}
-
-/* 最后一条消息贴着输入框，菜单往下弹会被滚动容器裁掉 —— 改成往上弹 */
-.chat-msg-menu.up {
-  top: auto;
-  bottom: 24px;
 }
 
 /* 引用块：点一下跳到原消息 */
@@ -4823,10 +4857,18 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
   border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 11.5px;
+  font-family: inherit;
+  line-height: 1;
+  padding: 0;
+  overflow: hidden;
+  cursor: default;
   background: var(--bg-elevated);
   border: 1px solid var(--border-standard);
   color: var(--text-secondary, inherit);
 }
+.group-sender-avatar[data-has-avatar="1"] { cursor: zoom-in; }
+/* 自己的消息原来只有气泡；现在头像在气泡右侧，间距与对方对称 */
+.chat-bubble-row.mine .group-sender-avatar { margin-right: 0; margin-left: 6px; }
 .group-sender-avatar.is-ai {
   background: linear-gradient(135deg, var(--ai-fill), var(--ai-pink-fill));
   color: var(--text-on-color);
