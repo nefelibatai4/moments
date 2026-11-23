@@ -33,9 +33,13 @@ export function aceWorkStatus(messages, { aceId, now = Date.now(), ttl = BUSY_TT
   if (!last || last.body?.kind !== 'ai_state' || last.body?.state !== 'working') return empty
 
   const at = Number(last.body?.at) || 0
+  // 没有时间戳的 working 行（老数据、或"聊天时用了一次工具"那种）**不能**当成"在忙/失联"：
+  // 否则头部会一直显示"状态未知"（2026-11-23 真实反馈：一直卡在那个状态）。
+  // 只有"确实是干活、且给了进度时间戳"的行才判在忙/失联。
+  if (!at) return empty
   const since = Number(last.body?.since) || at
   const minutes = since ? Math.max(0, Math.round((now - since) / 60000)) : 0
-  const fresh = at > 0 && now - at < ttl
+  const fresh = now - at < ttl
   return {
     busy: fresh,
     stale: !fresh,
