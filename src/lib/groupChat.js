@@ -155,7 +155,11 @@ export function subscribeGroupMessages(threadId, onEvent) {
   return () => { supabase.removeChannel(channel) }
 }
 
-// ── 已读标记（本机记录；群里就两个人 + 一个 AI，不做已读回执）─────────
+// ── 已读：本机角标 + 跨设备回执 ────────────────────────────────
+// 本机 localStorage 仍负责“未读角标”（不用等网络）；跨设备回执落在
+// group_presence.last_seen_at（这张表本来就给成员读，Realtime 也开了）。
+// 人类的 last_seen_at = 读到的最后一条消息的 created_at（服务端时间，避免手机时钟偏差）；
+// AI 的心跳同样在这张表，但回执计算**一律排除 is_ai**。
 function seenKey(uid, threadId) { return `${SEEN_PREFIX}:${uid}:${threadId}` }
 
 export function readGroupSeen(uid, threadId) {
@@ -170,6 +174,50 @@ export function markGroupSeen(uid, threadId, iso) {
   // 这里主动喊一声，让 content script 立刻把"已读到哪"同步过去 ——
   // 否则要等它 10 秒一次的轮询，使用者会觉得"读完了角标还挂着"。
   try { window.postMessage({ source: 'moments-app', type: 'group-seen' }, '*') } catch { /* 忽略 */ }
+}
+
+/**
+ * 把「我读到哪」写到服务端（群成员都能读到，用于显示已读回执）。
+ * upTo 用消息自己的 created_at：它是服务端时间，不受本机时钟快慢影响。
+ */
+export async function markGroupRead(threadId, uid, upTo) {
+  if (!threadId || !uid || !upTo || !Number.isFinite(Date.parse(upTo))) return { error: null }
+  const { error } = await supabase
+    .from('group_presence')
+    .upsert(
+      { thread_id: threadId, user_id: uid, last_seen_at: upTo },
+      { onConflict: 'thread_id,user_id' },
+    )
+  return { error: error?.message ?? null }
+}
+
+/**
+ * 一条消息的已读情况。**AI 永远不算收件人**（需求：已读反馈对象不包括 AI 助手）：
+ *  · others  = 群里除我以外的人类成员
+ *  · readers = 其中 last_seen_at ≥ 这条消息 created_at 的人
+ */
+export function groupReadReceipt(message, presence, members, me) {
+  const at = Date.parse(message?.created_at ?? '')
+  const others = (members ?? []).filter((m) => m.id !== me && !m.is_ai)
+  if (!Number.isFinite(at) || others.length === 0) {
+    return { others, readers: [], allRead: false }
+  }
+  const readers = others.filter((m) => {
+    const seen = Date.parse(presence?.[m.id] ?? '')
+    return Number.isFinite(seen) && seen >= at
+  })
+  return { others, readers, allRead: readers.length === others.length }
+}
+
+/** 当前列表里最后一条消息的时间（标记已读用；没有任何消息返回 null） */
+export function latestMessageAt(messages) {
+  let latest = null
+  let latestAt = -Infinity
+  for (const m of messages ?? []) {
+    const at = Date.parse(m?.created_at ?? '')
+    if (Number.isFinite(at) && at > latestAt) { latestAt = at; latest = m.created_at }
+  }
+  return latest
 }
 
 /** 未读数：比"上次看到的时间"新的、别人发的、非 AI 状态行（状态气泡不算消息） */
@@ -204,10 +252,24 @@ export async function loadGroupPresence(threadId) {
   return out
 }
 
-/** 心跳是否新鲜（只用来判断 Ace 在不在，不做"已读"用） */
+/** 心跳是否新鲜（只用来判断 Ace 在不在；人类的 last_seen_at 是已读标记，不要用它算在线） */
 export function isPresenceFresh(iso, now = Date.now()) {
   if (!iso) return false
   return now - new Date(iso).getTime() < PRESENCE_STALE_MS
+}
+
+/** 实时订阅「谁读到哪」（group_presence 已在 Realtime 发布里） */
+export function subscribeGroupPresence(threadId, onEvent) {
+  const channel = supabase
+    .channel(`group-presence:${threadId}`)
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'group_presence',
+      filter: `thread_id=eq.${threadId}`,
+    }, (payload) => onEvent(payload.new))
+    .subscribe()
+  return () => { supabase.removeChannel(channel) }
 }
 
 /**

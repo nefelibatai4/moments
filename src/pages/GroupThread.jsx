@@ -5,16 +5,18 @@ import SignedImage from '../components/SignedImage'
 import BubbleAvatar from '../components/BubbleAvatar'
 import BubbleMenu from '../components/BubbleMenu'
 import GroupApprovalCard from '../components/GroupApprovalCard'
+import { aceWorkStatus } from '../lib/aceWorkStatus'
 import useBubbleMenu from '../lib/useBubbleMenu'
 import ImageLightbox from '../components/ImageLightbox'
 import { resolveSignedUrl } from '../lib/signedUrls'
 import { onUnlockChange } from '../lib/crypto'
+import { isPanelSurface } from '../lib/surface'
 import { usePinLatestOnViewport } from '../lib/usePinLatestOnViewport'
 import ChatPaneSkeleton from '../components/ChatPaneSkeleton'
 import {
-  decryptGroupRow, isPresenceFresh, listGroupThreads, loadGroupMessages,
-  loadGroupPresence, markGroupSeen, recallGroupMessage, sendGroupMessage,
-  subscribeGroupMessages,
+  decryptGroupRow, groupReadReceipt, isPresenceFresh, latestMessageAt, listGroupThreads,
+  loadGroupMessages, loadGroupPresence, markGroupRead, markGroupSeen, recallGroupMessage,
+  sendGroupMessage, subscribeGroupMessages, subscribeGroupPresence,
 } from '../lib/groupChat'
 
 /**
@@ -48,6 +50,51 @@ function timeLabel(iso) {
 
 function initial(name) { return (name ?? '?').slice(0, 1) }
 
+// “我有没有真的看到这条” —— 和私聊同一口径：面板里只要可见就算，整页还要求窗口有焦点。
+// 后台标签页/最小化时不写已读，否则对方会看到“已读”但人根本没看。
+function pageIsActive() {
+  if (document.visibilityState !== 'visible') return false
+  return isPanelSurface() || document.hasFocus()
+}
+
+/** 合并 last_seen_at，只让时间往前走（Realtime 与 45 秒轮询可能乱序到达） */
+function mergePresence(prev, next) {
+  const out = { ...prev }
+  for (const [id, iso] of Object.entries(next ?? {})) {
+    const at = Date.parse(iso ?? '')
+    const old = Date.parse(out[id] ?? '')
+    if (Number.isFinite(at) && (!Number.isFinite(old) || at >= old)) out[id] = iso
+  }
+  return out
+}
+
+/** 自己消息右下角的已读回执：收件人只算群里其他人类，Ace 永远不算 */
+function GroupReadReceipt({ message, presence, members, me }) {
+  // AI 自己不参与已读回执（不显示、也不写位置）
+  if ((members ?? []).find((m) => m.id === me)?.is_ai) return null
+  const receipt = groupReadReceipt(message, presence, members, me)
+  if (receipt.others.length === 0) return null
+  const names = receipt.readers.map((r) => r.nickname).join('、')
+  const label = receipt.allRead
+    ? `${names || '对方'}已读`
+    : receipt.readers.length > 0
+      ? `已读 ${receipt.readers.length}/${receipt.others.length}`
+      : '未读'
+  return (
+    <span
+      className={`chat-read-status group-read-status${receipt.allRead ? ' read' : ''}`}
+      data-read-state={receipt.allRead ? 'read' : 'unread'}
+      data-read-count={receipt.readers.length}
+      data-read-total={receipt.others.length}
+      data-read-recipients={receipt.others.map((r) => r.id).join(',')}
+      title={label}
+      aria-label={label}
+    >
+      {receipt.allRead ? '✓✓ 已读' : receipt.readers.length > 0 ? `✓ ${receipt.readers.length}/${receipt.others.length}` : '✓ 未读'}
+    </span>
+  )
+}
+
 export default function GroupThread() {
   const session = useAuth()
   const { wide = false } = useOutletContext() ?? {}
@@ -68,6 +115,14 @@ export default function GroupThread() {
   const { openId: menuFor, bubbleMenuProps, closeMenu } = useBubbleMenu()
   const [atBottom, setAtBottom] = useState(true)
   const [aceOnline, setAceOnline] = useState(null)
+  // 「Ace 在忙」：只看它最后一条消息（进度是原地改写，所以新鲜度靠 body.at）
+  const [nowTick, setNowTick] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNowTick(Date.now()), 30_000)
+    return () => clearInterval(t)
+  }, [])
+  // 群成员的 last_seen_at：人类的是“读到哪条”，Ace 的是在线心跳（回执计算会排除 AI）
+  const [presence, setPresence] = useState({})
   const [notice, setNotice] = useState(null)
   // 点气泡旁的小头像看大图（复用私聊/动态同一个灯箱）
   const [lightboxSrc, setLightboxSrc] = useState(null)
@@ -76,6 +131,11 @@ export default function GroupThread() {
   const keyRef = useRef(null)
   const threadRef = useRef(null)
   const bottomRef = useRef(true)
+  const messagesRef = useRef([])
+  // 我已经写到服务端的“读到这里”，只增不减（多设备/滚动都可能拿旧位置来写）
+  const readMarkRef = useRef(null)
+
+  useEffect(() => { messagesRef.current = messages }, [messages])
 
   const scrollToBottom = useCallback((smooth = false) => {
     const el = listRef.current
@@ -103,10 +163,29 @@ export default function GroupThread() {
       keyRef.current = res.key
       setKey(res.key)
       setMessages(res.messages)
+      messagesRef.current = res.messages
       setLoading(false)
       if (res.key) markGroupSeen(me, t.id)
       setError(res.error)
       requestAnimationFrame(() => scrollToBottom(false))
+
+      // 已读回执：先看自己上次读到哪，只有真的往后读了才写（别让第二台设备把位置写回去）
+      const p = await loadGroupPresence(t.id)
+      if (cancelled) return
+      setPresence((prev) => mergePresence(prev, p))
+      const latest = latestMessageAt(res.messages)
+      const own = p[me]
+      const meIsAi = (t.members ?? []).find((m) => m.id === me)?.is_ai
+      if (latest && !meIsAi && (!own || Date.parse(latest) > Date.parse(own))) {
+        if (pageIsActive() && bottomRef.current) {
+          readMarkRef.current = latest
+          markGroupRead(t.id, me, latest).then((r) => {
+            if (r?.error) console.warn('mark group read error:', r.error)
+          })
+        }
+      } else {
+        readMarkRef.current = own ?? latest
+      }
     })()
     return () => { cancelled = true }
   }, [me, scrollToBottom, retryTick])
@@ -115,6 +194,20 @@ export default function GroupThread() {
     const off = onUnlockChange(() => setRetryTick((n) => n + 1))
     return off
   }, [])
+
+  // ── 写“我读到哪”（服务端时间 = 消息的 created_at；AI 的消息不参与回执）──
+  const markRead = useCallback((upTo) => {
+    const t = threadRef.current
+    if (!t || !me || !upTo || !pageIsActive()) return
+    if ((t.members ?? []).find((m) => m.id === me)?.is_ai) return
+    const at = Date.parse(upTo)
+    if (!Number.isFinite(at)) return
+    if (readMarkRef.current && at <= Date.parse(readMarkRef.current)) return
+    readMarkRef.current = upTo
+    markGroupRead(t.id, me, upTo).then((r) => {
+      if (r?.error) console.warn('mark group read error:', r.error)
+    })
+  }, [me])
 
   // ── 实时：新消息 / 状态更新 ─────────────────────────────────
   useEffect(() => {
@@ -131,10 +224,15 @@ export default function GroupThread() {
         return next
       })
       if (bottomRef.current) requestAnimationFrame(() => scrollToBottom(false))
-      if (kind === 'insert' && row.sender_id !== me) markGroupSeen(me, t.id)
+      if (kind === 'insert' && row.sender_id !== me) {
+        markGroupSeen(me, t.id)
+        // AI 的状态行不推已读（回执对象不含 AI；也少一次无意义的写）
+        const sender = (threadRef.current?.members ?? []).find((m) => m.id === row.sender_id)
+        if (!sender?.is_ai && bottomRef.current) markRead(full.created_at)
+      }
     })
     return off
-  }, [me, key, scrollToBottom])
+  }, [me, key, scrollToBottom, markRead])
 
   // ── 键盘：贴底（和私聊同一套行为）────────────────────────────
   useEffect(() => {
@@ -146,21 +244,43 @@ export default function GroupThread() {
     return () => { cancelAnimationFrame(raf); clearTimeout(t1); clearTimeout(t2) }
   }, [loading, scrollToBottom])
 
-  // ── Ace 在不在线：读心跳（不在线时叫它就会白等，所以要看得见）─────
+  // ── 在线/已读：group_presence 同时承载 Ace 的心跳和人类的已读位置 ─────
   useEffect(() => {
     const t = threadRef.current
     if (!t) return undefined
     const ace = (t.members ?? []).find((m) => m.is_ai)
-    if (!ace) return undefined
     let stopped = false
     const tick = async () => {
-      const presence = await loadGroupPresence(t.id)
-      if (!stopped) setAceOnline(isPresenceFresh(presence[ace.id]))
+      const p = await loadGroupPresence(t.id)
+      if (stopped) return
+      setPresence((prev) => mergePresence(prev, p))
+      if (ace) setAceOnline(isPresenceFresh(p[ace.id]))
     }
     tick()
     const timer = setInterval(tick, 45000)
-    return () => { stopped = true; clearInterval(timer) }
+    // 对方一打开群就会写一条 last_seen_at —— 实时收到才能马上把 ✓ 变 ✓✓
+    const off = subscribeGroupPresence(t.id, (row) => {
+      if (!row?.user_id) return
+      setPresence((prev) => mergePresence(prev, { [row.user_id]: row.last_seen_at }))
+      if (ace && row.user_id === ace.id) setAceOnline(isPresenceFresh(row.last_seen_at))
+    })
+    return () => { stopped = true; clearInterval(timer); off() }
   }, [thread])
+
+  // 从后台切回来 / 重新聚焦时，如果还停在底部，就把“读到这里”补上
+  useEffect(() => {
+    const onActive = () => {
+      if (!bottomRef.current) return
+      const latest = latestMessageAt(messagesRef.current)
+      if (latest) markRead(latest)
+    }
+    document.addEventListener('visibilitychange', onActive)
+    window.addEventListener('focus', onActive)
+    return () => {
+      document.removeEventListener('visibilitychange', onActive)
+      window.removeEventListener('focus', onActive)
+    }
+  }, [markRead])
 
   const onScroll = () => {
     const el = listRef.current
@@ -168,7 +288,11 @@ export default function GroupThread() {
     const near = el.scrollHeight - el.scrollTop - el.clientHeight < 80
     bottomRef.current = near
     setAtBottom(near)
-    if (near) markGroupSeen(me, threadRef.current?.id)
+    if (near) {
+      markGroupSeen(me, threadRef.current?.id)
+      const latest = latestMessageAt(messagesRef.current)
+      if (latest) markRead(latest)
+    }
   }
 
   // 「Ace 不在线」不再作为消息显示：顶部实时状态已经说明了。
@@ -212,6 +336,11 @@ export default function GroupThread() {
   }
 
   const others = useMemo(() => (thread?.members ?? []).filter((m) => m.id !== me), [thread, me])
+  const aceMember = useMemo(() => (thread?.members ?? []).find((m) => m.is_ai), [thread])
+  const work = useMemo(
+    () => aceWorkStatus(messages, { aceId: aceMember?.id, now: nowTick }),
+    [messages, aceMember?.id, nowTick],
+  )
   // 只有建群人（i4）能点「通过」；服务端另有校验（桥只认 i4 的 sender_id）
   const canDecide = !!thread?.created_by && thread.created_by === me
 
@@ -296,9 +425,18 @@ export default function GroupThread() {
           <span className="group-header-count">{thread.memberCount} 人</span>
         </span>
         {aceOnline !== null && (
-          <span className={`group-ace-status${aceOnline ? ' is-online' : ''}`} data-ace-online={aceOnline ? '1' : '0'}>
+          <span
+            className={`group-ace-status${work.busy ? ' is-busy' : aceOnline ? ' is-online' : ''}`}
+            data-ace-online={aceOnline ? '1' : '0'}
+            data-ace-busy={work.busy ? '1' : '0'}
+            title={work.busy ? work.text : undefined}
+          >
             <i aria-hidden="true" />
-            Ace {aceOnline ? '在线' : '不在线'}
+            {work.busy
+              ? `Ace 在忙${work.minutes > 0 ? ` · ${work.minutes} 分钟` : ''}`
+              : work.stale && aceOnline
+                ? 'Ace 在线（状态未知）'
+                : `Ace ${aceOnline ? '在线' : '不在线'}`}
           </span>
         )}
       </div>
@@ -406,6 +544,9 @@ export default function GroupThread() {
                         {body.streaming ? <span className="group-stream-caret" aria-hidden="true" /> : null}
                       </span>
                     )}
+                    {isMine && body.kind === 'text' && (
+                      <GroupReadReceipt message={m} presence={presence} members={thread.members ?? []} me={me} />
+                    )}
                     {hasMenu && menuFor === m.id && (
                       <div className="chat-msg-menu-wrap">
                         <BubbleMenu
@@ -489,17 +630,27 @@ export default function GroupThread() {
             <button
               key={m.id}
               type="button"
-              className={`group-mention-chip${m.is_ai ? ' is-ai' : ''}`}
-              onClick={() => mention(m)}
-              title={`插入 @${m.nickname}`}
+              onClick={() => {
+                mention(m)
+                if (m.is_ai && work.busy) {
+                  setNotice('Ace 正在忙：这条会排队，它跑完当前任务就回你。')
+                  setTimeout(() => setNotice(null), 8000)
+                }
+              }}
+              title={m.is_ai && work.busy ? '它正在干活，消息会排队（跑完就回）' : `插入 @${m.nickname}`}
               data-mention={m.is_ai ? 'ai' : 'human'}
+              data-mention-busy={m.is_ai && work.busy ? '1' : '0'}
+              className={`group-mention-chip${m.is_ai ? ' is-ai' : ''}${m.is_ai && work.busy ? ' is-busy' : ''}`}
             >
               <span className="group-mention-avatar">
                 {m.avatar_url
                   ? <SignedImage bucket="avatars" stored={m.avatar_url} alt="" />
                   : initial(m.nickname)}
               </span>
-              <span className="group-mention-name">{m.nickname}</span>
+              <span className="group-mention-name">
+                {m.nickname}
+                {m.is_ai && work.busy ? <span className="group-mention-busy-tag">在忙</span> : null}
+              </span>
             </button>
           ))}
         </div>

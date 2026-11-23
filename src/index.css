@@ -2428,6 +2428,14 @@ button:disabled {
   color: var(--text-on-color);
 }
 
+/* 群聊已读回执：只统计“人类成员”，Ace 的心跳不算（见 groupChat.groupReadReceipt） */
+.group-read-status {
+  display: block;
+  margin-top: 2px;
+  text-align: right;
+  white-space: nowrap;
+}
+
 .chat-bubble.theirs {
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
@@ -5077,6 +5085,16 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
 }
 .group-ace-status.is-online { color: var(--success-strong); }
 .group-ace-status.is-online i { opacity: 1; }
+/* 「Ace 在忙」：和"在线"用同一套位置，换成琥珀色 + 呼吸点（2026-11-23 使用者要求） */
+.group-ace-status.is-busy { color: var(--warning, #d68a1c); }
+.group-ace-status.is-busy i {
+  opacity: 1;
+  animation: group-ace-busy 1.6s ease-in-out infinite;
+}
+@keyframes group-ace-busy { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) {
+  .group-ace-status.is-busy i { animation: none; }
+}
 
 /* "Ace 不在线"的当场提示（叫了它但桥没在跑） */
 .group-notice {
@@ -5125,6 +5143,17 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
   cursor: pointer;
 }
 .group-mention-chip:active { transform: scale(0.97); }
+/* Ace 在忙：仍可点（消息会排队），但视觉上要能看出"它现在没空" */
+.group-mention-chip.is-busy { opacity: 0.72; border-style: dashed; }
+.group-mention-busy-tag {
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--warning, #d68a1c);
+  border: 1px solid color-mix(in srgb, var(--warning, #d68a1c) 45%, transparent);
+}
 /* Ace 那个用暖色描边，和"人"区分开 */
 .group-mention-chip.is-ai {
   border-color: var(--ai-border-emphasis);
