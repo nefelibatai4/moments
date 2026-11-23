@@ -2,16 +2,18 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import NavIcon from '../components/NavIcon'
 import SplashScreen from '../components/SplashScreen'
+import FishingGame from './FishingGame'
 import './lab.css'
 
 // ── 实验室入口（2026-11-19）──────────────────────────────────────────
 // 导航栏的【实验室】落到这里。这个目录也是实验室模式的审计边界：
 // Ace 可以自主改 `src/lab/`，实验室外的改动仍然要 i4 确认。
 //
-// 加实验的方式见同目录 README；入口卡片只认三种动作：
+// 加实验的方式见同目录 README；入口卡片认这几种动作：
 //   · to    → 站内路由（react-router 的 Link）
 //   · href  → 整页跳转（现有工具靠 URL 参数触发，必须真正刷新一次）
-//   · onClick: 'splash' → 本页直接盖一层预览，不改 URL、不消耗正式时段
+//   · onClick: 'splash'   → 本页直接盖一层预览，不改 URL、不消耗正式时段
+//   · onClick: 'fishing'  → 本页进入「摸鱼」小游戏（不新增路由）
 const BASE = import.meta.env.BASE_URL
 
 const EXPERIMENTS = [
@@ -27,6 +29,14 @@ const EXPERIMENTS = [
         href: `${BASE}?debug=1`,
       }]
     : []),
+  {
+    id: 'fishing',
+    title: '摸鱼',
+    meta: '新玩具',
+    desc: '深海下网，拼出六级单词，把 20 种鱼收进鱼库；鱼分五档稀有度，能解锁六枚成就，在线渔友还能互相看鱼库。',
+    action: '下海摸鱼',
+    onClick: 'fishing',
+  },
   {
     id: 'splash',
     title: '开屏动画',
@@ -45,7 +55,7 @@ const EXPERIMENTS = [
   },
 ]
 
-function LabCard({ index, experiment, onSplash }) {
+function LabCard({ index, experiment, onSplash, onGame }) {
   const content = (
     <>
       <span className="lab-card-top">
@@ -87,11 +97,28 @@ function LabCard({ index, experiment, onSplash }) {
       </button>
     )
   }
+  if (experiment.onClick === 'fishing') {
+    return (
+      <button
+        type="button"
+        className="lab-card no-opacity-hover"
+        onClick={onGame}
+        data-lab-card={experiment.id}
+      >
+        {content}
+      </button>
+    )
+  }
   return null
 }
 
 export default function LabPage() {
   const [splashPreview, setSplashPreview] = useState(false)
+  const [gameOpen, setGameOpen] = useState(false)
+
+  if (gameOpen) {
+    return <FishingGame onExit={() => setGameOpen(false)} />
+  }
 
   return (
     <div className="lab-page" data-lab-page>
@@ -119,6 +146,7 @@ export default function LabPage() {
               index={index}
               experiment={experiment}
               onSplash={() => setSplashPreview(true)}
+              onGame={() => setGameOpen(true)}
             />
           ))}
         </div>
