@@ -9,6 +9,7 @@ import {
   FISH_SPECIES,
   RARITIES,
   RARITY_ORDER,
+  WORD_BANK,
   pickWord,
   randomSpecies,
 } from './fishingData'
@@ -54,6 +55,68 @@ function sanitizeCaught(input) {
   return caught
 }
 
+const WORD_RE = /^[a-z]{3,24}$/
+const MAX_WORDS_PER_FISH = 40
+
+function normalizeWord(value) {
+  const word = String(value ?? '').trim().toLowerCase()
+  return WORD_RE.test(word) ? word : ''
+}
+
+// 鱼库里的「鱼种 → 拼对过的单词」。旧版本没有这个字段，读到空对象即可；
+// 详情页会退回显示同稀有度拼过的单词，不会把旧数据丢掉。
+function sanitizeWordsByFish(input) {
+  const out = {}
+  if (!input || typeof input !== 'object') return out
+  for (const fish of FISH_SPECIES) {
+    const list = input[fish.id]
+    if (!Array.isArray(list)) continue
+    const seen = new Set()
+    const words = []
+    for (const raw of list) {
+      const word = normalizeWord(raw)
+      if (!word || seen.has(word)) continue
+      seen.add(word)
+      words.push(word)
+      if (words.length >= MAX_WORDS_PER_FISH) break
+    }
+    if (words.length > 0) out[fish.id] = words
+  }
+  return out
+}
+
+// presence 是公共频道，只带每个鱼种最近拼对的一个词，够渔友点开详情看；
+// 不广播完整词库，也不广播任何账号信息。
+function latestWordByFish(wordsByFish) {
+  const out = {}
+  for (const fish of FISH_SPECIES) {
+    const words = wordsByFish?.[fish.id]
+    if (!Array.isArray(words) || words.length === 0) continue
+    const word = normalizeWord(words[words.length - 1])
+    if (word) out[fish.id] = word
+  }
+  return out
+}
+
+function sanitizePresenceWords(input) {
+  const out = {}
+  if (!input || typeof input !== 'object') return out
+  for (const fish of FISH_SPECIES) {
+    const word = normalizeWord(input[fish.id])
+    if (word) out[fish.id] = word
+  }
+  return out
+}
+
+function wordsForFish(library, species) {
+  const exact = library.wordsByFish?.[species.id]
+  if (Array.isArray(exact) && exact.length > 0) return { words: exact, exact: true }
+  // 旧鱼库没有鱼种→单词映射：退到「同稀有度拼过的词」，并在文案里说清楚。
+  const pool = new Set((WORD_BANK[species.rarity] ?? []).map((entry) => entry.word))
+  const fallback = [...new Set((library.usedWords ?? []).filter((word) => pool.has(word)))]
+  return { words: fallback, exact: false }
+}
+
 // presence 的 key 用一次性的会话 id，而不是账号 id：
 // 公共频道里的 key 和 metadata 对所有订阅者可见，不该把 auth uid 摊出去。
 function createSessionId() {
@@ -66,7 +129,7 @@ function createSessionId() {
 }
 
 function emptyLibrary() {
-  return { v: 1, points: 0, total: 0, caught: {}, usedWords: [] }
+  return { v: 2, points: 0, total: 0, caught: {}, usedWords: [], wordsByFish: {} }
 }
 
 function loadLibrary(userId) {
@@ -77,13 +140,15 @@ function loadLibrary(userId) {
     const parsed = JSON.parse(raw)
     if (!parsed || typeof parsed !== 'object') return emptyLibrary()
     return {
-      v: 1,
+      // v1 → v2：usedWords 保留，wordsByFish 从空映射开始；新捕到的鱼会补上对应单词。
+      v: 2,
       points: sanitizeCount(parsed.points),
       total: sanitizeCount(parsed.total),
       caught: sanitizeCaught(parsed.caught),
       usedWords: Array.isArray(parsed.usedWords)
         ? parsed.usedWords.filter((w) => typeof w === 'string' && /^[a-z]+$/i.test(w)).slice(0, 500)
         : [],
+      wordsByFish: sanitizeWordsByFish(parsed.wordsByFish),
     }
   } catch {
     return emptyLibrary()
@@ -113,16 +178,24 @@ function pointsFor(species) {
 
 function withCatch(library, species, word) {
   const points = pointsFor(species)
+  const wordsByFish = { ...(library.wordsByFish ?? {}) }
+  if (word) {
+    const list = Array.isArray(wordsByFish[species.id]) ? wordsByFish[species.id] : []
+    if (!list.includes(word)) wordsByFish[species.id] = [...list, word].slice(-MAX_WORDS_PER_FISH)
+  }
   return {
     ...library,
+    v: 2,
     points: library.points + points,
     total: library.total + 1,
     caught: { ...library.caught, [species.id]: (library.caught[species.id] ?? 0) + 1 },
     usedWords: word ? [...library.usedWords, word] : library.usedWords,
+    wordsByFish,
   }
 }
 
-// 把当前鱼库压缩成 presence 元数据：只带昵称/战绩，不带账号 id。
+// 把当前鱼库压缩成 presence 元数据：只带昵称/战绩/每个鱼种最近拼对的一个词，
+// 不带账号 id，也不带完整词库。
 function presenceMeta(sessionId, nickname, library) {
   return {
     sid: sessionId,
@@ -130,6 +203,7 @@ function presenceMeta(sessionId, nickname, library) {
     points: sanitizeCount(library.points),
     total: sanitizeCount(library.total),
     caught: sanitizeCaught(library.caught),
+    words: latestWordByFish(library.wordsByFish),
     ts: Date.now(),
   }
 }
@@ -146,6 +220,7 @@ function sanitizePresence(raw, selfSid) {
     points: sanitizeCount(raw.points),
     total: sanitizeCount(raw.total),
     caught: sanitizeCaught(raw.caught),
+    words: sanitizePresenceWords(raw.words),
     ts: Number(raw.ts) || 0,
   }
 }
@@ -294,7 +369,7 @@ function SpellPanel({ pending, value, onChange, state, onSubmit, onGiveUp, onClo
               spellCheck={false}
               enterKeyHint="done"
               aria-label={`拼出 ${pending.species.name} 对应的单词，首字母 ${full[0]}，尾字母 ${full.at(-1)}，中间 ${middle.length} 个字母`}
-              style={{ width: `calc(${Math.max(2, middle.length)}ch + 1.2em)` }}
+              style={{ width: `calc(${middle.length}ch + ${(middle.length * 0.34 + 1.2).toFixed(2)}em)` }}
               disabled={done}
             />
             <span className="fishing-letter is-fixed" aria-hidden="true">{full.at(-1)}</span>
@@ -328,7 +403,14 @@ function SpellPanel({ pending, value, onChange, state, onSubmit, onGiveUp, onClo
 }
 
 // ── 鱼种详情 ──────────────────────────────────────────────────────
-function FishDetail({ species, count, onClose }) {
+function FishDetail({
+  species,
+  count,
+  words = [],
+  wordsLabel = '拼出过的单词',
+  emptyNote = '',
+  onClose,
+}) {
   const meta = RARITIES[species.rarity]
   return (
     <div className="fishing-modal-backdrop" role="presentation" onPointerDown={onClose}>
@@ -351,13 +433,28 @@ function FishDetail({ species, count, onClose }) {
           <span><small>已捕获</small><strong>{count > 0 ? `${count} 条` : '还没有'}</strong></span>
           <span><small>难度</small><strong>{meta.label}</strong></span>
         </div>
+        <div className="fishing-detail-words">
+          <div className="fishing-detail-words-head">
+            <small>{words.length > 0 ? wordsLabel : '对应单词'}</small>
+            {words.length > 0 && <span>{words.length} 个</span>}
+          </div>
+          {words.length > 0 ? (
+            <div className="fishing-word-list">
+              {words.map((word) => (
+                <span className="fishing-word" key={word}>{word}</span>
+              ))}
+            </div>
+          ) : (
+            <p className="fishing-detail-words-empty">{emptyNote}</p>
+          )}
+        </div>
       </div>
     </div>
   )
 }
 
 // ── 渔友鱼库 ──────────────────────────────────────────────────────
-function PlayerLibrary({ player, onClose }) {
+function PlayerLibrary({ player, onClose, onDetail }) {
   const library = {
     points: player.points,
     total: player.total,
@@ -382,7 +479,7 @@ function PlayerLibrary({ player, onClose }) {
             <p>{player.points ?? 0} 分 · 已捕 {player.total ?? 0} 条</p>
           </div>
         </div>
-        <FishingLibrary library={library} ownerLabel={`${player.name} 的鱼库`} />
+        <FishingLibrary library={library} ownerLabel={`${player.name} 的鱼库`} onDetail={onDetail} />
       </div>
     </div>
   )
@@ -443,6 +540,7 @@ export default function FishingGame({ onExit }) {
   const [onlineReady, setOnlineReady] = useState(false)
   const [detail, setDetail] = useState(null)
   const [viewPlayer, setViewPlayer] = useState(null)
+  const [friendDetail, setFriendDetail] = useState(null)
   const [resetArmed, setResetArmed] = useState(false)
   // 每次打开游戏换一个匿名会话 id，只用于在线渔友频道，不落盘。
   const [sessionId] = useState(createSessionId)
@@ -766,22 +864,24 @@ export default function FishingGame({ onExit }) {
     setLibrary(empty)
     setResetArmed(false)
     setDetail(null)
+    setFriendDetail(null)
     setViewPlayer(null)
     showToast('本机鱼库已清空，重新下海', 'info')
   }, [showToast])
 
-  // Esc 关浮层：拼写面板视为「放生」，详情/渔友鱼库直接关。
+  // Esc 关浮层：拼写面板视为「放生」，鱼种详情 → 渔友鱼库 → 清空确认依次关。
   useEffect(() => {
     const onEscape = (event) => {
       if (event.key !== 'Escape') return
-      if (viewPlayer) setViewPlayer(null)
+      if (friendDetail) setFriendDetail(null)
+      else if (viewPlayer) setViewPlayer(null)
       else if (detail) setDetail(null)
       else if (resetArmed) setResetArmed(false)
       else if (pending) closeSpell()
     }
     window.addEventListener('keydown', onEscape)
     return () => window.removeEventListener('keydown', onEscape)
-  }, [closeSpell, detail, pending, resetArmed, viewPlayer])
+  }, [closeSpell, detail, friendDetail, pending, resetArmed, viewPlayer])
 
   // 在线渔友：presence 只在打开游戏时挂上，退出即下线。
   useEffect(() => {
@@ -872,6 +972,16 @@ export default function FishingGame({ onExit }) {
       </div>
     )
   }
+
+  const detailWords = detail
+    ? (library.caught[detail.id] > 0 ? wordsForFish(library, detail) : { words: [], exact: true })
+    : null
+  // presence 可能比「打开鱼库」晚到：从最新 players 里取同一个 sid，
+  // 这样渔友刚同步上来的单词/战绩也能立刻显示，而不是卡在打开那一刻的快照。
+  const activePlayer = viewPlayer
+    ? (players.find((player) => player.sid === viewPlayer.sid) ?? viewPlayer)
+    : null
+  const friendWord = friendDetail && activePlayer ? activePlayer.words?.[friendDetail.id] : ''
 
   return (
     <div className="fishing-page" data-fishing-game>
@@ -1063,7 +1173,10 @@ export default function FishingGame({ onExit }) {
                 type="button"
                 className="fishing-pal"
                 key={player.sid}
-                onClick={() => setViewPlayer(player)}
+                onClick={() => {
+                  setFriendDetail(null)
+                  setViewPlayer(player)
+                }}
                 aria-label={`查看 ${player.name} 的鱼库，${player.points ?? 0} 分`}
               >
                 <span className="fishing-pal-avatar" aria-hidden="true">{player.name.slice(0, 1)}</span>
@@ -1121,10 +1234,36 @@ export default function FishingGame({ onExit }) {
         <FishDetail
           species={detail}
           count={library.caught[detail.id] ?? 0}
+          words={detailWords?.words ?? []}
+          wordsLabel={detailWords?.exact ? '你拼出过的单词' : '这一档拼出过的单词'}
+          emptyNote={
+            library.caught[detail.id] > 0
+              ? '这条鱼是旧版本捕到的，当时还没有记下鱼种对应的单词；之后再捕到同种鱼就会补上。'
+              : '还没捕到。拼出这种鱼的单词后，会记在这里。'
+          }
           onClose={() => setDetail(null)}
         />
       )}
-      {viewPlayer && <PlayerLibrary player={viewPlayer} onClose={() => setViewPlayer(null)} />}
+      {activePlayer && (
+        <PlayerLibrary
+          player={activePlayer}
+          onDetail={setFriendDetail}
+          onClose={() => {
+            setFriendDetail(null)
+            setViewPlayer(null)
+          }}
+        />
+      )}
+      {friendDetail && activePlayer && (
+        <FishDetail
+          species={friendDetail}
+          count={activePlayer.caught?.[friendDetail.id] ?? 0}
+          words={friendWord ? [friendWord] : []}
+          wordsLabel="最近拼出的单词"
+          emptyNote="渔友只共享每个鱼种最近拼出的一个词；没显示就说明还没有拼到这种鱼，或者对方用的是旧版本。"
+          onClose={() => setFriendDetail(null)}
+        />
+      )}
     </div>
   )
 }

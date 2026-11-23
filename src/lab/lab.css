@@ -1445,6 +1445,59 @@
   font-weight: 600;
 }
 
+.fishing-detail-words {
+  margin-top: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--border-standard);
+  border-radius: 12px;
+  background: rgba(169, 245, 232, 0.04);
+  text-align: left;
+}
+
+.fishing-detail-words-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.fishing-detail-words-head small {
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+}
+
+.fishing-detail-words-head span {
+  color: var(--text-tertiary);
+  font-size: 0.62rem;
+}
+
+.fishing-word-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fishing-word {
+  padding: 4px 9px;
+  border: 1px solid rgba(169, 245, 232, 0.24);
+  border-radius: 999px;
+  background: rgba(169, 245, 232, 0.08);
+  color: var(--sea-accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  overflow-wrap: anywhere;
+}
+
+.fishing-detail-words-empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+
 .fishing-player-library {
   width: min(640px, 100%);
 }
@@ -1620,6 +1673,21 @@
     padding: 18px;
   }
 
+  .fishing-spell-word {
+    gap: 5px;
+  }
+
+  .fishing-letter {
+    font-size: 1.1rem;
+  }
+
+  /* 长单词（最长 15 个字母）在窄屏必须完整落在框里：同时收字号和字距。 */
+  .fishing-spell-input {
+    padding: 8px 6px;
+    font-size: 1rem;
+    letter-spacing: 0.2em;
+  }
+
   .fishing-spell-fish {
     width: 142px;
     height: 96px;
@@ -1652,6 +1720,16 @@
 
   .fishing-title h2 {
     font-size: 1.5rem;
+  }
+
+  .fishing-spell-input {
+    padding: 8px 4px;
+    font-size: 0.88rem;
+    letter-spacing: 0.12em;
+  }
+
+  .fishing-letter {
+    font-size: 1rem;
   }
 }
 
