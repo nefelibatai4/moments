@@ -5427,3 +5427,12 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
   color: var(--btn-primary-text);
   opacity: 0.9;
 }
+
+/* ── 面板"背景板"：兜底小窗（surface=panel）里由网页画底色 ──────────
+   2026-11-23 使用者："想要背景板也一起变化"。
+   浮层形态（surface=glass）**必须**保持透明，否则会把浮层的毛玻璃盖住；
+   而兜底小窗的窗口本身不透明，浮层那层透不出来，所以底色得由网页自己画。 */
+html[data-panel-board="1"],
+html[data-panel-board="1"] body {
+  background-color: var(--panel-board, var(--bg-page));
+}
