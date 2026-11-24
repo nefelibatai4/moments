@@ -35,6 +35,15 @@ export function initSurface() {
   } catch {
     // 极端情况（storage 被禁用）下退化成"整页形态"，不影响功能
   }
+  // ⚠️ 2026-11-24 使用者反馈："为什么网页版改成这样了" —— 他把插件的**兜底小窗**最大化/拉宽了，
+  //    而 `?surface=panel` 是**无条件**套紧凑排版的（去掉了桌面左侧竖栏、按 420 宽设计），
+  //    于是一个 1426px 宽的窗口里出现"没有竖栏 + 窄列"的怪样子。
+  //    面板形态只在**窄**的时候才合理：宽屏下退回整页形态（外面那层浮层的样式由扩展自己负责，
+  //    这里只影响网页自己的排版）。阈值 900：浮层 420、小窗默认 420 都远小于它。
+  if (value && window.innerWidth >= 900) {
+    document.documentElement.removeAttribute('data-surface')
+    value = null
+  }
   if (value) document.documentElement.setAttribute('data-surface', value)
 }
 
