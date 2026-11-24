@@ -10,6 +10,7 @@ import useBubbleMenu from '../lib/useBubbleMenu'
 import ImageLightbox from '../components/ImageLightbox'
 import { resolveSignedUrl } from '../lib/signedUrls'
 import { onUnlockChange } from '../lib/crypto'
+import { useImeGuard } from '../lib/ime'
 import { isPanelSurface } from '../lib/surface'
 import { usePinLatestOnViewport } from '../lib/usePinLatestOnViewport'
 import ChatPaneSkeleton from '../components/ChatPaneSkeleton'
@@ -132,6 +133,7 @@ export default function GroupThread() {
   const messagesRef = useRef([])
   // 我已经写到服务端的“读到这里”，只增不减（多设备/滚动都可能拿旧位置来写）
   const readMarkRef = useRef(null)
+  const guardImeEnter = useImeGuard()
 
   useEffect(() => { messagesRef.current = messages }, [messages])
 
@@ -648,6 +650,8 @@ export default function GroupThread() {
           maxLength={1000}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
+              // 组词回车只用于确认候选词（含 Safari 的 compositionend 先到、50ms 窗口）
+              if (guardImeEnter(e)) return
               e.preventDefault()
               send(e)
             }

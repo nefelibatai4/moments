@@ -9,6 +9,7 @@ import { usePinLatestOnViewport } from '../lib/usePinLatestOnViewport'
 import ChatPaneSkeleton from '../components/ChatPaneSkeleton'
 import { SHOW_MS, createTypingSender } from '../lib/typingStatus'
 import { useAuth } from '../lib/AuthContext'
+import { useImeGuard } from '../lib/ime'
 import { safeStorageKey } from '../lib/sanitizeFilename'
 import { compressImage } from '../lib/compressImage'
 import ImageLightbox from '../components/ImageLightbox'
@@ -384,6 +385,7 @@ export default function ChatThread() {
   const msgListRef = useRef(null)
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
+  const guardImeEnter = useImeGuard()
   const me = session.user.id
 
   // 自己的昵称/头像只读一次（按登录用户），供每条自己消息旁的小头像使用。
@@ -1183,6 +1185,8 @@ export default function ChatThread() {
                           onChange={(e) => setEditing((s) => ({ ...s, text: e.target.value }))}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' && !e.shiftKey) {
+                              // 组词中的回车是上屏候选词，不能当成「保存」
+                              if (guardImeEnter(e)) return
                               e.preventDefault()
                               handleSaveEdit()
                             }
@@ -1434,6 +1438,8 @@ export default function ChatThread() {
           onKeyDown={(e) => {
             // 桌面端 Enter 直接发送；触屏端不拦，留给换行（见 isTouchPrimary 的说明）
             if (e.key === 'Enter' && !e.shiftKey && !isTouchPrimary) {
+              // 组词回车只用于确认候选词（含 Safari 的 compositionend 先到、50ms 窗口）
+              if (guardImeEnter(e)) return
               e.preventDefault()
               handleSubmit(e)
             }

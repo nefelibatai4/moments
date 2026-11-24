@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import SignedImage from './SignedImage'
 import { encryptCircleText, momentKey } from '../lib/crypto'
+import { useImeGuard } from '../lib/ime'
 
 // 评论的显示名：nickname 有值说明是匿名评论，优先用它
 function commentName(c) {
@@ -82,6 +83,9 @@ export default function CommentSection({
   const [now, setNow] = useState(() => Date.now())
 
   const me = session?.user?.id
+  // 组词中的回车只用于上屏，不能触发评论/回复/匿名评论的原生表单提交。
+  // 单行输入框没有自己的回车逻辑，guard 命中时会 preventDefault，浏览器就不会隐式提交。
+  const guardImeEnter = useImeGuard()
 
   // 低频刷新 now：只影响"编辑"入口的显隐，30 秒精度足够
   useEffect(() => {
@@ -294,6 +298,7 @@ export default function CommentSection({
           placeholder={`回复 ${commentName(target)}…`}
           value={replyContent}
           onChange={(e) => setReplyContent(e.target.value)}
+          onKeyDown={guardImeEnter}
           maxLength={200}
           autoFocus
         />
@@ -342,6 +347,8 @@ export default function CommentSection({
                 onChange={(e) => setEditing((s) => ({ ...s, text: e.target.value }))}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
+                    // 组词中的回车是上屏候选词，不能顺手保存
+                    if (guardImeEnter(e)) return
                     e.preventDefault()
                     handleSaveEdit()
                   }
@@ -468,6 +475,7 @@ export default function CommentSection({
             placeholder="写下你的评论…"
             value={content}
             onChange={(e) => setContent(e.target.value)}
+            onKeyDown={guardImeEnter}
             maxLength={200}
             autoFocus
           />
@@ -481,6 +489,7 @@ export default function CommentSection({
             placeholder="自定义昵称"
             value={anonNickname}
             onChange={(e) => setAnonNickname(e.target.value)}
+            onKeyDown={guardImeEnter}
             maxLength={12}
             autoFocus
           />
@@ -491,6 +500,7 @@ export default function CommentSection({
             placeholder="匿名说点什么…"
             value={anonContent}
             onChange={(e) => setAnonContent(e.target.value)}
+            onKeyDown={guardImeEnter}
             maxLength={200}
           />
         </form>
