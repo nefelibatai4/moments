@@ -210,6 +210,18 @@ export default function GroupThread() {
   }, [me])
 
   // ── 实时：新消息 / 状态更新 ─────────────────────────────────
+  // Realtime 丢了事件怎么办：切回前台 / 网络恢复 / 订阅重连时，补一次全量（见 groupChat 的注释）
+  const resync = useCallback(() => setRetryTick((n) => n + 1), [])
+  useEffect(() => {
+    const onVisible = () => { if (!document.hidden) resync() }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('online', resync)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('online', resync)
+    }
+  }, [resync])
+
   useEffect(() => {
     const t = threadRef.current
     if (!t || !keyRef.current) return undefined
@@ -230,9 +242,9 @@ export default function GroupThread() {
         const sender = (threadRef.current?.members ?? []).find((m) => m.id === row.sender_id)
         if (!sender?.is_ai && bottomRef.current) markRead(full.created_at)
       }
-    })
+    }, { onResync: resync })
     return off
-  }, [me, key, scrollToBottom, markRead])
+  }, [me, key, scrollToBottom, markRead, resync])
 
   // ── 键盘：贴底（和私聊同一套行为）────────────────────────────
   useEffect(() => {

@@ -136,7 +136,12 @@ export async function recallGroupMessage(id) {
  * 实时订阅这个群的新消息与更新。
  * @returns {() => void} 取消订阅
  */
-export function subscribeGroupMessages(threadId, onEvent) {
+export function subscribeGroupMessages(threadId, onEvent, { onResync } = {}) {
+  // ⚠️ 2026-11-24 实测事故：Realtime 断过之后（`code 1001`、切后台、网络抖动），
+  //    期间发生的 **UPDATE**（Ace 把"思考中"改成正式回答用的正是 UPDATE）会永久丢失 ——
+  //    界面上就永远停在"思考中"，看起来像"Ace 没回复"，其实库里早有答案。
+  //    所以重连成功后再补一次全量（onResync），别指望丢失的事件会重放。
+  let hadSubscribed = false
   const channel = supabase
     .channel(`group:${threadId}`)
     .on('postgres_changes', {
@@ -151,7 +156,14 @@ export function subscribeGroupMessages(threadId, onEvent) {
       table: 'group_messages',
       filter: `thread_id=eq.${threadId}`,
     }, (payload) => onEvent('update', payload.new))
-    .subscribe()
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        if (hadSubscribed) {
+          try { onResync?.() } catch { /* 补数据失败不该影响订阅 */ }
+        }
+        hadSubscribed = true
+      }
+    })
   return () => { supabase.removeChannel(channel) }
 }
 
