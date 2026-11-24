@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import { useAuth } from '../lib/AuthContext'
+import { isImeComposing } from '../lib/ime'
 import FishShape from './FishShape'
 import {
   ACHIEVEMENTS,
@@ -16,7 +17,7 @@ import {
 
 // ── 「摸鱼」────────────────────────────────────────────────────────
 // 玩法：拖动海面瞄准，松手把网撒出去；网口碰到鱼就咬钩，接着拼一个
-// 六级单词（首尾字母给出）才算入账。拼错鱼会跑掉，拼对过的词不再出现。
+// 四/六级单词（首尾字母给出）才算入账。拼错鱼会跑掉，拼对过的词不再出现。
 // 20 种鱼分五档稀有度，越稀有越小、越快、分越高。
 //
 // 数据边界（实验室规矩）：
@@ -32,6 +33,7 @@ const NET_START = 34
 const AIM_LIMIT = 1.38
 const FISH_TARGET = 8
 const STORAGE_PREFIX = 'moments-fishing-v1:'
+const FRIEND_STORAGE_PREFIX = 'moments-fishing-friend-v1:'
 const LOBBY_CHANNEL = 'moments-fishing-lobby-v1'
 // 公共频道里最多显示这么多人，防止有人刷屏把页面撑爆。
 const MAX_LOBBY = 24
@@ -57,6 +59,10 @@ function sanitizeCaught(input) {
 
 const WORD_RE = /^[a-z]{3,24}$/
 const MAX_WORDS_PER_FISH = 40
+// 「拼对」明细用：词 → 中文提示。旧版鱼库里的词如果不在这份表里，就只显示单词。
+const WORD_HINTS = new Map(
+  Object.values(WORD_BANK).flat().map((entry) => [entry.word, entry.hint]),
+)
 
 function normalizeWord(value) {
   const word = String(value ?? '').trim().toLowerCase()
@@ -164,6 +170,33 @@ function saveLibrary(userId, library) {
   }
 }
 
+// 「鱼友」固定成对方：第一次确认（这个圈子只有两位真人）后在本机记下来，
+// 之后就算有人注册了测试号，也不会把鱼友换掉。换设备会重新确认一次。
+function loadFriendProfile(userId) {
+  if (!userId) return null
+  try {
+    const raw = localStorage.getItem(`${FRIEND_STORAGE_PREFIX}${userId}`)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed.id !== 'string' || typeof parsed.nickname !== 'string') return null
+    return { id: parsed.id, nickname: parsed.nickname.slice(0, 20) }
+  } catch {
+    return null
+  }
+}
+
+function saveFriendProfile(userId, friend) {
+  if (!userId || !friend) return
+  try {
+    localStorage.setItem(`${FRIEND_STORAGE_PREFIX}${userId}`, JSON.stringify({
+      id: friend.id,
+      nickname: friend.nickname,
+    }))
+  } catch {
+    /* 写不了就算了，下次重新确认 */
+  }
+}
+
 function caughtSpeciesCount(caught) {
   return FISH_SPECIES.reduce((sum, fish) => sum + (caught?.[fish.id] > 0 ? 1 : 0), 0)
 }
@@ -203,6 +236,8 @@ function presenceMeta(sessionId, nickname, library) {
     points: sanitizeCount(library.points),
     total: sanitizeCount(library.total),
     caught: sanitizeCaught(library.caught),
+    // 渔友只需要知道「拼对了多少个」，不需要整份词表。
+    wordCount: sanitizeCount(new Set(library.usedWords).size),
     words: latestWordByFish(library.wordsByFish),
     ts: Date.now(),
   }
@@ -220,6 +255,7 @@ function sanitizePresence(raw, selfSid) {
     points: sanitizeCount(raw.points),
     total: sanitizeCount(raw.total),
     caught: sanitizeCaught(raw.caught),
+    wordCount: sanitizeCount(raw.wordCount),
     words: sanitizePresenceWords(raw.words),
     ts: Number(raw.ts) || 0,
   }
@@ -328,12 +364,111 @@ const FishingLibrary = memo(function FishingLibrary({ library, onDetail = null, 
 })
 
 // ── 拼写面板 ──────────────────────────────────────────────────────
-function SpellPanel({ pending, value, onChange, state, onSubmit, onGiveUp, onClose }) {
+// 一个字母一个框：首尾固定显示，中间的框逐格输入、自动跳格、退格回上一格。
+// 填错的格子立刻标红、填对标绿；不锁死，可以反复改，直到自己点「放生」。
+function SpellPanel({ pending, letters, onChange, state, onSubmit, onGiveUp, onClose }) {
   const full = pending.word.word
   const middle = full.slice(1, -1)
   const meta = RARITIES[pending.species.rarity]
   const points = pointsFor(pending.species)
-  const done = state !== 'idle'
+  const done = state === 'ok'
+  const inputsRef = useRef([])
+  const allFilled = letters.length === middle.length && letters.every((letter) => letter.length === 1)
+  const allCorrect = allFilled && middle.split('').every((letter, index) => letters[index] === letter)
+
+  useEffect(() => {
+    // 打开面板就把焦点放到第一个空格；捕到的词最短 3 个字母，中间至少 1 格。
+    if (!done) inputsRef.current[0]?.focus()
+  }, [done])
+
+  const focusAt = (index) => {
+    const target = inputsRef.current[Math.max(0, Math.min(index, middle.length - 1))]
+    target?.focus()
+    target?.select?.()
+  }
+
+  const writeLetters = (next, focusIndex) => {
+    onChange(next)
+    if (focusIndex !== null) focusAt(focusIndex)
+  }
+
+  const applyText = (index, raw) => {
+    const clean = String(raw ?? '').replace(/[^a-zA-Z]/g, '').toLowerCase()
+    const next = [...letters]
+    if (!clean) {
+      next[index] = ''
+      writeLetters(next, index)
+      return
+    }
+    // 粘贴/输入法一次给了整串：从当前格开始铺，铺满为止。
+    const spread = clean.split('')
+    for (let cursor = index; cursor < middle.length && spread.length > 0; cursor += 1) {
+      next[cursor] = spread.shift()
+    }
+    writeLetters(next, Math.min(index + clean.length, middle.length - 1))
+  }
+
+  const onLetterChange = (index, event) => {
+    const raw = event.target.value
+    applyText(index, raw)
+  }
+
+  const onLetterKeyDown = (index, event) => {
+    // 中文键盘打英文时，回车先用于确认候选词；这里不能顺手提交。
+    if (event.key === 'Enter' && isImeComposing(event)) return
+    if (event.key === 'Backspace') {
+      if (letters[index]) {
+        const next = [...letters]
+        next[index] = ''
+        writeLetters(next, index)
+      } else if (index > 0) {
+        event.preventDefault()
+        const next = [...letters]
+        next[index - 1] = ''
+        writeLetters(next, index - 1)
+      }
+      return
+    }
+    if (event.key === 'ArrowLeft' && index > 0) {
+      event.preventDefault()
+      focusAt(index - 1)
+    } else if (event.key === 'ArrowRight' && index < middle.length - 1) {
+      event.preventDefault()
+      focusAt(index + 1)
+    }
+  }
+
+  const onLetterPaste = (index, event) => {
+    const text = event.clipboardData?.getData('text') ?? ''
+    if (!text) return
+    event.preventDefault()
+    let clean = text.replace(/[^a-zA-Z]/g, '').toLowerCase()
+    // 允许直接粘贴整词：首尾字母与题目一致时去掉，只填中间。
+    if (clean.length === full.length && clean[0] === full[0] && clean.at(-1) === full.at(-1)) {
+      clean = clean.slice(1, -1)
+    }
+    applyText(index, clean)
+  }
+
+  const handleSubmit = (event) => {
+    event.preventDefault()
+    if (state === 'ok') {
+      onClose()
+      return
+    }
+    if (!allFilled) {
+      const firstEmpty = middle.split('').findIndex((_, index) => !letters[index])
+      focusAt(firstEmpty >= 0 ? firstEmpty : 0)
+      return
+    }
+    if (!allCorrect) {
+      const firstWrong = middle.split('').findIndex((letter, index) => letters[index] !== letter)
+      focusAt(firstWrong >= 0 ? firstWrong : 0)
+      onSubmit(false)
+      return
+    }
+    onSubmit(true)
+  }
 
   return (
     <div className="fishing-modal-backdrop" role="presentation" onPointerDown={onGiveUp}>
@@ -351,36 +486,49 @@ function SpellPanel({ pending, value, onChange, state, onSubmit, onGiveUp, onClo
         <h3 id="fishing-spell-title">{pending.species.name}</h3>
         <p className="fishing-spell-hint">{pending.word.hint}</p>
 
-        <form onSubmit={onSubmit}>
+        <form onSubmit={handleSubmit}>
           <div
             className={`fishing-spell-word${state === 'wrong' ? ' is-wrong' : ''}${state === 'ok' ? ' is-ok' : ''}`}
-            aria-live="polite"
+            role="group"
+            aria-label={`拼出 ${pending.species.name} 对应的单词，首字母 ${full[0]}，尾字母 ${full.at(-1)}，中间 ${middle.length} 个字母`}
           >
-            <span className="fishing-letter is-fixed" aria-hidden="true">{full[0]}</span>
-            <input
-              className="fishing-spell-input"
-              value={value}
-              onChange={(event) => onChange(event.target.value.replace(/[^a-zA-Z]/g, ''))}
-              maxLength={middle.length}
-              autoFocus
-              autoComplete="off"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              enterKeyHint="done"
-              aria-label={`拼出 ${pending.species.name} 对应的单词，首字母 ${full[0]}，尾字母 ${full.at(-1)}，中间 ${middle.length} 个字母`}
-              style={{ width: `calc(${middle.length}ch + ${(middle.length * 0.34 + 1.2).toFixed(2)}em)` }}
-              disabled={done}
-            />
-            <span className="fishing-letter is-fixed" aria-hidden="true">{full.at(-1)}</span>
+            <span className="fishing-letter-box is-fixed" aria-hidden="true">{full[0]}</span>
+            {middle.split('').map((expected, index) => {
+              const letter = letters[index] ?? ''
+              const status = letter ? (letter === expected ? ' is-correct' : ' is-wrong') : ''
+              return (
+                <input
+                  key={index}
+                  ref={(node) => { inputsRef.current[index] = node }}
+                  className={`fishing-letter-box${status}`}
+                  value={letter}
+                  onChange={(event) => onLetterChange(index, event)}
+                  onKeyDown={(event) => onLetterKeyDown(index, event)}
+                  onPaste={(event) => onLetterPaste(index, event)}
+                  onFocus={(event) => event.target.select()}
+                  maxLength={1}
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  enterKeyHint={index === middle.length - 1 ? 'done' : 'next'}
+                  aria-label={`第 ${index + 1} 个字母，共 ${middle.length} 个`}
+                  aria-invalid={letter ? letter !== expected : undefined}
+                  disabled={done}
+                />
+              )
+            })}
+            <span className="fishing-letter-box is-fixed" aria-hidden="true">{full.at(-1)}</span>
           </div>
 
           <p className="fishing-spell-meta">
-            六级词 · 共 {full.length} 个字母 · 首尾已给出 · 拼对 +{points} 分
+            CET-6 词 · 共 {full.length} 个字母 · 首尾已给出 · 拼对 +{points} 分
           </p>
 
           {state === 'wrong' && (
-            <p className="fishing-spell-result is-bad">拼错了，鱼被放生。正确拼写：<strong>{full}</strong></p>
+            <p className="fishing-spell-result is-bad" role="alert">
+              还有字母不对。红色的格子改对后再确认；不想拼了就点「放生」。
+            </p>
           )}
           {state === 'ok' && (
             <p className="fishing-spell-result is-good">拼写正确，{pending.species.name}已收进鱼库，+{points} 分</p>
@@ -390,7 +538,7 @@ function SpellPanel({ pending, value, onChange, state, onSubmit, onGiveUp, onClo
             {!done ? (
               <>
                 <button type="button" className="fishing-btn is-ghost" onClick={onGiveUp}>放生</button>
-                <button type="submit" className="fishing-btn is-primary" disabled={!value.trim()}>确认拼写</button>
+                <button type="submit" className="fishing-btn is-primary" disabled={!allFilled}>确认拼写</button>
               </>
             ) : (
               <button type="button" className="fishing-btn is-primary" onClick={onClose}>继续摸鱼</button>
@@ -460,7 +608,9 @@ function PlayerLibrary({ player, onClose, onDetail }) {
     total: player.total,
     caught: player.caught ?? {},
     usedWords: [],
+    wordsByFish: {},
   }
+  const online = player.online !== false
   return (
     <div className="fishing-modal-backdrop" role="presentation" onPointerDown={onClose}>
       <div
@@ -474,12 +624,125 @@ function PlayerLibrary({ player, onClose, onDetail }) {
         <div className="fishing-player-head">
           <span className="fishing-player-avatar" aria-hidden="true">{player.name.slice(0, 1)}</span>
           <div>
-            <p className="fishing-eyebrow">在线渔友</p>
+            <p className="fishing-eyebrow">{online ? '在线渔友' : '渔友 · 当前离线'}</p>
             <h3 id="fishing-player-title">{player.name}</h3>
-            <p>{player.points ?? 0} 分 · 已捕 {player.total ?? 0} 条</p>
+            <p>
+              {online
+                ? `${player.points ?? 0} 分 · 已捕 ${player.total ?? 0} 条 · 拼对 ${player.wordCount ?? 0} 个词`
+                : '对方还没打开摸鱼，鱼库和拼对单词数要等 TA 上线后同步。'}
+            </p>
           </div>
         </div>
-        <FishingLibrary library={library} ownerLabel={`${player.name} 的鱼库`} onDetail={onDetail} />
+        {online ? (
+          <FishingLibrary library={library} ownerLabel={`${player.name} 的鱼库`} onDetail={onDetail} />
+        ) : (
+          <p className="fishing-player-offline">
+            这个渔友是固定的：你看到的是对方；等 TA 打开「摸鱼」，这里就会出现 TA 的鱼库。
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── 本机明细浮层：鱼库 / 已捕 / 拼对 ──────────────────────────────
+function LibraryDialog({ library, onClose, onDetail }) {
+  return (
+    <div className="fishing-modal-backdrop" role="presentation" onPointerDown={onClose}>
+      <div
+        className="fishing-modal fishing-list-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="fishing-library-title"
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <button type="button" className="fishing-modal-close" onClick={onClose} aria-label="关闭">×</button>
+        <h3 id="fishing-library-title" className="fishing-list-title">我的鱼库</h3>
+        <FishingLibrary library={library} ownerLabel="我的鱼库" onDetail={onDetail} />
+      </div>
+    </div>
+  )
+}
+
+function CaughtDialog({ library, onClose, onDetail }) {
+  const caught = FISH_SPECIES
+    .filter((species) => (library.caught[species.id] ?? 0) > 0)
+    .sort((a, b) => RARITY_ORDER.indexOf(a.rarity) - RARITY_ORDER.indexOf(b.rarity))
+  const total = totalFishCount(library.caught)
+  return (
+    <div className="fishing-modal-backdrop" role="presentation" onPointerDown={onClose}>
+      <div
+        className="fishing-modal fishing-list-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="fishing-caught-title"
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <button type="button" className="fishing-modal-close" onClick={onClose} aria-label="关闭">×</button>
+        <div className="fishing-list-head">
+          <h3 id="fishing-caught-title">已捕</h3>
+          <span>{caught.length} 种 · {total} 条</span>
+        </div>
+        {caught.length > 0 ? (
+          <div className="fishing-caught-list">
+            {caught.map((species) => {
+              const meta = RARITIES[species.rarity]
+              const count = library.caught[species.id] ?? 0
+              return (
+                <button
+                  key={species.id}
+                  type="button"
+                  className="fishing-caught-row"
+                  style={{ '--fish-body': species.body, '--rarity-color': meta.color }}
+                  onClick={() => onDetail(species)}
+                  aria-label={`${species.name}，${meta.label}，已捕获 ${count} 条，查看详情`}
+                >
+                  <span className="fishing-caught-thumb"><FishThumb species={species} /></span>
+                  <span className="fishing-caught-copy">
+                    <strong>{species.name}</strong>
+                    <small>{meta.label} · ×{count}</small>
+                  </span>
+                  <span className="fishing-caught-go" aria-hidden="true">详情 →</span>
+                </button>
+              )
+            })}
+          </div>
+        ) : (
+          <p className="fishing-list-empty">还没有捕到鱼。去海面下网，拼对单词就能收进鱼库。</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function WordsDialog({ library, onClose }) {
+  const words = [...new Set(library.usedWords)].sort((a, b) => a.localeCompare(b))
+  return (
+    <div className="fishing-modal-backdrop" role="presentation" onPointerDown={onClose}>
+      <div
+        className="fishing-modal fishing-list-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="fishing-words-title"
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <button type="button" className="fishing-modal-close" onClick={onClose} aria-label="关闭">×</button>
+        <div className="fishing-list-head">
+          <h3 id="fishing-words-title">拼对</h3>
+          <span>{words.length} 个词</span>
+        </div>
+        {words.length > 0 ? (
+          <div className="fishing-words-list">
+            {words.map((word) => (
+              <div className="fishing-words-row" key={word}>
+                <strong>{word}</strong>
+                <small>{WORD_HINTS.get(word) ?? '已拼对'}</small>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="fishing-list-empty">还没有拼对过单词。抓鱼后按字母格拼出来，就会记在这里。</p>
+        )}
       </div>
     </div>
   )
@@ -532,15 +795,17 @@ export default function FishingGame({ onExit }) {
   const [aiming, setAiming] = useState(false)
   const [net, setNet] = useState({ active: false, d: NET_START, angle: 0, r: 26, x: ORIGIN.x, y: ORIGIN.y })
   const [pending, setPending] = useState(null)
-  const [spellInput, setSpellInput] = useState('')
+  const [spellLetters, setSpellLetters] = useState([])
   const [spellState, setSpellState] = useState('idle')
   const [toast, setToast] = useState(null)
   const [paused, setPaused] = useState(false)
   const [players, setPlayers] = useState([])
   const [onlineReady, setOnlineReady] = useState(false)
   const [detail, setDetail] = useState(null)
+  const [selfView, setSelfView] = useState(null)
   const [viewPlayer, setViewPlayer] = useState(null)
   const [friendDetail, setFriendDetail] = useState(null)
+  const [friendProfile, setFriendProfile] = useState(() => loadFriendProfile(userId))
   const [resetArmed, setResetArmed] = useState(false)
   // 每次打开游戏换一个匿名会话 id，只用于在线渔友频道，不落盘。
   const [sessionId] = useState(createSessionId)
@@ -594,6 +859,44 @@ export default function FishingGame({ onExit }) {
     return () => { cancelled = true }
   }, [userId])
 
+  // 「鱼友」固定成对方：这个圈子只有两位真人（i4 和姜姜）。
+  // 第一次确认后记在本机；如果以后多出第三位真人，也不会硬猜谁是谁。
+  useEffect(() => {
+    if (!userId) return
+    let cancelled = false
+    const stored = loadFriendProfile(userId)
+    supabase
+      .from('profiles')
+      .select('id,nickname,is_ai,approved')
+      .eq('is_ai', false)
+      .eq('approved', true)
+      .then(({ data, error }) => {
+        if (cancelled || error) return
+        const profiles = data ?? []
+        if (stored) {
+          const latest = profiles.find((profile) => profile.id === stored.id)
+          const friend = latest
+            ? { id: latest.id, nickname: latest.nickname || stored.nickname }
+            : stored
+          setFriendProfile(friend)
+          saveFriendProfile(userId, friend)
+          return
+        }
+        const others = profiles.filter((profile) => profile.id !== userId)
+        if (others.length === 1) {
+          const friend = { id: others[0].id, nickname: others[0].nickname || '渔友' }
+          setFriendProfile(friend)
+          saveFriendProfile(userId, friend)
+        } else {
+          setFriendProfile(null)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setFriendProfile(stored)
+      })
+    return () => { cancelled = true }
+  }, [userId])
+
   const showToast = useCallback((text, tone = 'info') => {
     window.clearTimeout(toastTimerRef.current)
     setToast({ text, tone, id: Date.now() })
@@ -638,7 +941,7 @@ export default function FishingGame({ onExit }) {
   const resumeFishing = useCallback(() => {
     window.clearTimeout(spellTimerRef.current)
     setPending(null)
-    setSpellInput('')
+    setSpellLetters([])
     setSpellState('idle')
     pausedRef.current = false
     setPaused(false)
@@ -670,7 +973,7 @@ export default function FishingGame({ onExit }) {
       return
     }
     setPending({ species, word })
-    setSpellInput('')
+    setSpellLetters(Array.from({ length: Math.max(1, word.word.length - 2) }, () => ''))
     setSpellState('idle')
     showToast('上钩了，拼出单词就能收进鱼库', 'good')
   }, [grantAuto, showToast])
@@ -830,13 +1133,18 @@ export default function FishingGame({ onExit }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [castNet])
 
-  const submitSpell = (event) => {
-    event.preventDefault()
+  const changeSpellLetters = useCallback((next) => {
+    setSpellLetters(next)
+    // 改任意一格就撤掉「还有字母不对」的提示，让玩家安静地重试。
+    setSpellState((prev) => (prev === 'wrong' ? 'idle' : prev))
+  }, [])
+
+  const submitSpell = (valid) => {
     if (!pending || spellState !== 'idle') return
     const full = pending.word.word
     const expected = full.slice(1, -1).toLowerCase()
-    const typed = spellInput.trim().toLowerCase()
-    if (typed === expected) {
+    const typed = spellLetters.join('').toLowerCase()
+    if (valid && typed === expected) {
       const species = pending.species
       setSpellState('ok')
       setLibrary((prev) => withCatch(prev, species, pending.word.word))
@@ -845,14 +1153,14 @@ export default function FishingGame({ onExit }) {
         if (mountedRef.current) resumeFishing()
       }, 1200)
     } else {
-      // 拼错后不自动关：把正确拼写留在屏幕上，让玩家自己看完再继续。
+      // 不锁死、不放生：红色格子留着，玩家可以一格一格改。
       setSpellState('wrong')
-      showToast('拼错了，鱼被放生', 'bad')
+      showToast('还有字母不对，改好再确认', 'bad')
     }
   }
 
   const closeSpell = useCallback(() => {
-    if (spellState === 'idle') {
+    if (spellState !== 'ok') {
       showToast('鱼被放生了', 'info')
     }
     resumeFishing()
@@ -864,6 +1172,7 @@ export default function FishingGame({ onExit }) {
     setLibrary(empty)
     setResetArmed(false)
     setDetail(null)
+    setSelfView(null)
     setFriendDetail(null)
     setViewPlayer(null)
     showToast('本机鱼库已清空，重新下海', 'info')
@@ -876,12 +1185,13 @@ export default function FishingGame({ onExit }) {
       if (friendDetail) setFriendDetail(null)
       else if (viewPlayer) setViewPlayer(null)
       else if (detail) setDetail(null)
+      else if (selfView) setSelfView(null)
       else if (resetArmed) setResetArmed(false)
       else if (pending) closeSpell()
     }
     window.addEventListener('keydown', onEscape)
     return () => window.removeEventListener('keydown', onEscape)
-  }, [closeSpell, detail, friendDetail, pending, resetArmed, viewPlayer])
+  }, [closeSpell, detail, friendDetail, pending, resetArmed, selfView, viewPlayer])
 
   // 在线渔友：presence 只在打开游戏时挂上，退出即下线。
   useEffect(() => {
@@ -941,7 +1251,7 @@ export default function FishingGame({ onExit }) {
   const statistics = useMemo(() => ({
     owned: caughtSpeciesCount(library.caught),
     total: totalFishCount(library.caught),
-    words: library.usedWords.length,
+    words: new Set(library.usedWords).size,
   }), [library])
 
   const achievementItems = useMemo(() => {
@@ -983,6 +1293,33 @@ export default function FishingGame({ onExit }) {
     : null
   const friendWord = friendDetail && activePlayer ? activePlayer.words?.[friendDetail.id] : ''
 
+  // 「鱼友」固定成另一位真人：在线时把 presence 合进来，离线时也把名字留在页面上。
+  const friendOnline = friendProfile
+    ? (players.find((player) => player.name === (friendProfile.nickname || '匿名渔夫')) ?? null)
+    : null
+  const fixedFriend = friendProfile
+    ? {
+        sid: friendOnline?.sid ?? `offline-${friendProfile.id}`,
+        name: friendProfile.nickname,
+        points: friendOnline?.points ?? 0,
+        total: friendOnline?.total ?? 0,
+        caught: friendOnline?.caught ?? {},
+        wordCount: friendOnline?.wordCount ?? 0,
+        words: friendOnline?.words ?? {},
+        online: Boolean(friendOnline),
+      }
+    : null
+  const friendCount = friendProfile ? 1 : players.length
+
+  const openFriend = () => {
+    if (fixedFriend) {
+      setFriendDetail(null)
+      setViewPlayer(fixedFriend)
+      return
+    }
+    document.querySelector('.fishing-pals')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+
   return (
     <div className="fishing-page" data-fishing-game>
       <header className="fishing-top">
@@ -1000,10 +1337,29 @@ export default function FishingGame({ onExit }) {
       </header>
 
       <section className="fishing-hud" aria-label="摸鱼战绩">
-        <div><small>鱼库</small><strong>{statistics.owned}<em> / {FISH_SPECIES.length} 种</em></strong></div>
-        <div><small>已捕</small><strong>{statistics.total}<em> 条</em></strong></div>
-        <div><small>拼对</small><strong>{statistics.words}<em> 个词</em></strong></div>
-        <div><small>在线渔友</small><strong>{onlineReady ? players.length : '—'}<em> 人</em></strong></div>
+        <button type="button" className="fishing-hud-item" onClick={() => setSelfView('library')} aria-label="查看我的鱼库">
+          <small>鱼库</small>
+          <strong>{statistics.owned}<em> / {FISH_SPECIES.length} 种</em></strong>
+          <span className="fishing-hud-go" aria-hidden="true">查看 →</span>
+        </button>
+        <button type="button" className="fishing-hud-item" onClick={() => setSelfView('caught')} aria-label="查看已捕明细">
+          <small>已捕</small>
+          <strong>{statistics.total}<em> 条</em></strong>
+          <span className="fishing-hud-go" aria-hidden="true">查看 →</span>
+        </button>
+        <button type="button" className="fishing-hud-item" onClick={() => setSelfView('words')} aria-label="查看拼对的单词">
+          <small>拼对</small>
+          <strong>{statistics.words}<em> 个词</em></strong>
+          <span className="fishing-hud-go" aria-hidden="true">查看 →</span>
+        </button>
+        <button type="button" className="fishing-hud-item" onClick={openFriend} aria-label="查看鱼友">
+          <small>鱼友</small>
+          <strong>
+            {friendCount}
+            <em>{friendProfile ? (friendOnline ? ' 在线' : ' 离线') : ' 人'}</em>
+          </strong>
+          <span className="fishing-hud-go" aria-hidden="true">查看 →</span>
+        </button>
       </section>
 
       <section className="fishing-stage" aria-label="摸鱼海域">
@@ -1156,33 +1512,53 @@ export default function FishingGame({ onExit }) {
           </button>
           <button type="button" className="fishing-nudge" onClick={() => nudgeAim(0.11)} aria-label="向右瞄准">→</button>
         </div>
-        <p className="fishing-instruction">按住海面瞄准，松手下网；锁定环亮起的鱼就在网口上。词库是六级英语，越稀有的鱼词越长。</p>
+        <p className="fishing-instruction">按住海面瞄准，松手下网；锁定环亮起的鱼就在网口上。词库取自 CET-4 / CET-6，越稀有的鱼词越长。</p>
       </div>
 
       <FishingAchievements items={achievementItems} />
 
-      <section className="fishing-pals" aria-label="在线渔友">
+      <section className="fishing-pals" aria-label="鱼友">
         <div className="fishing-section-head">
-          <h3>在线渔友</h3>
-          <span>{onlineReady ? `${players.length} 人` : '连接中'}</span>
+          <h3>鱼友</h3>
+          <span>{friendProfile ? (friendOnline ? '在线' : onlineReady ? '离线' : '连接中') : `${players.length} 人`}</span>
         </div>
-        {players.length > 0 ? (
+        {friendProfile ? (
+          <div className="fishing-pals-list">
+            <button
+              type="button"
+              className={`fishing-pal${fixedFriend.online ? ' is-online' : ' is-offline'}`}
+              onClick={openFriend}
+              aria-label={`查看 ${friendProfile.nickname} 的鱼库${fixedFriend.online ? `，${fixedFriend.points} 分，拼对 ${fixedFriend.wordCount} 个词` : '，对方当前离线'}`}
+            >
+              <span className="fishing-pal-avatar" aria-hidden="true">{friendProfile.nickname.slice(0, 1)}</span>
+              <span className="fishing-pal-copy">
+                <strong>{friendProfile.nickname}</strong>
+                <small>
+                  {fixedFriend.online
+                    ? `${fixedFriend.points} 分 · ${caughtSpeciesCount(fixedFriend.caught)} 种 · 拼对 ${fixedFriend.wordCount} 个词`
+                    : '还没打开摸鱼；打开后就能看到 TA 的鱼库'}
+                </small>
+              </span>
+              <span className="fishing-pal-go" aria-hidden="true">{fixedFriend.online ? '看鱼库 →' : '等 TA 上线 →'}</span>
+            </button>
+          </div>
+        ) : players.length > 0 ? (
           <div className="fishing-pals-list">
             {players.map((player) => (
               <button
                 type="button"
-                className="fishing-pal"
+                className="fishing-pal is-online"
                 key={player.sid}
                 onClick={() => {
                   setFriendDetail(null)
-                  setViewPlayer(player)
+                  setViewPlayer({ ...player, online: true })
                 }}
-                aria-label={`查看 ${player.name} 的鱼库，${player.points ?? 0} 分`}
+                aria-label={`查看 ${player.name} 的鱼库，${player.points ?? 0} 分，拼对 ${player.wordCount ?? 0} 个词`}
               >
                 <span className="fishing-pal-avatar" aria-hidden="true">{player.name.slice(0, 1)}</span>
                 <span className="fishing-pal-copy">
                   <strong>{player.name}</strong>
-                  <small>{player.points ?? 0} 分 · {caughtSpeciesCount(player.caught)} 种 · {player.total ?? 0} 条</small>
+                  <small>{player.points ?? 0} 分 · {caughtSpeciesCount(player.caught)} 种 · 拼对 {player.wordCount ?? 0} 个词</small>
                 </span>
                 <span className="fishing-pal-go" aria-hidden="true">看鱼库 →</span>
               </button>
@@ -1200,7 +1576,7 @@ export default function FishingGame({ onExit }) {
       <FishingLibrary library={library} onDetail={setDetail} />
 
       <p className="fishing-foot">
-        鱼库按账号存在本机；拼对过的六级词不会再出现。在线渔友只共享游戏战绩，不共享任何私密内容。
+        鱼库按账号存在本机；拼对过的四/六级词不会再出现。鱼友只共享游戏战绩和拼对单词数，不共享任何私密内容。
       </p>
 
       <div className={`fishing-reset${resetArmed ? ' is-armed' : ''}`}>
@@ -1219,11 +1595,34 @@ export default function FishingGame({ onExit }) {
         )}
       </div>
 
+      {selfView === 'library' && (
+        <LibraryDialog
+          library={library}
+          onClose={() => setSelfView(null)}
+          onDetail={(species) => {
+            setSelfView(null)
+            setDetail(species)
+          }}
+        />
+      )}
+      {selfView === 'caught' && (
+        <CaughtDialog
+          library={library}
+          onClose={() => setSelfView(null)}
+          onDetail={(species) => {
+            setSelfView(null)
+            setDetail(species)
+          }}
+        />
+      )}
+      {selfView === 'words' && (
+        <WordsDialog library={library} onClose={() => setSelfView(null)} />
+      )}
       {pending && (
         <SpellPanel
           pending={pending}
-          value={spellInput}
-          onChange={setSpellInput}
+          letters={spellLetters}
+          onChange={changeSpellLetters}
           state={spellState}
           onSubmit={submitSpell}
           onGiveUp={closeSpell}

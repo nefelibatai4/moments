@@ -420,12 +420,40 @@
   margin: 14px 0;
 }
 
-.fishing-hud > div {
+.fishing-hud-item {
+  position: relative;
+  display: block;
   min-width: 0;
+  margin: 0;
   padding: 10px 11px;
   border: 1px solid var(--border-standard);
   border-radius: 12px;
   background: var(--bg-card);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
+}
+
+.fishing-hud-item:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-elevated);
+  transform: translateY(-1px);
+}
+
+.fishing-hud-item:focus-visible {
+  outline: 2px solid var(--accent-green);
+  outline-offset: 2px;
+}
+
+.fishing-hud-go {
+  display: block;
+  margin-top: 5px;
+  color: var(--accent-blue);
+  font-size: 0.58rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
 }
 
 .fishing-hud small {
@@ -1278,49 +1306,66 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: clamp(2px, 0.8vw, 5px);
+  width: 100%;
   margin: 0 auto 8px;
 }
 
-.fishing-letter {
-  color: var(--sea-accent);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 1.28rem;
-  font-weight: 600;
-  line-height: 1;
-  letter-spacing: 0.06em;
-  text-transform: lowercase;
-}
-
-.fishing-spell-input {
+/* 一个字母一个框：14 个字母在 320px 宽度下也能排成一行（flex 自动收窄）。 */
+.fishing-letter-box {
+  display: grid;
+  flex: 1 1 0;
   min-width: 0;
-  padding: 9px 7px;
+  max-width: 38px;
+  height: clamp(40px, 9vw, 52px);
+  margin: 0;
+  padding: 0;
+  place-items: center;
   border: 1px solid rgba(169, 245, 232, 0.28);
-  border-radius: 10px;
+  border-radius: 9px;
   background: rgba(1, 12, 17, 0.62);
   color: var(--sea-ink);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 1.28rem;
-  font-weight: 500;
-  line-height: 1.2;
-  max-width: calc(100% - 4.6em);
+  font-size: clamp(0.72rem, 2.4vw, 1.2rem);
+  font-weight: 600;
+  line-height: 1;
   text-align: center;
-  letter-spacing: 0.34em;
+  text-transform: lowercase;
   outline: none;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
 }
 
-.fishing-spell-input:focus {
+.fishing-letter-box.is-fixed {
+  border-color: rgba(169, 245, 232, 0.16);
+  background: rgba(169, 245, 232, 0.07);
+  color: var(--sea-accent);
+}
+
+.fishing-letter-box:focus {
   border-color: var(--sea-accent);
   box-shadow: 0 0 0 3px rgba(169, 245, 232, 0.14);
 }
 
-.fishing-spell-word.is-wrong .fishing-spell-input {
-  border-color: rgba(255, 139, 139, 0.7);
+.fishing-letter-box.is-correct {
+  border-color: rgba(125, 255, 196, 0.78);
+  background: rgba(125, 255, 196, 0.1);
+  color: #c9ffe7;
+  box-shadow: 0 0 0 2px rgba(125, 255, 196, 0.08);
+}
+
+.fishing-letter-box.is-wrong {
+  border-color: rgba(255, 139, 139, 0.82);
+  background: rgba(255, 99, 99, 0.12);
+  color: #ffd4d4;
+}
+
+.fishing-spell-word.is-wrong {
   animation: fishing-shake 0.34s ease;
 }
 
-.fishing-spell-word.is-ok .fishing-spell-input {
+.fishing-spell-word.is-ok .fishing-letter-box {
   border-color: rgba(125, 255, 196, 0.8);
   box-shadow: 0 0 0 3px rgba(125, 255, 196, 0.12);
 }
@@ -1540,17 +1585,197 @@
 }
 
 .fishing-player-library .fish-card {
-  cursor: default;
+  cursor: pointer;
 }
 
 .fishing-player-library .fish-card:hover {
-  border-color: var(--border-standard);
-  background: var(--bg-card);
-  transform: none;
+  border-color: var(--border-strong);
+  background: var(--bg-elevated);
+  transform: translateY(-1px);
 }
 
 .fishing-player-library .fishing-grid {
   grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.fishing-player-offline {
+  margin: 16px 0 4px;
+  padding: 14px;
+  border: 1px dashed var(--border-standard);
+  border-radius: 12px;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  line-height: 1.7;
+  text-align: center;
+}
+
+.fishing-pal.is-offline {
+  border-style: dashed;
+  opacity: 0.82;
+}
+
+.fishing-pal.is-online .fishing-pal-avatar::after {
+  content: '';
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--bg-card);
+  border-radius: 50%;
+  background: var(--accent-green);
+}
+
+.fishing-pal-avatar {
+  position: relative;
+}
+
+/* ── 本机明细浮层：鱼库 / 已捕 / 拼对 ───────────────────────────── */
+.fishing-list-modal {
+  width: min(680px, 100%);
+}
+
+.fishing-list-title {
+  margin: 0 0 14px;
+  color: var(--text-primary);
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.fishing-list-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding-right: 34px;
+}
+
+.fishing-list-head h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.fishing-list-head span {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.fishing-list-empty {
+  margin: 8px 0;
+  padding: 20px 14px;
+  border: 1px dashed var(--border-standard);
+  border-radius: 12px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.7;
+  text-align: center;
+}
+
+.fishing-caught-list {
+  display: grid;
+  gap: 7px;
+}
+
+.fishing-caught-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 11px;
+  border: 1px solid var(--border-standard);
+  border-radius: 12px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fishing-caught-row:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-elevated);
+  opacity: 1;
+}
+
+.fishing-caught-row:focus-visible {
+  outline: 2px solid var(--accent-green);
+  outline-offset: 2px;
+}
+
+.fishing-caught-thumb {
+  display: block;
+  flex: 0 0 auto;
+  width: 76px;
+  height: 52px;
+}
+
+.fishing-caught-thumb .fish-thumb {
+  width: 100%;
+  height: 100%;
+}
+
+.fishing-caught-copy {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fishing-caught-copy strong {
+  overflow: hidden;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fishing-caught-copy small {
+  color: color-mix(in srgb, var(--rarity-color) 76%, white);
+  font-size: 0.66rem;
+}
+
+.fishing-caught-go {
+  flex: 0 0 auto;
+  color: var(--accent-blue);
+  font-size: 0.66rem;
+}
+
+.fishing-words-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.fishing-words-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-standard);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.fishing-words-row strong {
+  color: var(--sea-accent, var(--accent-green));
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.fishing-words-row small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.64rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── 动画 ─────────────────────────────────────────────────────── */
@@ -1665,6 +1890,15 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
+  .fishing-words-list {
+    grid-template-columns: 1fr;
+  }
+
+  .fishing-caught-thumb {
+    width: 60px;
+    height: 42px;
+  }
+
   .fishing-pal-go {
     display: none;
   }
@@ -1674,18 +1908,12 @@
   }
 
   .fishing-spell-word {
-    gap: 5px;
+    gap: 4px;
   }
 
-  .fishing-letter {
-    font-size: 1.1rem;
-  }
-
-  /* 长单词（最长 15 个字母）在窄屏必须完整落在框里：同时收字号和字距。 */
-  .fishing-spell-input {
-    padding: 8px 6px;
-    font-size: 1rem;
-    letter-spacing: 0.2em;
+  .fishing-letter-box {
+    height: 42px;
+    border-radius: 8px;
   }
 
   .fishing-spell-fish {
@@ -1722,14 +1950,14 @@
     font-size: 1.5rem;
   }
 
-  .fishing-spell-input {
-    padding: 8px 4px;
-    font-size: 0.88rem;
-    letter-spacing: 0.12em;
+  .fishing-spell-word {
+    gap: 2px;
   }
 
-  .fishing-letter {
-    font-size: 1rem;
+  .fishing-letter-box {
+    height: 38px;
+    border-radius: 7px;
+    font-size: 0.7rem;
   }
 }
 

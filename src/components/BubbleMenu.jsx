@@ -77,13 +77,14 @@ export default function BubbleMenu({ items, isMine, onClose, label = '消息操�
     }
 
     place()
-    const onViewportChange = () => place()
-    window.addEventListener('resize', onViewportChange)
-    window.addEventListener('scroll', onViewportChange, true)
+    // 只跟窗口尺寸变化重算；**不要监听 scroll**。
+    // 菜单在 DOM 上就在气泡里，消息区一滚它本来就会跟着气泡走；
+    // 再按视口坐标 clamp 一次反而会让它贴着屏幕边缘「追着滑」（2026-11-23 修）。
+    const onResize = () => place()
+    window.addEventListener('resize', onResize)
 
     return () => {
-      window.removeEventListener('resize', onViewportChange)
-      window.removeEventListener('scroll', onViewportChange, true)
+      window.removeEventListener('resize', onResize)
     }
   }, [isMine])
 
