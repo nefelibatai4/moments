@@ -43,11 +43,16 @@ import('./lib/unreadStyle.js').then((m) => m.announceUnreadStyle()).catch(() => 
 
 // 重新联网 / 从后台切回时，给"之前解不开的图"一次新机会（见 resetImageAttemptBudget 的注释）
 if (typeof window !== 'undefined') {
-  window.addEventListener('online', () => resetImageAttemptBudget())
+  // ⚠️ 光重置额度不够：取图 effect 得**重新跑一次**才会真的再试（否则界面一直停在"正在尝试…"）。
+  const retryMedia = () => {
+    resetImageAttemptBudget()
+    try { window.dispatchEvent(new CustomEvent('moments:media-retry')) } catch { /* 忽略 */ }
+  }
+  window.addEventListener('online', retryMedia)
   let hiddenAt = 0
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return }
-    if (hiddenAt && Date.now() - hiddenAt > 30_000) resetImageAttemptBudget()
+    if (hiddenAt && Date.now() - hiddenAt > 30_000) retryMedia()
     hiddenAt = 0
   })
 }

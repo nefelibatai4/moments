@@ -370,6 +370,14 @@ export default function ChatThread() {
   // 私聊图片：签名 → 下载 → 用**会话密钥**在本机解密（见 lib/imageCrypto.js）
   // mediaRetry：点了"图片没能显示，点这里重试"就 +1，让取图 effect 重跑一次
   const [mediaRetry, setMediaRetry] = useState(0)
+  // 全局"再试一次媒体"信号（切回前台 / 网络恢复 / 重置试错额度时由 main.jsx 广播）：
+  // 只重置额度不重跑 effect 的话，界面会一直停在"正在尝试…"（2026-11-24 实测）。
+  useEffect(() => {
+    const bump = () => setMediaRetry((n) => n + 1)
+    window.addEventListener('moments:media-retry', bump)
+    return () => window.removeEventListener('moments:media-retry', bump)
+  }, [])
+
   // 「对方正在输入」：收到广播就显示，5 秒没再收到就消失
   const [peerTyping, setPeerTyping] = useState(false)
   const typingTimerRef = useRef(null)

@@ -498,12 +498,15 @@ export function useContentImageUrls(locators, { resolveKey, kind = 'image', refr
     if (pending.length === 0) return undefined
     let stillPending = false
     ;(async () => {
-      // 有界重试（1s / 3s / 8s）：网络抖一下、或后台正在"原地补加密"时正好取图，都能自愈。
-      // 但**额度用完就不再排**（否则重挂载一次就再来一轮，等于没有上限）。
+      // 有界重试（1s / 3s / 8s / 30s / 60s）：网络抖一下、或后台正在"原地补加密"时正好取图，都能自愈。
+      // ⚠️ 2026-11-24 实测：只给到 8 秒时，签名/取字节那次抖动会让界面停在"正在尝试…"很久
+      //    （使用者看到的是"照片又显示不出来"，过一会儿自己好了 = 某次重渲染才又试到）。
+      //    所以补两次"慢重试"；额度仍然有上限（MAX_ATTEMPTS_PER_OBJECT），不会变成流量黑洞。
+      const RETRY_WAITS = [1000, 3000, 8000, 30_000, 60_000]
       const scheduleRetry = () => {
         const hasBudget = pending.some((l) => (attemptCounts.get(l) ?? 0) < MAX_ATTEMPTS_PER_OBJECT)
-        if (!cancelled && stillPending && hasBudget && retry < 3) {
-          const wait = [1000, 3000, 8000][retry] ?? 8000
+        if (!cancelled && stillPending && hasBudget && retry < RETRY_WAITS.length) {
+          const wait = RETRY_WAITS[retry] ?? 60_000
           setTimeout(() => { if (!cancelled) setRetry((r) => r + 1) }, wait)
         }
       }

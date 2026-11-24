@@ -43,6 +43,14 @@ export default function MomentCard({
   const [viewerIndex, setViewerIndex] = useState(null)
   // 灯箱重试：+1 后 useContentImageUrls 会重跑取图 effect（见 lib/imageCrypto.js 的 refreshKey）
   const [mediaRetry, setMediaRetry] = useState(0)
+  // 全局"再试一次媒体"信号（切回前台 / 网络恢复 / 重置试错额度时由 main.jsx 广播）：
+  // 只重置额度不重跑 effect 的话，界面会一直停在"正在尝试…"（2026-11-24 实测）。
+  useEffect(() => {
+    const bump = () => setMediaRetry((n) => n + 1)
+    window.addEventListener('moments:media-retry', bump)
+    return () => window.removeEventListener('moments:media-retry', bump)
+  }, [])
+
   const [likePending, setLikePending] = useState(false)
   // 长文折叠（使用者 2026-10-14："发布不要有字数限制…超出的在动态页面自动折叠"）：
   // 写的时候完全不限，**读**的时候默认只露几行，点「全文」就地展开。
