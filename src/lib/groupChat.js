@@ -77,15 +77,18 @@ export function decodeGroupBody(row, plain) {
 /** 读一屏消息并解密（新的在后）。解不开的行保留 kind:'locked'，绝不把密文当正文显示。 */
 export async function loadGroupMessages(thread, { limit = 300 } = {}) {
   const key = await groupKeyFor(thread)
+  // ⚠️ 2026-11-24 事故：这里原来是 `ascending: true` + limit 300 —— 取到的是**最老的 300 条**。
+  //    群聊一超过 300 条，最新的消息就永远进不了页面（列表预览里有、点进去没有，看着像"最后一句没回"）。
+  //    正确做法：先按时间**倒序**取最近 limit 条，再翻回正序渲染。
   const { data, error } = await supabase
     .from('group_messages')
     .select('id, thread_id, sender_id, ciphertext, iv, scheme, content, reply_to_id, recalled_at, created_at')
     .eq('thread_id', thread.id)
-    .order('created_at', { ascending: true })
+    .order('created_at', { ascending: false })
     .limit(limit)
   if (error) return { messages: [], error: error.message, key }
   const messages = []
-  for (const row of data ?? []) {
+  for (const row of [...(data ?? [])].reverse()) {
     const plain = row.recalled_at ? null : await openGroupText(key, row)
     messages.push({ ...row, body: row.recalled_at ? { kind: 'recalled' } : decodeGroupBody(row, plain) })
   }
