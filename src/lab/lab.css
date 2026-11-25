@@ -2240,6 +2240,24 @@
   font-style: normal;
 }
 
+.turtle-ace-name {
+  color: var(--turtle-gold);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.turtle-ace-name::before {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--turtle-gold);
+  box-shadow: 0 0 7px rgba(215, 180, 115, 0.75);
+  vertical-align: 1px;
+}
+
 /* ── 通用按钮 ─────────────────────────────────────────────────── */
 .turtle-primary,
 .turtle-danger,
@@ -2567,10 +2585,61 @@
   overflow-wrap: anywhere;
 }
 
-/* ── 主持人桌面 / 猜测判定 ─────────────────────────────────────── */
+/* ── Ace 主持台 / 猜测判定 ─────────────────────────────────────── */
+.turtle-ace-console {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 13px;
+  padding: 12px 14px;
+  border: 1px solid rgba(215, 180, 115, 0.28);
+  border-radius: 8px;
+  background:
+    linear-gradient(160deg, rgba(215, 180, 115, 0.09), transparent 55%),
+    rgba(18, 21, 28, 0.82);
+}
+
+.turtle-ace-console-copy {
+  min-width: 0;
+}
+
+.turtle-ace-console-copy strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--turtle-gold);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.turtle-ace-console-copy p {
+  margin: 4px 0 0;
+  color: var(--turtle-muted);
+  font-size: 0.66rem;
+  line-height: 1.55;
+}
+
+.turtle-ace-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--turtle-green);
+  box-shadow: 0 0 8px rgba(139, 184, 155, 0.75);
+  animation: turtle-signal-pulse 2.4s ease-in-out infinite;
+}
+
+.turtle-ace-console .turtle-danger {
+  flex: 0 0 auto;
+  min-height: 34px;
+  font-size: 0.7rem;
+}
+
 .turtle-host-desk,
 .turtle-player-desk,
 .turtle-ledger,
+.turtle-guess-log,
 .turtle-players,
 .turtle-score-card {
   margin-top: 14px;
@@ -3006,6 +3075,21 @@
   letter-spacing: 0.05em;
 }
 
+.turtle-ace-answer {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.turtle-ace-byline {
+  color: var(--turtle-gold);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.56rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .turtle-empty {
   margin: 4px 0;
   color: var(--turtle-muted);
@@ -3280,7 +3364,7 @@
 
 .turtle-score-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 5px;
 }
 
@@ -3589,9 +3673,21 @@
   .turtle-host-desk,
   .turtle-player-desk,
   .turtle-ledger,
+  .turtle-guess-log,
   .turtle-players,
   .turtle-score-card {
     padding: 13px;
+  }
+
+  .turtle-ace-console {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 9px;
+    padding: 11px 13px;
+  }
+
+  .turtle-ace-console .turtle-danger {
+    width: 100%;
   }
 
   .turtle-input-row input {
@@ -3614,7 +3710,7 @@
   }
 
   .turtle-score-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .turtle-archive-grid {
@@ -3684,12 +3780,13 @@
   }
 
   .turtle-score-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .turtle-signal.is-online .turtle-signal-dot,
+  .turtle-ace-dot,
   .turtle-truth,
   .turtle-confirm,
   .turtle-reveal,

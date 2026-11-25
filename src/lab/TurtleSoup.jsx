@@ -6,23 +6,29 @@ import {
   TURTLE_BY_ID,
   TURTLE_DIFFICULTY,
   TURTLE_SOUPS,
+  aceAnswer,
+  aceJudge,
   pickTurtle,
 } from './turtleData'
 
-// ── 「海龟汤」多人游戏 ─────────────────────────────────────────────
-// 玩法：一人主持（最早进入的人自动担任），其他人只提能用「是 / 否 /
-// 无关 / 部分」回答的问题；主持人看得到汤底并逐条判定。有人猜中汤底、
-// 或主持人主动揭底，本局结案，随后可以换题继续。
+// ── 「海龟汤」多人游戏（Ace 主持）───────────────────────────────────
+// 玩法：Ace 是唯一的出题人、回答者和判定者，所有用户都只当玩家：
+//   · 任何玩家都可以请 Ace 出题（大厅/结案后）；
+//   · 提问通过公共频道交给「主持端」，主持端用纯函数 aceAnswer() 自动
+//     给出「是 / 否 / 无关 / 部分」；
+//   · 猜底用 aceJudge() 自动判定，猜中或任何人投降揭底即结案。
 //
 // 同步边界（实验室规矩）：
-//   · 不建表、不写库：主持人的房间状态通过 Supabase Realtime 的公共频道
-//     broadcast 下发；在线玩家用 presence 互通。
+//   · 不建表、不写库：房间状态通过 Supabase Realtime 公共频道 broadcast
+//     下发；在线玩家用 presence 互通。
 //   · 不广播账号 id：频道里用一次性会话 id（sid）和一个本机随机玩家 id（pid）。
-//   · 汤底只渲染给主持人看；结案后才公开。汤底本身随前端包下发，
-//     所以这是界面约束，不是安全边界。
+//   · 汤底只出现在结案卡片里；播放中不渲染给任何玩家（包括实际主持端）。
+//     汤底本身随前端包下发，所以这是界面约束，不是安全边界。
 //   · 公共频道里任何拿到 anon key 的人都能订阅，发送的提问/猜测不应包含隐私。
 //
-// 主持人 = presence 中最早进入的人；主持人离开后，下一位自动接手。
+// 「Ace 主持」的实现：presence 中最早进入的浏览器自动成为主持端，
+// 负责用纯函数处理提问/猜测，并把整包状态广播出去。界面不再暴露这个角色，
+// 也不允许任何人手动改判定。主持端离开后，下一位浏览器自动接手。
 // 这是客户端的软角色：公共频道无法验证发送者身份，所有收到的状态都会先清洗。
 const CHANNEL_NAME = 'moments-turtle-soup-v1'
 const SCORE_PREFIX = 'moments-turtle-soup-score-v1:'
@@ -104,7 +110,7 @@ function formatClock(value) {
 
 // ── 本机记分 / 玩家 id ─────────────────────────────────────────────
 function emptyStats() {
-  return { v: 1, score: 0, wins: 0, questions: 0, hosted: 0, seen: [] }
+  return { v: 2, score: 0, wins: 0, questions: 0, seen: [] }
 }
 
 function loadStats(userId) {
@@ -120,11 +126,10 @@ function loadStats(userId) {
         .slice(-MAX_SEEN)
       : []
     return {
-      v: 1,
+      v: 2,
       score: sanitizeScore(parsed.score),
       wins: sanitizeCount(parsed.wins, 9999),
       questions: sanitizeCount(parsed.questions, 99999),
-      hosted: sanitizeCount(parsed.hosted, 9999),
       seen,
     }
   } catch {
@@ -211,6 +216,21 @@ function sanitizeGuess(raw) {
     at: safeTime(raw.at, Date.now()),
     verdict,
     judgedAt: safeTime(raw.judgedAt),
+  }
+}
+
+function sanitizeAceRequest(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const sid = cleanId(raw.sid)
+  const action = raw.action === 'reveal' ? 'reveal' : raw.action === 'start' ? 'start' : ''
+  if (!sid || !action) return null
+  return {
+    id: cleanId(raw.id),
+    sid,
+    pid: cleanId(raw.pid),
+    action,
+    puzzleId: Object.prototype.hasOwnProperty.call(TURTLE_BY_ID, raw.puzzleId) ? raw.puzzleId : '',
+    at: safeTime(raw.at, Date.now()),
   }
 }
 
@@ -355,8 +375,6 @@ export default function TurtleSoup({ onExit }) {
 
   const [questionDraft, setQuestionDraft] = useState('')
   const [guessDraft, setGuessDraft] = useState('')
-  const [truthOpen, setTruthOpen] = useState(false)
-  const [pendingAction, setPendingAction] = useState(null)
   const [toast, setToast] = useState(null)
 
   const channelRef = useRef(null)
@@ -371,22 +389,28 @@ export default function TurtleSoup({ onExit }) {
     setRoom(next)
   }, [])
 
-  const broadcastState = useCallback((state) => {
+  const sendBroadcast = useCallback((event, payload) => {
     const channel = channelRef.current
-    if (!channel || !state) return
+    if (!channel) return false
     try {
       Promise.resolve(channel.send({
         type: 'broadcast',
-        event: 'state',
-        payload: { from: sessionId, state },
+        event,
+        payload,
       })).catch(() => {})
+      return true
     } catch {
-      /* 频道刚好断开：下一次 presence 同步会再补一份 */
+      return false
     }
-  }, [sessionId])
+  }, [])
 
-  // 主持人每次改房间都整包广播：汤面、问答、判定、猜测和结案状态一次到位。
-  // 公共频道不保证送达，所以 host 在 presence 变化时还会补发一次当前快照。
+  const broadcastState = useCallback((state) => {
+    if (!state) return
+    sendBroadcast('state', { from: sessionId, state })
+  }, [sendBroadcast, sessionId])
+
+  // 主持端每次改房间都整包广播：汤面、问答、判定、猜测和结案状态一次到位。
+  // 公共频道不保证送达，所以主持端在 presence 变化时还会补发一次当前快照。
   const commitRoom = useCallback((next) => {
     if (!next) return null
     const current = roomRef.current
@@ -411,7 +435,6 @@ export default function TurtleSoup({ onExit }) {
       let score = prev.score
       let wins = prev.wins
       let questions = prev.questions
-      let hosted = prev.hosted
       for (const entry of entries) {
         if (!entry || typeof entry.key !== 'string' || seen.has(entry.key)) continue
         seen.add(entry.key)
@@ -419,7 +442,6 @@ export default function TurtleSoup({ onExit }) {
         score = Math.min(COUNT_CAP, score + clamp(Math.floor(Number(entry.points) || 0), 0, 50))
         if (entry.kind === 'wins') wins += 1
         else if (entry.kind === 'questions') questions += 1
-        else if (entry.kind === 'hosted') hosted += 1
       }
       if (!changed) return prev
       return {
@@ -427,7 +449,6 @@ export default function TurtleSoup({ onExit }) {
         score,
         wins,
         questions,
-        hosted,
         seen: [...seen].slice(-MAX_SEEN),
       }
     })
@@ -472,8 +493,8 @@ export default function TurtleSoup({ onExit }) {
 
   useEffect(() => {
     if (!room?.roundId) return
-    setTruthOpen(false)
-    setPendingAction(null)
+    setQuestionDraft('')
+    setGuessDraft('')
   }, [room?.roundId])
 
   const selfMeta = useMemo(() => ({
@@ -494,14 +515,13 @@ export default function TurtleSoup({ onExit }) {
     return [...bySid.values()].sort(hostOrder).slice(0, MAX_PLAYERS)
   }, [players, playerId, selfMeta, sessionId])
 
-  // 必须等自己的 presence 也到了再选主持人：新开/重连后的第一帧如果只有
-  // “本机兜底玩家”，会把每个观众短暂误判成主持人，并向频道广播一次空房间。
+  // 必须等自己的 presence 也到了再选主持端：新开/重连后的第一帧如果只有
+  // “本机兜底玩家”，会把每个观众短暂误判成主持端，并向频道广播一次空房间。
   const selfPresenceSeen = players.some((player) => player.sid === sessionId)
   const hostCandidate = onlineReady && selfPresenceSeen && displayPlayers.length > 0
     ? displayPlayers[0]
     : null
   const isHost = Boolean(hostCandidate && hostCandidate.sid === sessionId)
-  const hostName = hostCandidate?.name || '主持人'
   const isHostRef = useRef(false)
 
   useEffect(() => {
@@ -522,7 +542,153 @@ export default function TurtleSoup({ onExit }) {
     broadcastState(current)
   }, [broadcastState, commitRoom, playerId, sessionId])
 
-  // 主持人开局：第一次连上时先建一个空房间；原主持人离开后由下一位接手。
+  // ── Ace 的操作（只在实际主持端的浏览器里执行）──────────────────
+  const startRound = useCallback((puzzleId) => {
+    if (!isHostRef.current) return
+    const puzzle = TURTLE_BY_ID[puzzleId]
+    if (!puzzle) return
+    const current = roomRef.current ?? emptyRoom(sessionId, playerId)
+    commitRoom({
+      ...emptyRoom(sessionId, playerId),
+      puzzleId: puzzle.id,
+      status: 'playing',
+      roundId: `round-${randomToken()}`,
+      startedAt: Date.now(),
+      revision: current.revision,
+    })
+    showToast(`Ace 开卷：${puzzle.title}`, 'good')
+  }, [commitRoom, playerId, sessionId, showToast])
+
+  const revealRound = useCallback(() => {
+    if (!isHostRef.current) return
+    const current = roomRef.current
+    if (!current || current.status !== 'playing') return
+    commitRoom({
+      ...current,
+      status: 'ended',
+      endedAt: Date.now(),
+      endReason: 'revealed',
+      winnerSid: '',
+      winnerPid: '',
+      winnerName: '',
+      winningGuess: '',
+    })
+    showToast('Ace 揭开汤底，本局结案', 'info')
+  }, [commitRoom, showToast])
+
+  const pushQuestion = useCallback((raw) => {
+    if (!isHostRef.current) return
+    const current = roomRef.current
+    if (!current || current.status !== 'playing') return
+    const puzzle = TURTLE_BY_ID[current.puzzleId]
+    if (!puzzle) return
+    const question = sanitizeQuestion(raw)
+    if (!question) return
+    if (current.questions.some((item) => item.id === question.id)) return
+    const askedBy = playersRef.current.find((player) => player.sid === question.sid)
+    const entry = {
+      ...question,
+      // 玩家可能刚改昵称、presence 还没追上：别让一条旧昵称把它盖回“匿名侦探”。
+      name: question.name !== '匿名侦探'
+        ? question.name
+        : (askedBy?.name || question.name),
+      verdict: aceAnswer(question.text, puzzle),
+      answeredAt: Date.now(),
+    }
+    commitRoom({
+      ...current,
+      questions: [...current.questions, entry].slice(-MAX_QUESTIONS),
+    })
+  }, [commitRoom])
+
+  const pushGuess = useCallback((raw) => {
+    if (!isHostRef.current) return
+    const current = roomRef.current
+    if (!current || current.status !== 'playing') return
+    const puzzle = TURTLE_BY_ID[current.puzzleId]
+    if (!puzzle) return
+    const guess = sanitizeGuess(raw)
+    if (!guess) return
+    if (current.guesses.some((item) => item.id === guess.id)) return
+    const guessedBy = playersRef.current.find((player) => player.sid === guess.sid)
+    const entry = {
+      ...guess,
+      name: guess.name !== '匿名侦探'
+        ? guess.name
+        : (guessedBy?.name || guess.name),
+      verdict: 'pending',
+      judgedAt: 0,
+    }
+    const correct = aceJudge(entry.text, puzzle)
+    const judged = {
+      ...entry,
+      verdict: correct ? 'correct' : 'wrong',
+      judgedAt: Date.now(),
+    }
+    const guesses = [...current.guesses, judged].slice(-MAX_GUESSES)
+
+    if (correct) {
+      commitRoom({
+        ...current,
+        guesses,
+        status: 'ended',
+        endedAt: Date.now(),
+        endReason: 'guessed',
+        winnerSid: entry.sid,
+        winnerPid: entry.pid,
+        winnerName: entry.name,
+        winningGuess: entry.text,
+      })
+      showToast(`Ace 判定：${entry.name} 猜中了汤底`, 'good')
+      return
+    }
+
+    commitRoom({ ...current, guesses })
+    showToast(`Ace 判定：${entry.name} 还不对`, 'info')
+  }, [commitRoom, showToast])
+
+  const handleAceRequest = useCallback((raw) => {
+    if (!isHostRef.current) return
+    const request = sanitizeAceRequest(raw)
+    if (!request) return
+    const current = roomRef.current
+    if (request.action === 'start') {
+      if (current?.status === 'playing') return
+      startRound(request.puzzleId || pickTurtle(current?.puzzleId ?? '').id)
+      return
+    }
+    if (current?.status !== 'playing') return
+    revealRound()
+  }, [revealRound, startRound])
+
+  const requestAce = useCallback((action, puzzleId = '') => {
+    if (!onlineReady || !playerId) {
+      showToast('频道还没连上，稍等一下', 'bad')
+      return
+    }
+    const request = {
+      id: `req-${randomToken()}`,
+      sid: sessionId,
+      pid: playerId,
+      action: action === 'reveal' ? 'reveal' : 'start',
+      puzzleId: Object.prototype.hasOwnProperty.call(TURTLE_BY_ID, puzzleId) ? puzzleId : '',
+      at: Date.now(),
+    }
+    if (isHostRef.current) {
+      handleAceRequest(request)
+      return
+    }
+    if (!sendBroadcast('ace-request', request)) {
+      showToast('频道还没连上，稍等一下', 'bad')
+      return
+    }
+    showToast(
+      request.action === 'reveal' ? '已向 Ace 投降，等揭底…' : '已请 Ace 出题…',
+      'info',
+    )
+  }, [handleAceRequest, onlineReady, playerId, sendBroadcast, sessionId, showToast])
+
+  // 主持端开局：第一次连上时先建一个空房间；原主持端离开后由下一位接手。
   useEffect(() => {
     if (!userId || !playerId || !onlineReady || !isHost) return
     const current = roomRef.current
@@ -535,7 +701,7 @@ export default function TurtleSoup({ onExit }) {
     }
   }, [userId, playerId, sessionId, onlineReady, isHost, commitRoom])
 
-  // 公共频道挂载：presence 负责在线玩家和主持人选举，broadcast 负责房间状态。
+  // 公共频道挂载：presence 负责在线玩家和主持端选举，broadcast 负责房间状态。
   useEffect(() => {
     if (!userId || !playerId) return undefined
     let cancelled = false
@@ -588,7 +754,7 @@ export default function TurtleSoup({ onExit }) {
       playersRef.current = list
       setPlayers(list)
 
-      // 新玩家可能错过了上一份房间快照：主持人补发一次。
+      // 新玩家可能错过了上一份房间快照：主持端补发一次。
       if (isHostRef.current) {
         window.clearTimeout(presenceTimerRef.current)
         presenceTimerRef.current = window.setTimeout(() => {
@@ -626,41 +792,22 @@ export default function TurtleSoup({ onExit }) {
       applyRoom(next)
     })
 
+    // 提问和猜测交给主持端；主持端自己提问/猜底时也会走本地 push（见 submit）。
+    // 这里不按发送者过滤：supabase 可能把广播回显给发送端，重复由 id 去重。
     channel.on('broadcast', { event: 'question' }, ({ payload }) => {
-      if (cancelled || !isHostRef.current) return
-      const current = roomRef.current
-      if (!current || current.status !== 'playing') return
-      const question = sanitizeQuestion(payload)
-      if (!question || question.sid === sessionId) return
-      if (current.questions.some((item) => item.id === question.id)) return
-      const askedBy = playersRef.current.find((player) => player.sid === question.sid)
-      const questions = [...current.questions, {
-        ...question,
-        // 玩家可能刚改昵称、presence 还没追上：别让一条旧昵称把它盖回“匿名侦探”。
-        name: question.name !== '匿名侦探'
-          ? question.name
-          : (askedBy?.name || question.name),
-      }].slice(-MAX_QUESTIONS)
-      commitRoom({ ...current, questions })
+      if (cancelled) return
+      pushQuestion(payload)
     })
 
     channel.on('broadcast', { event: 'guess' }, ({ payload }) => {
-      if (cancelled || !isHostRef.current) return
-      const current = roomRef.current
-      if (!current || current.status !== 'playing') return
-      const guess = sanitizeGuess(payload)
-      if (!guess || guess.sid === sessionId) return
-      if (current.guesses.some((item) => item.id === guess.id)) return
-      const guessedBy = playersRef.current.find((player) => player.sid === guess.sid)
-      const guesses = [...current.guesses, {
-        ...guess,
-        name: guess.name !== '匿名侦探'
-          ? guess.name
-          : (guessedBy?.name || guess.name),
-        verdict: 'pending',
-        judgedAt: 0,
-      }].slice(-MAX_GUESSES)
-      commitRoom({ ...current, guesses })
+      if (cancelled) return
+      pushGuess(payload)
+    })
+
+    // 任何玩家都可以请 Ace 出题或投降揭底；真正执行的是当前主持端。
+    channel.on('broadcast', { event: 'ace-request' }, ({ payload }) => {
+      if (cancelled) return
+      handleAceRequest(payload)
     })
 
     channel.subscribe((status) => {
@@ -688,7 +835,7 @@ export default function TurtleSoup({ onExit }) {
       channelRef.current = null
       supabase.removeChannel(channel)
     }
-  }, [userId, playerId, sessionId, joinedAt, applyRoom, commitRoom, sendCurrentRoom])
+  }, [userId, playerId, sessionId, joinedAt, applyRoom, commitRoom, sendCurrentRoom, pushQuestion, pushGuess, handleAceRequest])
 
   // 昵称 / 积分变化后刷新 presence，在线侦探名单里能看到最新分数。
   useEffect(() => {
@@ -720,7 +867,7 @@ export default function TurtleSoup({ onExit }) {
     }
   }, [room, playerId, award])
 
-  // 被主持人回答过的提问 +1（每题只记一次，不按判定结果分好坏）。
+  // 被 Ace 回答过的提问 +1（每题只记一次，不按判定结果分好坏）。
   useEffect(() => {
     if (!room || room.status === 'lobby' || !room.roundId || !playerId) return
     const entries = []
@@ -736,169 +883,57 @@ export default function TurtleSoup({ onExit }) {
     award(entries)
   }, [room, playerId, award])
 
-  const startRound = useCallback((puzzleId) => {
-    if (!isHostRef.current) return
-    const puzzle = TURTLE_BY_ID[puzzleId]
-    if (!puzzle) return
-    const current = roomRef.current ?? emptyRoom(sessionId, playerId)
-    commitRoom({
-      ...emptyRoom(sessionId, playerId),
-      puzzleId: puzzle.id,
-      status: 'playing',
-      roundId: `round-${randomToken()}`,
-      startedAt: Date.now(),
-      revision: current.revision,
-    })
-    setTruthOpen(false)
-    setPendingAction(null)
-    showToast(`开汤：${puzzle.title}`, 'good')
-  }, [commitRoom, playerId, sessionId, showToast])
-
-  const startRandom = useCallback(() => {
-    const current = roomRef.current
-    startRound(pickTurtle(current?.puzzleId ?? '').id)
-  }, [startRound])
-
-  const answerQuestion = useCallback((questionId, verdict) => {
-    if (!isHostRef.current || !VERDICT_BY_ID[verdict]) return
-    const current = roomRef.current
-    if (!current || current.status !== 'playing') return
-    if (!current.questions.some((question) => question.id === questionId)) return
-    commitRoom({
-      ...current,
-      questions: current.questions.map((question) => (
-        question.id === questionId
-          ? { ...question, verdict, answeredAt: Date.now() }
-          : question
-      )),
-    })
-  }, [commitRoom])
-
-  const judgeGuess = useCallback((guessId, correct) => {
-    if (!isHostRef.current) return
-    const current = roomRef.current
-    if (!current || current.status !== 'playing') return
-    const target = current.guesses.find((guess) => guess.id === guessId)
-    if (!target) return
-
-    if (correct) {
-      commitRoom({
-        ...current,
-        guesses: current.guesses.map((guess) => (
-          guess.id === guessId
-            ? { ...guess, verdict: 'correct', judgedAt: Date.now() }
-            : guess
-        )),
-        status: 'ended',
-        endedAt: Date.now(),
-        endReason: 'guessed',
-        winnerSid: target.sid,
-        winnerPid: target.pid,
-        winnerName: target.name,
-        winningGuess: target.text,
-      })
-      award([{ key: `${current.roundId}:host`, kind: 'hosted', points: 3 }])
-      setPendingAction(null)
-      showToast('结案：汤底被猜中了', 'good')
-      return
-    }
-
-    commitRoom({
-      ...current,
-      guesses: current.guesses.map((guess) => (
-        guess.id === guessId
-          ? { ...guess, verdict: 'wrong', judgedAt: Date.now() }
-          : guess
-      )),
-    })
-    showToast('已标记为猜错', 'info')
-  }, [award, commitRoom, showToast])
-
-  const revealRound = useCallback(() => {
-    if (!isHostRef.current) return
-    const current = roomRef.current
-    if (!current || current.status !== 'playing') return
-    commitRoom({
-      ...current,
-      status: 'ended',
-      endedAt: Date.now(),
-      endReason: 'revealed',
-      winnerSid: '',
-      winnerPid: '',
-      winnerName: '',
-      winningGuess: '',
-    })
-    award([{ key: `${current.roundId}:host`, kind: 'hosted', points: 3 }])
-    setPendingAction(null)
-    showToast('已揭底，本局结案', 'info')
-  }, [award, commitRoom, showToast])
-
   const submitQuestion = (event) => {
     event.preventDefault()
-    if (!onlineReady || !room || room.status !== 'playing' || isHost || !playerId) return
+    if (!onlineReady || !room || room.status !== 'playing' || !playerId) return
     const text = cleanText(questionDraft, MAX_QUESTION_TEXT)
     if (!text) return
     const now = Date.now()
     if (now - lastQuestionAtRef.current < QUESTION_COOLDOWN) {
-      showToast('问得慢一点，等主持人先看一眼', 'info')
+      showToast('问得慢一点，Ace 正在看上一题', 'info')
       return
     }
-    const channel = channelRef.current
-    if (!channel) {
-      showToast('频道还没连上，稍等一下', 'bad')
-      return
+    const payload = {
+      id: `q-${randomToken()}`,
+      sid: sessionId,
+      pid: playerId,
+      name: nickname || '匿名侦探',
+      text,
+      at: now,
     }
-    try {
-      Promise.resolve(channel.send({
-        type: 'broadcast',
-        event: 'question',
-        payload: {
-          id: `q-${randomToken()}`,
-          sid: sessionId,
-          pid: playerId,
-          name: nickname || '匿名侦探',
-          text,
-          at: now,
-        },
-      })).catch(() => {})
-    } catch {
+    // 主持端自己提问时，公共广播不会可靠地回到自己；本地先交给 Ace。
+    const sent = sendBroadcast('question', payload)
+    if (isHostRef.current) pushQuestion(payload)
+    if (!sent && !isHostRef.current) {
       showToast('发送失败，再试一次', 'bad')
       return
     }
     lastQuestionAtRef.current = now
     setQuestionDraft('')
-    showToast('问题已递给主持人', 'good')
+    showToast('问题已交给 Ace', 'good')
   }
 
   const submitGuess = (event) => {
     event.preventDefault()
-    if (!onlineReady || !room || room.status !== 'playing' || isHost || !playerId) return
+    if (!onlineReady || !room || room.status !== 'playing' || !playerId) return
     const text = cleanText(guessDraft, MAX_GUESS_TEXT)
     if (!text) return
-    const channel = channelRef.current
-    if (!channel) {
-      showToast('频道还没连上，稍等一下', 'bad')
-      return
+    const payload = {
+      id: `g-${randomToken()}`,
+      sid: sessionId,
+      pid: playerId,
+      name: nickname || '匿名侦探',
+      text,
+      at: Date.now(),
     }
-    try {
-      Promise.resolve(channel.send({
-        type: 'broadcast',
-        event: 'guess',
-        payload: {
-          id: `g-${randomToken()}`,
-          sid: sessionId,
-          pid: playerId,
-          name: nickname || '匿名侦探',
-          text,
-          at: Date.now(),
-        },
-      })).catch(() => {})
-    } catch {
+    const sent = sendBroadcast('guess', payload)
+    if (isHostRef.current) pushGuess(payload)
+    if (!sent && !isHostRef.current) {
       showToast('发送失败，再试一次', 'bad')
       return
     }
     setGuessDraft('')
-    showToast('猜测已交给主持人判定', 'good')
+    showToast('猜测已交给 Ace 判定', 'good')
   }
 
   const puzzle = room?.puzzleId ? (TURTLE_BY_ID[room.puzzleId] ?? null) : null
@@ -909,11 +944,10 @@ export default function TurtleSoup({ onExit }) {
   const questions = room?.questions ?? []
   const answeredCount = questions.filter((question) => Boolean(question.verdict)).length
   const guesses = room?.guesses ?? []
-  const pendingGuesses = guesses.filter((guess) => guess.verdict === 'pending')
   const ownGuesses = guesses.filter((guess) => guess.pid === playerId)
-  const canAsk = Boolean(onlineReady && room && status === 'playing' && !isHost && playerId)
-  const canGuess = canAsk
-  const actionLabel = pendingAction === 'reveal' ? '确认揭底' : '确认换题'
+  const canPlay = Boolean(onlineReady && room && status === 'playing' && playerId)
+  const canRequest = Boolean(onlineReady && playerId)
+  const lobby = !puzzle || status === 'lobby'
 
   if (!userId) {
     return (
@@ -927,6 +961,8 @@ export default function TurtleSoup({ onExit }) {
     <div
       className="turtle-page"
       data-turtle-game
+      data-turtle-ace="true"
+      data-turtle-ace-name="Ace"
       data-turtle-status={status}
       data-turtle-host={isHost ? 'true' : 'false'}
       data-turtle-online={onlineReady ? 'true' : 'false'}
@@ -953,34 +989,33 @@ export default function TurtleSoup({ onExit }) {
           {onlineReady ? '公共频道在线' : channelStatus === 'offline' ? '频道已断开，正在重连…' : '正在连接公共频道…'}
         </span>
         <span className="turtle-signal-host">
-          {hostCandidate ? `主持人：${hostName}${isHost ? '（你）' : ''}` : '等待主持人'}
+          <span className="turtle-ace-name" data-turtle-ace-label>Ace 主持</span>
           <i aria-hidden="true">·</i>
           {onlineReady ? `${onlineCount} 人在线` : '离线'}
         </span>
       </div>
 
-      {!puzzle || status === 'lobby' ? (
+      {lobby ? (
         <section className="turtle-lobby" aria-labelledby="turtle-lobby-title">
           <div className="turtle-lobby-mark" aria-hidden="true">CASE FILE</div>
-          <p className="turtle-eyebrow">THE SOUP IS NOT READY</p>
-          <h3 id="turtle-lobby-title">{isHost ? '卷宗在你手里' : '等主持人开汤'}</h3>
+          <p className="turtle-eyebrow">ACE IS HOLDING THE FILE</p>
+          <h3 id="turtle-lobby-title">Ace 主持 · 等一份卷宗</h3>
           <p className="turtle-lobby-copy">
-            {isHost
-              ? '你是本场主持人。选一份档案开汤，然后坐在桌子这头，用「是 / 否 / 无关 / 部分」回答大家的提问。汤底只有你看得到。'
-              : onlineReady
-                ? `主持人 ${hostName} 正在翻档案。开汤后，你可以在下面提问或直接猜汤底。`
-                : '正在接入本场的公共频道。连上后，最早进来的人会自动成为主持人。'}
+            {onlineReady
+              ? 'Ace 已经就位。任何玩家都可以请它出题；开汤后，Ace 会用「是 / 否 / 无关 / 部分」自动回答，并自动判定猜底。'
+              : '正在接入本场的公共频道。连上后，Ace 就会开始主持。'}
           </p>
-          {isHost && (
+          {canRequest && (
             <>
-              <button type="button" className="turtle-primary" onClick={startRandom} data-turtle-start>
-                随机开一局
+              <button type="button" className="turtle-primary" onClick={() => requestAce('start')} data-turtle-start>
+                请 Ace 出题
               </button>
-              <PuzzlePicker currentId="" onPick={startRound} />
+              <PuzzlePicker currentId={room?.puzzleId ?? ''} onPick={(id) => requestAce('start', id)} />
             </>
           )}
           <p className="turtle-lobby-note">
-            主持人由最早进入的人自动担任；主持人离开后，下一位自动接手。开局后不能中途加入主持，只能等下一局。
+            主持端由最早进入的浏览器自动承担，界面固定显示 Ace。任何玩家都能请 Ace 出题；
+            出题后，任何时候都能投降揭底。
           </p>
         </section>
       ) : (
@@ -1015,116 +1050,33 @@ export default function TurtleSoup({ onExit }) {
         </section>
       )}
 
-      {isHost && puzzle && status === 'playing' && (
-        <section className="turtle-classified" aria-label="主持人机密">
+      {puzzle && status === 'playing' && (
+        <section className="turtle-ace-console" aria-label="Ace 主持台">
+          <div className="turtle-ace-console-copy">
+            <strong><span className="turtle-ace-dot" aria-hidden="true" />Ace 主持</strong>
+            <p>
+              已自动回答 {answeredCount} 个问题、判定 {guesses.length} 条猜测。
+              任何人投降，Ace 都会立刻揭底。
+            </p>
+          </div>
           <button
             type="button"
-            className={`turtle-truth-toggle${truthOpen ? ' is-open' : ''}`}
-            onClick={() => setTruthOpen((open) => !open)}
-            aria-expanded={truthOpen}
-            data-turtle-truth-toggle
+            className="turtle-danger"
+            onClick={() => requestAce('reveal')}
+            disabled={!canRequest}
+            data-turtle-reveal
           >
-            <span>{truthOpen ? '收起汤底' : '查看汤底'}</span>
-            <small>仅主持人可见</small>
+            投降，揭底
           </button>
-          {truthOpen && (
-            <div className="turtle-truth" data-turtle-truth>
-              <div className="turtle-truth-head">
-                <span>CLASSIFIED · 主持人</span>
-                <strong>汤底</strong>
-              </div>
-              <p>{puzzle.bottom}</p>
-            </div>
-          )}
         </section>
       )}
 
-      {isHost && puzzle && status === 'playing' && (
-        <section className="turtle-host-desk" aria-labelledby="turtle-host-desk-title">
-          <div className="turtle-section-head">
-            <h3 id="turtle-host-desk-title">主持人桌面</h3>
-            <span>回答提问 · 判定猜测</span>
-          </div>
-          <div className="turtle-host-actions">
-            <button type="button" className="turtle-ghost" onClick={() => setPendingAction('swap')} data-turtle-swap>
-              换一题
-            </button>
-            <button type="button" className="turtle-danger" onClick={() => setPendingAction('reveal')} data-turtle-reveal>
-              揭底结案
-            </button>
-          </div>
-          {pendingAction && (
-            <div className="turtle-confirm" role="alert" data-turtle-confirm data-turtle-confirm-action={pendingAction}>
-              <p>
-                {pendingAction === 'reveal'
-                  ? '揭底会把汤底公开，并结束本局。后面的提问和猜测将不再计分。'
-                  : '换题会丢掉本局的问答和猜测，直接开一份新档案。'}
-              </p>
-              <div className="turtle-confirm-actions">
-                <button type="button" className="turtle-ghost" onClick={() => setPendingAction(null)} data-turtle-cancel>
-                  取消
-                </button>
-                <button
-                  type="button"
-                  className={pendingAction === 'reveal' ? 'turtle-danger' : 'turtle-primary'}
-                  onClick={pendingAction === 'reveal' ? revealRound : startRandom}
-                  data-turtle-confirm-yes
-                >
-                  {actionLabel}
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div className="turtle-guess-desk">
-            <div className="turtle-section-head">
-              <h3>猜测判定</h3>
-              <span>{pendingGuesses.length > 0 ? `${pendingGuesses.length} 条待判` : '暂无待判'}</span>
-            </div>
-            {guesses.length > 0 ? (
-              <ul className="turtle-guess-list">
-                {guesses.map((guess) => (
-                  <li
-                    className={`turtle-guess is-${guess.verdict}`}
-                    key={guess.id}
-                    data-turtle-guess
-                    data-guess-verdict={guess.verdict}
-                  >
-                    <div className="turtle-guess-meta">
-                      <strong>{guess.name}</strong>
-                      <span>{formatClock(guess.at)}</span>
-                    </div>
-                    <p className="turtle-guess-text">{guess.text}</p>
-                    {guess.verdict === 'pending' ? (
-                      <div className="turtle-judge-actions">
-                        <button type="button" className="turtle-ghost" onClick={() => judgeGuess(guess.id, false)} data-turtle-judge="wrong">
-                          还不对
-                        </button>
-                        <button type="button" className="turtle-primary" onClick={() => judgeGuess(guess.id, true)} data-turtle-judge="correct">
-                          算猜中，结案
-                        </button>
-                      </div>
-                    ) : (
-                      <span className={`turtle-guess-state is-${guess.verdict}`}>
-                        {guess.verdict === 'correct' ? '判定：猜中' : '判定：不对'}
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="turtle-empty">还没有人猜汤底。等他们问累了，就会有人试着把真相拼起来。</p>
-            )}
-          </div>
-        </section>
-      )}
-
-      {!isHost && puzzle && status === 'playing' && (
+      {puzzle && status === 'playing' && (
         <section className="turtle-player-desk" aria-label="提问和猜汤底">
           <form className="turtle-form" onSubmit={submitQuestion} data-turtle-question-form>
             <label htmlFor="turtle-question-input">
               <span className="turtle-form-label">提一个问题</span>
-              <small>只能用「是 / 否 / 无关 / 部分」来回答</small>
+              <small>Ace 会用「是 / 否 / 无关 / 部分」回答</small>
             </label>
             <div className="turtle-input-row">
               <input
@@ -1136,10 +1088,10 @@ export default function TurtleSoup({ onExit }) {
                 maxLength={MAX_QUESTION_TEXT}
                 placeholder="例如：他是在等人吗？"
                 autoComplete="off"
-                disabled={!canAsk}
+                disabled={!canPlay}
                 data-turtle-question-input
               />
-              <button type="submit" className="turtle-primary" disabled={!canAsk || !questionDraft.trim()} data-turtle-question-send>
+              <button type="submit" className="turtle-primary" disabled={!canPlay || !questionDraft.trim()} data-turtle-question-send>
                 提问
               </button>
             </div>
@@ -1148,7 +1100,7 @@ export default function TurtleSoup({ onExit }) {
           <form className="turtle-form turtle-guess-form" onSubmit={submitGuess} data-turtle-guess-form>
             <label htmlFor="turtle-guess-input">
               <span className="turtle-form-label">直接猜汤底</span>
-              <small>把完整真相写出来，由主持人判定</small>
+              <small>Ace 会自动判定是否猜中</small>
             </label>
             <div className="turtle-input-row">
               <input
@@ -1160,11 +1112,11 @@ export default function TurtleSoup({ onExit }) {
                 maxLength={MAX_GUESS_TEXT}
                 placeholder="我觉得真相是……"
                 autoComplete="off"
-                disabled={!canGuess}
+                disabled={!canPlay}
                 data-turtle-guess-input
               />
-              <button type="submit" className="turtle-danger" disabled={!canGuess || !guessDraft.trim()} data-turtle-guess-send>
-                提交猜测
+              <button type="submit" className="turtle-danger" disabled={!canPlay || !guessDraft.trim()} data-turtle-guess-send>
+                交给 Ace
               </button>
             </div>
           </form>
@@ -1176,7 +1128,7 @@ export default function TurtleSoup({ onExit }) {
                 <p className="turtle-own-guess" key={guess.id} data-turtle-own-guess={guess.verdict}>
                   <span>“{guess.text}”</span>
                   <strong>
-                    {guess.verdict === 'correct' ? '猜中' : guess.verdict === 'wrong' ? '不对' : '等主持人判定'}
+                    {guess.verdict === 'correct' ? 'Ace：猜中' : guess.verdict === 'wrong' ? 'Ace：不对' : 'Ace 正在判定'}
                   </strong>
                 </p>
               ))}
@@ -1194,7 +1146,7 @@ export default function TurtleSoup({ onExit }) {
           </div>
           {questions.length === 0 ? (
             <p className="turtle-empty">
-              {isHost ? '还没有人提问。把汤面念一遍，等第一句问题。' : '第一句问题还没有出现。问得越具体，汤底越近。'}
+              还没有人提问。问得越具体，Ace 越好回答。
             </p>
           ) : (
             <ol className="turtle-question-list">
@@ -1215,32 +1167,51 @@ export default function TurtleSoup({ onExit }) {
                       <span>{formatClock(question.at)}</span>
                     </div>
                     <p className="turtle-question-text">{question.text}</p>
-                    {isHost && status === 'playing' ? (
-                      <div className="turtle-verdict-actions" role="group" aria-label="回答这个问题">
-                        {VERDICTS.map((verdict) => (
-                          <button
-                            key={verdict.id}
-                            type="button"
-                            className={`turtle-verdict-btn is-${verdict.id}${question.verdict === verdict.id ? ' is-active' : ''}`}
-                            onClick={() => answerQuestion(question.id, verdict.id)}
-                            title={verdict.hint}
-                            aria-pressed={question.verdict === verdict.id}
-                            data-turtle-verdict={verdict.id}
-                          >
-                            {verdict.label}
-                          </button>
-                        ))}
-                      </div>
-                    ) : question.verdict ? (
-                      <VerdictChip verdict={question.verdict} />
+                    {question.verdict ? (
+                      <span className="turtle-ace-answer" data-turtle-ace-answer={question.verdict}>
+                        <span className="turtle-ace-byline">Ace</span>
+                        <VerdictChip verdict={question.verdict} />
+                      </span>
                     ) : (
-                      <span className="turtle-verdict-wait">待主持人</span>
+                      <span className="turtle-verdict-wait">Ace 正在看…</span>
                     )}
                   </div>
                 </li>
               ))}
             </ol>
           )}
+        </section>
+      )}
+
+      {puzzle && status !== 'lobby' && guesses.length > 0 && (
+        <section className="turtle-guess-log" aria-labelledby="turtle-guess-log-title">
+          <div className="turtle-section-head">
+            <h3 id="turtle-guess-log-title">猜测记录</h3>
+            <span>Ace 自动判定</span>
+          </div>
+          <ul className="turtle-guess-list">
+            {guesses.map((guess) => (
+              <li
+                className={`turtle-guess is-${guess.verdict}`}
+                key={guess.id}
+                data-turtle-guess
+                data-guess-verdict={guess.verdict}
+              >
+                <div className="turtle-guess-meta">
+                  <strong>{guess.pid && guess.pid === playerId ? '你' : guess.name}</strong>
+                  <span>{formatClock(guess.at)}</span>
+                </div>
+                <p className="turtle-guess-text">{guess.text}</p>
+                <span className={`turtle-guess-state is-${guess.verdict}`} data-turtle-ace-judge={guess.verdict}>
+                  {guess.verdict === 'correct'
+                    ? 'Ace：猜中，结案'
+                    : guess.verdict === 'wrong'
+                      ? 'Ace：还不对'
+                      : 'Ace 正在判定…'}
+                </span>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 
@@ -1253,10 +1224,10 @@ export default function TurtleSoup({ onExit }) {
         >
           <div className="turtle-stamp" aria-hidden="true">结案</div>
           <p className="turtle-eyebrow">
-            {room?.endReason === 'guessed' ? 'GUESSED · 猜中' : 'REVEALED · 揭底'}
+            {room?.endReason === 'guessed' ? 'GUESSED · 猜中' : 'ACE REVEALED · 投降揭底'}
           </p>
-          <h3 id="turtle-reveal-title">
-            {room?.endReason === 'guessed' ? '有人猜中了汤底' : '主持人揭开了汤底'}
+          <h3 id="turtle-reveal-title" data-turtle-reveal-title>
+            {room?.endReason === 'guessed' ? '有人猜中了汤底' : 'Ace 揭开了汤底'}
           </h3>
           {room?.endReason === 'guessed' && room?.winnerName && (
             <p className="turtle-winner">
@@ -1267,21 +1238,23 @@ export default function TurtleSoup({ onExit }) {
           )}
           <div className="turtle-truth is-public" data-turtle-truth>
             <div className="turtle-truth-head">
-              <span>CASE CLOSED</span>
+              <span>CASE CLOSED · ACE</span>
               <strong>{puzzle.title} · 汤底</strong>
             </div>
-            <p>{puzzle.bottom}</p>
+            <p>{puzzle.solution}</p>
           </div>
-          {isHost ? (
-            <div className="turtle-reveal-actions">
-              <button type="button" className="turtle-primary" onClick={startRandom} data-turtle-next>
-                下一题
-              </button>
-              <PuzzlePicker currentId={puzzle.id} onPick={startRound} compact />
-            </div>
-          ) : (
-            <p className="turtle-reveal-wait">等主持人开下一题。你也可以先翻翻下面自己的问答记录。</p>
-          )}
+          <div className="turtle-reveal-actions">
+            <button
+              type="button"
+              className="turtle-primary"
+              onClick={() => requestAce('start')}
+              disabled={!canRequest}
+              data-turtle-next
+            >
+              请 Ace 再出一题
+            </button>
+            <PuzzlePicker currentId={puzzle.id} onPick={(id) => requestAce('start', id)} compact />
+          </div>
         </section>
       )}
 
@@ -1307,14 +1280,11 @@ export default function TurtleSoup({ onExit }) {
                       {player.sid === sessionId ? '（你）' : ''}
                     </strong>
                     <small>
-                      {player.sid === hostCandidate?.sid ? '主持人' : '在席'}
+                      在席
                       <i aria-hidden="true">·</i>
                       {player.score} 分
                     </small>
                   </span>
-                  {player.sid === hostCandidate?.sid && (
-                    <span className="turtle-crown" aria-label="主持人">♛</span>
-                  )}
                 </li>
               ))}
             </ul>
@@ -1332,25 +1302,26 @@ export default function TurtleSoup({ onExit }) {
             <span><small>积分</small><strong data-turtle-score-card>{stats.score}</strong></span>
             <span><small>猜中</small><strong>{stats.wins}</strong></span>
             <span><small>提问</small><strong>{stats.questions}</strong></span>
-            <span><small>主持</small><strong>{stats.hosted}</strong></span>
           </div>
-          <p className="turtle-score-note">猜中汤底 +10，被回答的提问 +1，主持结案 +3。</p>
+          <p className="turtle-score-note">猜中汤底 +10，被 Ace 回答的提问 +1。Ace 主持，没有主持加分。</p>
         </section>
       </div>
 
       <details className="turtle-howto">
         <summary>怎么玩 · 海龟汤规则</summary>
         <ol>
-          <li>主持人先看汤底，其他玩家只看汤面。</li>
-          <li>玩家只能问能用「是 / 否 / 无关 / 部分」回答的问题，主持人逐条判定。</li>
-          <li>玩家可以随时提交完整猜测；主持人判定猜中即结案。主持人也可以直接揭底。</li>
+          <li>Ace 主持：任何玩家都可以请 Ace 出题，汤底不会在播放中显示。</li>
+          <li>玩家只能问能用「是 / 否 / 无关 / 部分」回答的问题，Ace 会自动回答。</li>
+          <li>玩家可以随时提交完整猜测，Ace 自动判定；猜中即结案。</li>
+          <li>任何玩家都能「投降，揭底」；结案后任何人都能请 Ace 再出一题。</li>
           <li>本局内容通过 Supabase Realtime 公共频道同步。不建表、不写库、不广播账号 id。</li>
-          <li>公共频道里提问和猜测对订阅者可见，别放真实隐私。主持人角色是客户端约定，不是权限边界。</li>
+          <li>公共频道里提问和猜测对订阅者可见，别放真实隐私。Ace 主持是客户端约定，不是权限边界。</li>
         </ol>
       </details>
 
       <p className="turtle-foot">
-        十份原创档案收在 <code>src/lab/turtleData.js</code>。换账号不会串积分；清空浏览器存储会重新开始。
+        十份原创档案收在 <code>src/lab/turtleData.js</code>，Ace 的回答/判定也来自同文件的纯函数。
+        换账号不会串积分；清空浏览器存储会重新开始。
       </p>
 
       {toast && (
