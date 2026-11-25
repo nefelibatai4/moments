@@ -34,6 +34,8 @@ const AIM_LIMIT = 1.38
 const FISH_TARGET = 8
 const STORAGE_PREFIX = 'moments-fishing-v1:'
 const FRIEND_STORAGE_PREFIX = 'moments-fishing-friend-v1:'
+// 固定鱼友的 presence 快照只按「查看者」落本机：换账号登录不会串数据。
+const PAL_SNAPSHOT_PREFIX = 'moments-fishing-pal-v1:'
 const LOBBY_CHANNEL = 'moments-fishing-lobby-v1'
 // 公共频道里最多显示这么多人，防止有人刷屏把页面撑爆。
 const MAX_LOBBY = 24
@@ -59,14 +61,107 @@ function sanitizeCaught(input) {
 
 const WORD_RE = /^[a-z]{3,24}$/
 const MAX_WORDS_PER_FISH = 40
-// 「拼对」明细用：词 → 中文提示。旧版鱼库里的词如果不在这份表里，就只显示单词。
-const WORD_HINTS = new Map(
-  Object.values(WORD_BANK).flat().map((entry) => [entry.word, entry.hint]),
-)
+// 旧版词库（换成四六级 120 词之前）拼过的词还可能留在本机鱼库里。
+// 这里保留旧词释义，保证旧数据在鱼种详情里也能看到中文，而不是只剩英文。
+const LEGACY_WORD_HINTS = {
+  absorb: '吸收；理解',
+  abundance: '丰富；充裕',
+  accountability: '问责制',
+  accumulate: '积累',
+  acknowledge: '承认；致谢',
+  acquire: '获得；习得',
+  adapt: '适应',
+  adaptation: '适应；改编',
+  adequate: '足够的',
+  advocate: '提倡；拥护者',
+  allocate: '分配',
+  ambiguous: '模棱两可的',
+  apparent: '明显的',
+  appeal: '呼吁；吸引力',
+  appreciation: '欣赏；感激',
+  approach: '接近；方法',
+  approval: '批准',
+  arbitrary: '任意的；武断的',
+  architecture: '建筑学；架构',
+  argument: '论点；争论',
+  assembly: '集会；装配',
+  assess: '评估',
+  assume: '假定；承担',
+  assumption: '假设',
+  attach: '附上；系上',
+  attitude: '态度',
+  attribute: '归因于；属性',
+  aware: '意识到的',
+  beneficial: '有益的',
+  boundary: '边界',
+  brief: '简短的',
+  budget: '预算',
+  campus: '校园',
+  career: '职业；生涯',
+  category: '类别',
+  challenge: '挑战',
+  characteristic: '特征；典型的',
+  chronological: '按时间顺序的',
+  civilization: '文明',
+  collaboration: '合作',
+  collapse: '崩溃；倒塌',
+  commit: '承诺；犯（错）',
+  comprehensively: '全面地',
+  comprise: '包含；构成',
+  concentration: '专注；浓度',
+  concept: '概念',
+  conclude: '得出结论',
+  conduct: '进行；行为',
+  confirm: '确认',
+  conscientious: '认真尽责的',
+  consciousness: '意识',
+  consequence: '后果',
+  consequently: '因此',
+  consideration: '考虑',
+  consistent: '一致的',
+  constitutional: '宪法的',
+  constraint: '限制；约束',
+  consume: '消耗',
+  contact: '联系',
+  contemporary: '当代的',
+  context: '语境；背景',
+  contrast: '对比',
+  contribute: '贡献；促成',
+  controversial: '有争议的',
+  convert: '转换',
+  correspondence: '通信；对应',
+  discrimination: '歧视；区分',
+  effectiveness: '有效性',
+  environmental: '环境的',
+  fundamental: '根本的',
+  implementation: '实施',
+  infrastructure: '基础设施',
+  investigation: '调查',
+  participation: '参与',
+  particularly: '尤其',
+  rehabilitation: '康复；修复',
+  reorganization: '重组',
+  significantly: '显著地',
+  sophisticated: '复杂精密的；老练的',
+  substantial: '大量的；实质的',
+  sustainability: '可持续性',
+  transformation: '转变',
+  unprecedented: '史无前例的',
+  vulnerability: '脆弱性',
+}
+// 「拼对」明细用：词 → 中文提示。旧词先铺底，当前词库覆盖同名项。
+const WORD_HINTS = new Map([
+  ...Object.entries(LEGACY_WORD_HINTS),
+  ...Object.values(WORD_BANK).flat().map((entry) => [entry.word, entry.hint]),
+])
 
 function normalizeWord(value) {
   const word = String(value ?? '').trim().toLowerCase()
   return WORD_RE.test(word) ? word : ''
+}
+
+function wordHint(word) {
+  return WORD_HINTS.get(normalizeWord(word)) ?? ''
 }
 
 // 鱼库里的「鱼种 → 拼对过的单词」。旧版本没有这个字段，读到空对象即可；
@@ -194,6 +289,71 @@ function saveFriendProfile(userId, friend) {
     }))
   } catch {
     /* 写不了就算了，下次重新确认 */
+  }
+}
+
+function sanitizeSyncTime(value) {
+  const time = Math.floor(Number(value))
+  if (!Number.isFinite(time) || time <= 0) return 0
+  // 本机手改 localStorage 也不该出现"未来"的同步时间。
+  return Math.min(time, Date.now() + 86400000)
+}
+
+function formatSyncTime(value) {
+  const time = sanitizeSyncTime(value)
+  if (!time) return ''
+  const date = new Date(time)
+  const pad = (number) => String(number).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+// 固定鱼友在线时，把公共 presence 里那份只读快照按查看者账号落本机。
+// 离线时用它渲染；不落账号 id、不建表、不写库。
+function snapshotFromPresence(friend, player) {
+  return {
+    v: 1,
+    friendId: friend.id,
+    name: (player.name || friend.nickname || '匿名渔夫').slice(0, 20),
+    points: sanitizeCount(player.points),
+    total: sanitizeCount(player.total),
+    caught: sanitizeCaught(player.caught),
+    wordCount: sanitizeCount(player.wordCount),
+    words: sanitizePresenceWords(player.words),
+    syncedAt: Date.now(),
+  }
+}
+
+function loadPalSnapshot(userId, friendId) {
+  if (!userId || !friendId) return null
+  try {
+    const raw = localStorage.getItem(`${PAL_SNAPSHOT_PREFIX}${userId}`)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || parsed.friendId !== friendId) return null
+    const syncedAt = sanitizeSyncTime(parsed.syncedAt)
+    if (!syncedAt) return null
+    return {
+      v: 1,
+      friendId,
+      name: typeof parsed.name === 'string' ? parsed.name.slice(0, 20) : '',
+      points: sanitizeCount(parsed.points),
+      total: sanitizeCount(parsed.total),
+      caught: sanitizeCaught(parsed.caught),
+      wordCount: sanitizeCount(parsed.wordCount),
+      words: sanitizePresenceWords(parsed.words),
+      syncedAt,
+    }
+  } catch {
+    return null
+  }
+}
+
+function savePalSnapshot(userId, snapshot) {
+  if (!userId || !snapshot?.friendId) return
+  try {
+    localStorage.setItem(`${PAL_SNAPSHOT_PREFIX}${userId}`, JSON.stringify(snapshot))
+  } catch {
+    /* 隐私模式/配额满：下海照常，只是离线时没有快照兜底 */
   }
 }
 
@@ -588,9 +748,15 @@ function FishDetail({
           </div>
           {words.length > 0 ? (
             <div className="fishing-word-list">
-              {words.map((word) => (
-                <span className="fishing-word" key={word}>{word}</span>
-              ))}
+              {words.map((word) => {
+                const hint = wordHint(word)
+                return (
+                  <span className="fishing-word" key={word}>
+                    <strong>{word}</strong>
+                    <small>{hint || '暂无释义'}</small>
+                  </span>
+                )
+              })}
             </div>
           ) : (
             <p className="fishing-detail-words-empty">{emptyNote}</p>
@@ -611,6 +777,9 @@ function PlayerLibrary({ player, onClose, onDetail }) {
     wordsByFish: {},
   }
   const online = player.online !== false
+  const syncedAt = online ? 0 : sanitizeSyncTime(player.syncedAt)
+  const hasSnapshot = Boolean(syncedAt)
+  const syncLabel = hasSnapshot ? formatSyncTime(syncedAt) : ''
   return (
     <div className="fishing-modal-backdrop" role="presentation" onPointerDown={onClose}>
       <div
@@ -624,17 +793,28 @@ function PlayerLibrary({ player, onClose, onDetail }) {
         <div className="fishing-player-head">
           <span className="fishing-player-avatar" aria-hidden="true">{player.name.slice(0, 1)}</span>
           <div>
-            <p className="fishing-eyebrow">{online ? '在线渔友' : '渔友 · 当前离线'}</p>
+            <p className="fishing-eyebrow">
+              {online ? '在线渔友' : hasSnapshot ? '渔友 · 离线快照' : '渔友 · 当前离线'}
+            </p>
             <h3 id="fishing-player-title">{player.name}</h3>
             <p>
               {online
                 ? `${player.points ?? 0} 分 · 已捕 ${player.total ?? 0} 条 · 拼对 ${player.wordCount ?? 0} 个词`
-                : '对方还没打开摸鱼，鱼库和拼对单词数要等 TA 上线后同步。'}
+                : hasSnapshot
+                  ? `上次同步 ${syncLabel} · ${player.points ?? 0} 分 · 已捕 ${player.total ?? 0} 条 · 拼对 ${player.wordCount ?? 0} 个词`
+                  : '对方还没打开摸鱼，鱼库和拼对单词数要等 TA 上线后同步。'}
             </p>
           </div>
         </div>
-        {online ? (
-          <FishingLibrary library={library} ownerLabel={`${player.name} 的鱼库`} onDetail={onDetail} />
+        {online || hasSnapshot ? (
+          <>
+            {hasSnapshot && (
+              <p className="fishing-sync-note">
+                这是 TA 上次在线时的鱼库快照；TA 再打开摸鱼就会换成实时数据。
+              </p>
+            )}
+            <FishingLibrary library={library} ownerLabel={`${player.name} 的鱼库`} onDetail={onDetail} />
+          </>
         ) : (
           <p className="fishing-player-offline">
             这个渔友是固定的：你看到的是对方；等 TA 打开「摸鱼」，这里就会出现 TA 的鱼库。
@@ -736,7 +916,7 @@ function WordsDialog({ library, onClose }) {
             {words.map((word) => (
               <div className="fishing-words-row" key={word}>
                 <strong>{word}</strong>
-                <small>{WORD_HINTS.get(word) ?? '已拼对'}</small>
+                <small>{wordHint(word) || '暂无释义'}</small>
               </div>
             ))}
           </div>
@@ -806,6 +986,7 @@ export default function FishingGame({ onExit }) {
   const [viewPlayer, setViewPlayer] = useState(null)
   const [friendDetail, setFriendDetail] = useState(null)
   const [friendProfile, setFriendProfile] = useState(() => loadFriendProfile(userId))
+  const [palSnapshot, setPalSnapshot] = useState(() => loadPalSnapshot(userId, friendProfile?.id))
   const [resetArmed, setResetArmed] = useState(false)
   // 每次打开游戏换一个匿名会话 id，只用于在线渔友频道，不落盘。
   const [sessionId] = useState(createSessionId)
@@ -820,6 +1001,8 @@ export default function FishingGame({ onExit }) {
   const nextFishIdRef = useRef(0)
   const channelRef = useRef(null)
   const nicknameRef = useRef('')
+  const friendProfileRef = useRef(friendProfile)
+  const playersRef = useRef([])
   const toastTimerRef = useRef(0)
   const spellTimerRef = useRef(0)
   const mountedRef = useRef(true)
@@ -865,6 +1048,28 @@ export default function FishingGame({ onExit }) {
     if (!userId) return
     let cancelled = false
     const stored = loadFriendProfile(userId)
+
+    // 鱼友身份确认/变更时，把本机快照对齐到这个鱼友：
+    // 对方在线就先抓一份 presence 快照，离线就读取上次留下的快照。
+    const rememberFriend = (friend) => {
+      friendProfileRef.current = friend
+      setFriendProfile(friend)
+      if (!friend) {
+        setPalSnapshot(null)
+        return
+      }
+      const online = playersRef.current.find(
+        (player) => player.name === (friend.nickname || '匿名渔夫'),
+      )
+      if (!online) {
+        setPalSnapshot(loadPalSnapshot(userId, friend.id))
+        return
+      }
+      const snapshot = snapshotFromPresence(friend, online)
+      savePalSnapshot(userId, snapshot)
+      setPalSnapshot(snapshot)
+    }
+
     supabase
       .from('profiles')
       .select('id,nickname,is_ai,approved')
@@ -878,21 +1083,21 @@ export default function FishingGame({ onExit }) {
           const friend = latest
             ? { id: latest.id, nickname: latest.nickname || stored.nickname }
             : stored
-          setFriendProfile(friend)
+          rememberFriend(friend)
           saveFriendProfile(userId, friend)
           return
         }
         const others = profiles.filter((profile) => profile.id !== userId)
         if (others.length === 1) {
           const friend = { id: others[0].id, nickname: others[0].nickname || '渔友' }
-          setFriendProfile(friend)
+          rememberFriend(friend)
           saveFriendProfile(userId, friend)
         } else {
-          setFriendProfile(null)
+          rememberFriend(null)
         }
       })
       .catch(() => {
-        if (!cancelled) setFriendProfile(stored)
+        if (!cancelled) rememberFriend(stored)
       })
     return () => { cancelled = true }
   }, [userId])
@@ -1212,11 +1417,23 @@ export default function FishingGame({ onExit }) {
           if (!previous || meta.ts > previous.ts) bySid.set(meta.sid, meta)
         }
       }
-      setPlayers(
-        [...bySid.values()]
-          .sort((a, b) => b.points - a.points)
-          .slice(0, MAX_LOBBY),
+      const nextPlayers = [...bySid.values()]
+        .sort((a, b) => b.points - a.points)
+        .slice(0, MAX_LOBBY)
+      playersRef.current = nextPlayers
+      setPlayers(nextPlayers)
+
+      // 固定鱼友在线：顺手把这份 presence 快照写到查看者本机；
+      // 对方断线时 sync 里没有 TA，保留上一份，正好给离线渲染用。
+      const friend = friendProfileRef.current
+      if (!friend) return
+      const onlineFriend = nextPlayers.find(
+        (player) => player.name === (friend.nickname || '匿名渔夫'),
       )
+      if (!onlineFriend) return
+      const snapshot = snapshotFromPresence(friend, onlineFriend)
+      savePalSnapshot(userId, snapshot)
+      setPalSnapshot(snapshot)
     }
 
     channel.on('presence', { event: 'sync' }, syncPlayers)
@@ -1226,6 +1443,9 @@ export default function FishingGame({ onExit }) {
         channel.track(presenceMeta(sessionId, nicknameRef.current, libraryRef.current)).catch(() => {})
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
         setOnlineReady(false)
+        // 连接断了就不能再拿上一帧 presence 冒充「在线」；固定鱼友会退回本机快照。
+        playersRef.current = []
+        setPlayers([])
       }
     })
 
@@ -1286,29 +1506,39 @@ export default function FishingGame({ onExit }) {
   const detailWords = detail
     ? (library.caught[detail.id] > 0 ? wordsForFish(library, detail) : { words: [], exact: true })
     : null
-  // presence 可能比「打开鱼库」晚到：从最新 players 里取同一个 sid，
-  // 这样渔友刚同步上来的单词/战绩也能立刻显示，而不是卡在打开那一刻的快照。
-  const activePlayer = viewPlayer
-    ? (players.find((player) => player.sid === viewPlayer.sid) ?? viewPlayer)
-    : null
-  const friendWord = friendDetail && activePlayer ? activePlayer.words?.[friendDetail.id] : ''
 
-  // 「鱼友」固定成另一位真人：在线时把 presence 合进来，离线时也把名字留在页面上。
+  // 「鱼友」固定成另一位真人：在线时把 presence 合进来；离线时用本机保存的
+  // 最后一次 presence 快照，并明确标成「上次同步」，不拿旧数据冒充实时。
   const friendOnline = friendProfile
     ? (players.find((player) => player.name === (friendProfile.nickname || '匿名渔夫')) ?? null)
+    : null
+  const cachedFriend = friendProfile && palSnapshot?.friendId === friendProfile.id
+    ? palSnapshot
     : null
   const fixedFriend = friendProfile
     ? {
         sid: friendOnline?.sid ?? `offline-${friendProfile.id}`,
         name: friendProfile.nickname,
-        points: friendOnline?.points ?? 0,
-        total: friendOnline?.total ?? 0,
-        caught: friendOnline?.caught ?? {},
-        wordCount: friendOnline?.wordCount ?? 0,
-        words: friendOnline?.words ?? {},
+        points: friendOnline?.points ?? cachedFriend?.points ?? 0,
+        total: friendOnline?.total ?? cachedFriend?.total ?? 0,
+        caught: friendOnline?.caught ?? cachedFriend?.caught ?? {},
+        wordCount: friendOnline?.wordCount ?? cachedFriend?.wordCount ?? 0,
+        words: friendOnline?.words ?? cachedFriend?.words ?? {},
+        syncedAt: friendOnline ? 0 : (cachedFriend?.syncedAt ?? 0),
         online: Boolean(friendOnline),
+        isFriend: true,
       }
     : null
+
+  // presence 可能比「打开鱼库」晚到：从最新 players 里取同一个 sid，
+  // 这样渔友刚同步上来的单词/战绩也能立刻显示，而不是卡在打开那一刻的快照。
+  // 固定鱼友则始终跟随 fixedFriend，对方断线时弹层会立刻切到离线快照。
+  const activePlayer = viewPlayer
+    ? (viewPlayer.isFriend && fixedFriend
+        ? fixedFriend
+        : (players.find((player) => player.sid === viewPlayer.sid) ?? viewPlayer))
+    : null
+  const friendWord = friendDetail && activePlayer ? activePlayer.words?.[friendDetail.id] : ''
   const friendCount = friendProfile ? 1 : players.length
 
   const openFriend = () => {
@@ -1520,15 +1750,25 @@ export default function FishingGame({ onExit }) {
       <section className="fishing-pals" aria-label="鱼友">
         <div className="fishing-section-head">
           <h3>鱼友</h3>
-          <span>{friendProfile ? (friendOnline ? '在线' : onlineReady ? '离线' : '连接中') : `${players.length} 人`}</span>
+          <span>
+            {friendProfile
+              ? (friendOnline ? '在线' : fixedFriend.syncedAt ? '离线 · 有快照' : onlineReady ? '离线' : '连接中')
+              : `${players.length} 人`}
+          </span>
         </div>
         {friendProfile ? (
           <div className="fishing-pals-list">
             <button
               type="button"
-              className={`fishing-pal${fixedFriend.online ? ' is-online' : ' is-offline'}`}
+              className={`fishing-pal${fixedFriend.online ? ' is-online' : ' is-offline'}${fixedFriend.syncedAt ? ' has-snapshot' : ''}`}
               onClick={openFriend}
-              aria-label={`查看 ${friendProfile.nickname} 的鱼库${fixedFriend.online ? `，${fixedFriend.points} 分，拼对 ${fixedFriend.wordCount} 个词` : '，对方当前离线'}`}
+              aria-label={`查看 ${friendProfile.nickname} 的鱼库${
+                fixedFriend.online
+                  ? `，${fixedFriend.points} 分，拼对 ${fixedFriend.wordCount} 个词`
+                  : fixedFriend.syncedAt
+                    ? `，上次同步于 ${formatSyncTime(fixedFriend.syncedAt)}`
+                    : '，对方当前离线'
+              }`}
             >
               <span className="fishing-pal-avatar" aria-hidden="true">{friendProfile.nickname.slice(0, 1)}</span>
               <span className="fishing-pal-copy">
@@ -1536,10 +1776,14 @@ export default function FishingGame({ onExit }) {
                 <small>
                   {fixedFriend.online
                     ? `${fixedFriend.points} 分 · ${caughtSpeciesCount(fixedFriend.caught)} 种 · 拼对 ${fixedFriend.wordCount} 个词`
-                    : '还没打开摸鱼；打开后就能看到 TA 的鱼库'}
+                    : fixedFriend.syncedAt
+                      ? `上次同步 ${formatSyncTime(fixedFriend.syncedAt)} · ${fixedFriend.points} 分 · ${caughtSpeciesCount(fixedFriend.caught)} 种 · 拼对 ${fixedFriend.wordCount} 个词`
+                      : '还没打开摸鱼；打开后就能看到 TA 的鱼库'}
                 </small>
               </span>
-              <span className="fishing-pal-go" aria-hidden="true">{fixedFriend.online ? '看鱼库 →' : '等 TA 上线 →'}</span>
+              <span className="fishing-pal-go" aria-hidden="true">
+                {fixedFriend.online || fixedFriend.syncedAt ? '看鱼库 →' : '等 TA 上线 →'}
+              </span>
             </button>
           </div>
         ) : players.length > 0 ? (

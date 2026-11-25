@@ -1525,6 +1525,11 @@
 }
 
 .fishing-word {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 7px;
+  max-width: 100%;
   padding: 4px 9px;
   border: 1px solid rgba(169, 245, 232, 0.24);
   border-radius: 999px;
@@ -1533,6 +1538,19 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.78rem;
   letter-spacing: 0.04em;
+  overflow-wrap: anywhere;
+}
+
+.fishing-word strong {
+  font-weight: 600;
+}
+
+.fishing-word small {
+  color: color-mix(in srgb, var(--sea-ink) 64%, transparent);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 0.68rem;
+  letter-spacing: 0;
+  line-height: 1.45;
   overflow-wrap: anywhere;
 }
 
@@ -1609,9 +1627,27 @@
   text-align: center;
 }
 
+.fishing-sync-note {
+  margin: 14px 0 0;
+  padding: 9px 11px;
+  border: 1px dashed rgba(169, 245, 232, 0.22);
+  border-radius: 10px;
+  background: rgba(169, 245, 232, 0.04);
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  line-height: 1.6;
+}
+
 .fishing-pal.is-offline {
   border-style: dashed;
   opacity: 0.82;
+}
+
+.fishing-pal.has-snapshot .fishing-pal-copy small {
+  overflow: visible;
+  line-height: 1.5;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .fishing-pal.is-online .fishing-pal-avatar::after {
@@ -1754,7 +1790,7 @@
 
 .fishing-words-row {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
   padding: 8px 10px;
@@ -1764,18 +1800,22 @@
 }
 
 .fishing-words-row strong {
+  flex: 0 0 auto;
   color: var(--sea-accent, var(--accent-green));
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.8rem;
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .fishing-words-row small {
-  overflow: hidden;
+  min-width: 0;
   color: var(--text-muted);
   font-size: 0.64rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.5;
+  text-align: right;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 /* ── 动画 ─────────────────────────────────────────────────────── */
