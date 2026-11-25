@@ -54,8 +54,11 @@
   `ace-verdict`；**5 秒没有判定就显示「Ace 不在线」**，不补答、不猜。判定后的短评只由判定词套固定模板，
   不包含汤底/线索。
 - 任何玩家都可以请 Ace 出题、指定档案，或在推理中「投降，揭底」；换下一题不需要原汇总端在场。
+  大厅和结案后可选难度（入门 / 进阶 / 烧脑），点「请 Ace 出题」按所选难度随机抽题；
+  `ace-request` 会带上 `difficulty`，汇总端按它调 `pickTurtle(difficulty, excludeId)`。
 - 积分只写本机 `localStorage`，key 为 `moments-turtle-soup-score-v1:<userId>`：
-  猜中汤底 +10、被 Ace 回答的提问 +1，**没有主持加分**。用 `roundId`/提问 id 去重，刷新或重连不会重复加分。
+  猜中汤底按本局难度 +10 / +20 / +30（难度分值在 `TURTLE_DIFFICULTY[].points`）、
+  被 Ace 回答的提问 +1，**没有主持加分**。用 `roundId`/提问 id 去重，刷新或重连不会重复加分。
   玩家 id 也存在本机（`moments-turtle-soup-player-v1:<userId>`），只用于关联自己的提问和猜测，不是账号 id。
 - 收到的 broadcast / presence 都会清洗字段和上限；状态只接受当前汇总端（presence 中最早进入者）发来的
   版本，避免旧快照覆盖。公共频道无法验证发送者身份，Ace 主持端是客户端约定，不是服务端权限。

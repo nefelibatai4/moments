@@ -11,7 +11,7 @@ import {
 
 // ── 「海龟汤」多人游戏（真 Ace 主持）────────────────────────────────
 // 玩法：Ace 是唯一的出题人、回答者和判定者，所有用户都只当玩家：
-//   · 任何玩家都可以请 Ace 出题（大厅/结案后）；
+//   · 任何玩家都可以请 Ace 出题（大厅/结案后），并按入门/进阶/烧脑随机抽题；
 //   · 提问和猜底通过公共频道发给外部常驻的 Ace 主持端
 //     （scripts/ace-turtle-host.mjs），由它取该题汤底问 DeepSeek；
 //   · 主持端只广播判定词（ace-verdict），浏览器不本地判定、不猜答案；
@@ -257,6 +257,9 @@ function sanitizeAceRequest(raw) {
     pid: cleanId(raw.pid),
     action,
     puzzleId: Object.prototype.hasOwnProperty.call(TURTLE_BY_ID, raw.puzzleId) ? raw.puzzleId : '',
+    difficulty: Object.prototype.hasOwnProperty.call(TURTLE_DIFFICULTY, raw.difficulty)
+      ? raw.difficulty
+      : '',
     at: safeTime(raw.at, Date.now()),
   }
 }
@@ -405,6 +408,35 @@ function PuzzlePicker({ currentId, onPick, compact = false }) {
   )
 }
 
+// 大厅和结案后共用：选难度只改本机状态，真正抽题在「请 Ace 出题」时发请求。
+function DifficultyPicker({ value, onSelect }) {
+  return (
+    <div className="turtle-difficulty" role="group" aria-label="选择难度" data-turtle-difficulty-picker>
+      <span className="turtle-difficulty-label">选择难度</span>
+      <div className="turtle-difficulty-options">
+        {Object.values(TURTLE_DIFFICULTY).map((level) => {
+          const selected = value === level.id
+          return (
+            <button
+              key={level.id}
+              type="button"
+              className={`turtle-difficulty-btn${selected ? ' is-selected' : ''}`}
+              style={{ '--turtle-diff': level.color }}
+              aria-pressed={selected}
+              onClick={() => onSelect(level.id)}
+              data-turtle-difficulty={level.id}
+              data-turtle-points={level.points}
+            >
+              <strong>{level.label}</strong>
+              <small>猜中 +{level.points}</small>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ── 主组件 ────────────────────────────────────────────────────────
 export default function TurtleSoup({ onExit }) {
   const session = useAuth()
@@ -419,6 +451,7 @@ export default function TurtleSoup({ onExit }) {
   // 路由由 RequireAuth 守着，挂载时 userId 已经就绪；积分按账号分 key 存本机。
   const [stats, setStats] = useState(() => loadStats(userId))
   const statsRef = useRef(stats)
+  const [selectedDifficulty, setSelectedDifficulty] = useState('easy')
 
   const [room, setRoom] = useState(null)
   const roomRef = useRef(null)
@@ -581,6 +614,15 @@ export default function TurtleSoup({ onExit }) {
     setGuessDraft('')
   }, [room?.roundId])
 
+  // 开局后所有端都把难度按钮切到本局档案的难度；结案后默认沿用上一局。
+  useEffect(() => {
+    if (!room?.puzzleId) return
+    const soup = TURTLE_BY_ID[room.puzzleId]
+    if (soup && Object.prototype.hasOwnProperty.call(TURTLE_DIFFICULTY, soup.difficulty)) {
+      setSelectedDifficulty(soup.difficulty)
+    }
+  }, [room?.puzzleId])
+
   const selfMeta = useMemo(() => ({
     sid: sessionId,
     pid: playerId,
@@ -640,7 +682,11 @@ export default function TurtleSoup({ onExit }) {
       startedAt: Date.now(),
       revision: current.revision,
     })
-    showToast(`Ace 开卷：${puzzle.title}`, 'good')
+    const level = TURTLE_DIFFICULTY[puzzle.difficulty]
+    showToast(
+      `Ace 开卷：${puzzle.title}${level ? `（${level.label} · 猜中 +${level.points}）` : ''}`,
+      'good',
+    )
   }, [commitRoom, playerId, sessionId, showToast])
 
   const revealRound = useCallback(() => {
@@ -776,24 +822,30 @@ export default function TurtleSoup({ onExit }) {
     const current = roomRef.current
     if (request.action === 'start') {
       if (current?.status === 'playing') return
-      startRound(request.puzzleId || pickTurtle(current?.puzzleId ?? '').id)
+      startRound(
+        request.puzzleId || pickTurtle(request.difficulty, current?.puzzleId ?? '').id,
+      )
       return
     }
     if (current?.status !== 'playing') return
     revealRound()
   }, [revealRound, startRound])
 
-  const requestAce = useCallback((action, puzzleId = '') => {
+  const requestAce = useCallback((action, puzzleId = '', difficulty = '') => {
     if (!onlineReady || !playerId) {
       showToast('频道还没连上，稍等一下', 'bad')
       return
     }
+    const chosenDifficulty = Object.prototype.hasOwnProperty.call(TURTLE_DIFFICULTY, difficulty)
+      ? difficulty
+      : selectedDifficulty
     const request = {
       id: `req-${randomToken()}`,
       sid: sessionId,
       pid: playerId,
       action: action === 'reveal' ? 'reveal' : 'start',
       puzzleId: Object.prototype.hasOwnProperty.call(TURTLE_BY_ID, puzzleId) ? puzzleId : '',
+      difficulty: action === 'reveal' ? '' : chosenDifficulty,
       at: Date.now(),
     }
     if (isHostRef.current) {
@@ -804,11 +856,24 @@ export default function TurtleSoup({ onExit }) {
       showToast('频道还没连上，稍等一下', 'bad')
       return
     }
+    const level = TURTLE_DIFFICULTY[chosenDifficulty]
     showToast(
-      request.action === 'reveal' ? '已向 Ace 投降，等揭底…' : '已请 Ace 出题…',
+      request.action === 'reveal'
+        ? '已向 Ace 投降，等揭底…'
+        : `已请 Ace 出题（${level?.label ?? '随机'}）…`,
       'info',
     )
-  }, [handleAceRequest, onlineReady, playerId, sendBroadcast, sessionId, showToast])
+  }, [handleAceRequest, onlineReady, playerId, selectedDifficulty, sendBroadcast, sessionId, showToast])
+
+  // 手动挑档案时，把难度选择同步到那张档案，避免下一局还停留在旧难度。
+  const startPicked = useCallback((puzzleId) => {
+    const soup = TURTLE_BY_ID[puzzleId]
+    if (!soup) return
+    if (Object.prototype.hasOwnProperty.call(TURTLE_DIFFICULTY, soup.difficulty)) {
+      setSelectedDifficulty(soup.difficulty)
+    }
+    requestAce('start', soup.id, soup.difficulty)
+  }, [requestAce])
 
   // 主持端开局：第一次连上时先建一个空房间；原主持端离开后由下一位接手。
   useEffect(() => {
@@ -989,11 +1054,14 @@ export default function TurtleSoup({ onExit }) {
     return () => window.clearTimeout(timer)
   }, [onlineReady, userId, playerId, sessionId, joinedAt, nickname, stats.score])
 
-  // 猜中汤底 +10。只奖励本机玩家，按 roundId 去重，刷新/重连不会重复加。
+  // 猜中汤底按本局难度加分：入门 +10 / 进阶 +20 / 烧脑 +30。
+  // 只奖励本机玩家，按 roundId 去重，刷新/重连不会重复加。
   useEffect(() => {
     if (!room || room.status !== 'ended' || !room.roundId || !playerId) return
     if (room.winnerPid && room.winnerPid === playerId) {
-      award([{ key: `${room.roundId}:win`, kind: 'wins', points: 10 }])
+      const soup = TURTLE_BY_ID[room.puzzleId]
+      const points = TURTLE_DIFFICULTY[soup?.difficulty]?.points ?? TURTLE_DIFFICULTY.easy.points
+      award([{ key: `${room.roundId}:win`, kind: 'wins', points }])
     }
   }, [room, playerId, award])
 
@@ -1074,6 +1142,9 @@ export default function TurtleSoup({ onExit }) {
 
   const puzzle = room?.puzzleId ? (TURTLE_BY_ID[room.puzzleId] ?? null) : null
   const status = room?.status ?? 'lobby'
+  const difficultyMeta = puzzle ? TURTLE_DIFFICULTY[puzzle.difficulty] : null
+  const roundPoints = difficultyMeta?.points ?? TURTLE_DIFFICULTY.easy.points
+  const selectedDifficultyMeta = TURTLE_DIFFICULTY[selectedDifficulty] ?? TURTLE_DIFFICULTY.easy
   const caseIndex = puzzle ? TURTLE_SOUPS.findIndex((soup) => soup.id === puzzle.id) + 1 : 0
   const caseNo = caseIndex > 0 ? String(caseIndex).padStart(2, '0') : '--'
   const onlineCount = onlineReady ? displayPlayers.length : 0
@@ -1107,6 +1178,9 @@ export default function TurtleSoup({ onExit }) {
       data-turtle-online={onlineReady ? 'true' : 'false'}
       data-turtle-online-count={onlineCount}
       data-turtle-round={room?.roundId ?? ''}
+      data-turtle-selected-difficulty={selectedDifficulty}
+      data-turtle-difficulty={puzzle?.difficulty ?? ''}
+      data-turtle-points={puzzle ? roundPoints : ''}
     >
       <header className="turtle-top">
         <button type="button" className="turtle-back" onClick={onExit} aria-label="返回实验室">
@@ -1141,20 +1215,22 @@ export default function TurtleSoup({ onExit }) {
           <h3 id="turtle-lobby-title">Ace 主持 · 等一份卷宗</h3>
           <p className="turtle-lobby-copy">
             {onlineReady
-              ? '任何玩家都可以请 Ace 出题。开汤后，Ace 会用「是 / 否 / 无关 / 部分」判定提问；5 秒没有回应会提示不在线，不会自己编答案。'
+              ? '任何玩家都可以请 Ace 出题。先选难度，点「请 Ace 出题」会从该难度随机抽一题；开汤后，Ace 会用「是 / 否 / 无关 / 部分」判定提问。'
               : '正在接入本场的公共频道。连上后，Ace 就会开始主持。'}
           </p>
           {canRequest && (
             <>
+              <DifficultyPicker value={selectedDifficulty} onSelect={setSelectedDifficulty} />
               <button type="button" className="turtle-primary" onClick={() => requestAce('start')} data-turtle-start>
-                请 Ace 出题
+                请 Ace 出题 · {selectedDifficultyMeta.label} +{selectedDifficultyMeta.points}
               </button>
-              <PuzzlePicker currentId={room?.puzzleId ?? ''} onPick={(id) => requestAce('start', id)} />
+              <PuzzlePicker currentId={room?.puzzleId ?? ''} onPick={startPicked} />
             </>
           )}
           <p className="turtle-lobby-note">
-            Ace 由外部常驻主持端承担，界面固定显示 Ace。任何玩家都能请 Ace 出题；
-            出题后，任何时候都能投降揭底。
+            入门 +{TURTLE_DIFFICULTY.easy.points} / 进阶 +{TURTLE_DIFFICULTY.medium.points} /
+            烧脑 +{TURTLE_DIFFICULTY.hard.points}；猜中汤底得对应分值，被 Ace 回答的提问每题 +1。
+            Ace 由外部常驻主持端承担，界面固定显示 Ace；出题后，任何时候都能投降揭底。
           </p>
         </section>
       ) : (
@@ -1162,6 +1238,8 @@ export default function TurtleSoup({ onExit }) {
           className={`turtle-case is-${puzzle.difficulty}`}
           data-turtle-case
           data-turtle-puzzle={puzzle.id}
+          data-turtle-difficulty={puzzle.difficulty}
+          data-turtle-points={roundPoints}
           aria-labelledby="turtle-case-title"
         >
           <div className="turtle-case-tab">
@@ -1172,8 +1250,12 @@ export default function TurtleSoup({ onExit }) {
             <span
               className="turtle-diff"
               style={{ '--turtle-diff': TURTLE_DIFFICULTY[puzzle.difficulty]?.color }}
+              data-turtle-case-difficulty={puzzle.difficulty}
             >
               {TURTLE_DIFFICULTY[puzzle.difficulty]?.label ?? '档案'}
+            </span>
+            <span className="turtle-diff-stake" data-turtle-case-points={roundPoints}>
+              猜中 +{roundPoints}
             </span>
             <span>{puzzle.theme}</span>
             <span>{STATUS_LABEL[status] ?? '推理中'}</span>
@@ -1400,6 +1482,9 @@ export default function TurtleSoup({ onExit }) {
           <h3 id="turtle-reveal-title" data-turtle-reveal-title>
             {room?.endReason === 'guessed' ? '有人猜中了汤底' : 'Ace 揭开了汤底'}
           </h3>
+          <p className="turtle-round-stake" data-turtle-reveal-points={roundPoints}>
+            本局 {difficultyMeta?.label ?? '档案'} · 猜中 +{roundPoints} 分
+          </p>
           {room?.endReason === 'guessed' && room?.winnerName && (
             <p className="turtle-winner">
               猜中者：<strong>{room.winnerName}</strong>
@@ -1415,6 +1500,7 @@ export default function TurtleSoup({ onExit }) {
             <p>{puzzle.solution}</p>
           </div>
           <div className="turtle-reveal-actions">
+            <DifficultyPicker value={selectedDifficulty} onSelect={setSelectedDifficulty} />
             <button
               type="button"
               className="turtle-primary"
@@ -1422,9 +1508,9 @@ export default function TurtleSoup({ onExit }) {
               disabled={!canRequest}
               data-turtle-next
             >
-              请 Ace 再出一题
+              请 Ace 再出一题 · {selectedDifficultyMeta.label} +{selectedDifficultyMeta.points}
             </button>
-            <PuzzlePicker currentId={puzzle.id} onPick={(id) => requestAce('start', id)} compact />
+            <PuzzlePicker currentId={puzzle.id} onPick={startPicked} compact />
           </div>
         </section>
       )}
@@ -1474,7 +1560,17 @@ export default function TurtleSoup({ onExit }) {
             <span><small>猜中</small><strong>{stats.wins}</strong></span>
             <span><small>提问</small><strong>{stats.questions}</strong></span>
           </div>
-          <p className="turtle-score-note">猜中汤底 +10，被 Ace 回答的提问 +1。Ace 主持，没有主持加分。</p>
+          <p
+            className="turtle-score-note"
+            data-turtle-score-note
+            data-turtle-round-difficulty={puzzle?.difficulty ?? ''}
+            data-turtle-round-points={puzzle ? roundPoints : ''}
+          >
+            {puzzle
+              ? `本局${difficultyMeta?.label ?? '档案'}，猜中 +${roundPoints}；`
+              : `难度：入门 +${TURTLE_DIFFICULTY.easy.points} / 进阶 +${TURTLE_DIFFICULTY.medium.points} / 烧脑 +${TURTLE_DIFFICULTY.hard.points}；`}
+            被 Ace 回答的提问每题 +1。Ace 主持，没有主持加分。
+          </p>
         </section>
       </div>
 
@@ -1482,6 +1578,13 @@ export default function TurtleSoup({ onExit }) {
         <summary>怎么玩 · 海龟汤规则</summary>
         <ol>
           <li>Ace 主持：任何玩家都可以请 Ace 出题，汤底不会在播放中显示。</li>
+          <li data-turtle-rules-difficulty>
+            大厅/结案后可选难度：入门 +{TURTLE_DIFFICULTY.easy.points} /
+            进阶 +{TURTLE_DIFFICULTY.medium.points} /
+            烧脑 +{TURTLE_DIFFICULTY.hard.points}；点「请 Ace 出题」按所选难度随机。
+            猜中汤底按本局难度加分，被 Ace 回答的提问每题 +1
+            {puzzle ? `（本局${difficultyMeta?.label ?? '档案'}，猜中 +${roundPoints}）` : ''}。
+          </li>
           <li>玩家只能问能用「是 / 否 / 无关 / 部分」回答的问题，Ace 在线时回答。</li>
           <li>玩家可以随时提交完整猜测，Ace 在线时判定；猜中即结案。</li>
           <li>发出后 5 秒没有判定，会提示「Ace 不在线」，页面不会自己编答案。</li>

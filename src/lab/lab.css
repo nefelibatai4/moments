@@ -2315,6 +2315,99 @@
   opacity: 0.42;
 }
 
+/* ── 难度选择 ─────────────────────────────────────────────────── */
+.turtle-difficulty {
+  margin: 15px 0 12px;
+}
+
+.turtle-difficulty-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--turtle-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+.turtle-difficulty-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.turtle-difficulty-btn {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 52px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  margin: 0;
+  padding: 8px 9px 8px 13px;
+  border: 1px solid var(--turtle-line);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--turtle-soft);
+  text-align: left;
+  transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.turtle-difficulty-btn::before {
+  content: '';
+  position: absolute;
+  top: 11px;
+  left: 6px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--turtle-diff, var(--turtle-gold));
+  box-shadow: 0 0 6px color-mix(in srgb, var(--turtle-diff, var(--turtle-gold)) 55%, transparent);
+}
+
+.turtle-difficulty-btn strong {
+  color: var(--turtle-ink);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.turtle-difficulty-btn small {
+  color: var(--turtle-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.55rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+}
+
+.turtle-difficulty-btn:hover {
+  border-color: var(--turtle-line-strong);
+  background: rgba(215, 180, 115, 0.06);
+}
+
+.turtle-difficulty-btn.is-selected {
+  border-color: color-mix(in srgb, var(--turtle-diff, var(--turtle-gold)) 62%, transparent);
+  background: color-mix(in srgb, var(--turtle-diff, var(--turtle-gold)) 13%, rgba(8, 10, 14, 0.42));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--turtle-diff, var(--turtle-gold)) 24%, transparent);
+}
+
+.turtle-difficulty-btn.is-selected strong {
+  color: var(--turtle-diff, var(--turtle-gold));
+}
+
+.turtle-difficulty-btn.is-selected::after {
+  content: '✓';
+  position: absolute;
+  top: 6px;
+  right: 7px;
+  color: var(--turtle-diff, var(--turtle-gold));
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.56rem;
+  line-height: 1;
+}
+
 /* ── 候场 / 选档案 ─────────────────────────────────────────────── */
 .turtle-lobby {
   position: relative;
@@ -2448,6 +2541,15 @@
   border-radius: 50%;
   background: var(--turtle-diff, var(--turtle-gold));
   box-shadow: 0 0 7px color-mix(in srgb, var(--turtle-diff, var(--turtle-gold)) 60%, transparent);
+}
+
+.turtle-diff-stake {
+  padding: 1px 6px;
+  border: 1px solid rgba(215, 180, 115, 0.22);
+  border-radius: 999px;
+  background: rgba(215, 180, 115, 0.07);
+  color: var(--turtle-gold);
+  font-variant-numeric: tabular-nums;
 }
 
 .turtle-case h3 {
@@ -3187,6 +3289,15 @@
   border-radius: 50%;
 }
 
+.turtle-round-stake {
+  margin: 0 0 12px;
+  color: #7b5d36;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.64rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
 .turtle-winner {
   margin: 0 0 13px;
   color: #5b4830;
@@ -3255,6 +3366,45 @@
 
 .turtle-reveal-actions .turtle-primary:hover {
   background: #51402a;
+}
+
+/* 结案卡片里的难度按钮也走浅色纸张，不把深色控件压上去。 */
+.turtle-reveal .turtle-difficulty {
+  flex: 1 1 100%;
+  margin: 0 0 2px;
+}
+
+.turtle-reveal .turtle-difficulty-label {
+  color: #7b5d36;
+}
+
+.turtle-reveal .turtle-difficulty-btn {
+  border-color: rgba(77, 60, 37, 0.2);
+  background: rgba(255, 255, 255, 0.3);
+  color: #3b2e1e;
+}
+
+.turtle-reveal .turtle-difficulty-btn strong {
+  color: #3b2e1e;
+}
+
+.turtle-reveal .turtle-difficulty-btn small {
+  color: #6d5740;
+}
+
+.turtle-reveal .turtle-difficulty-btn:hover {
+  border-color: rgba(77, 60, 37, 0.4);
+  background: rgba(255, 255, 255, 0.52);
+}
+
+.turtle-reveal .turtle-difficulty-btn.is-selected {
+  border-color: color-mix(in srgb, var(--turtle-diff, #7b5d36) 70%, rgba(77, 60, 37, 0.22));
+  background: color-mix(in srgb, var(--turtle-diff, #7b5d36) 18%, rgba(255, 255, 255, 0.42));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--turtle-diff, #7b5d36) 34%, transparent);
+}
+
+.turtle-reveal .turtle-difficulty-btn.is-selected strong {
+  color: #4b3820;
 }
 
 .turtle-reveal-wait {
@@ -3733,6 +3883,23 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .turtle-difficulty-options {
+    gap: 5px;
+  }
+
+  .turtle-difficulty-btn {
+    min-height: 50px;
+    padding: 7px 7px 7px 11px;
+  }
+
+  .turtle-difficulty-btn strong {
+    font-size: 0.74rem;
+  }
+
+  .turtle-difficulty-btn small {
+    font-size: 0.52rem;
+  }
+
   .turtle-archive-grid {
     grid-template-columns: 1fr;
   }
@@ -3819,6 +3986,7 @@
   .turtle-danger,
   .turtle-ghost,
   .turtle-verdict-btn,
+  .turtle-difficulty-btn,
   .turtle-archive-card,
   .turtle-input-row input {
     transition: none;

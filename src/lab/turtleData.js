@@ -13,9 +13,9 @@
 // 旧数据回放），线上 UI 不再调用它们。clues 里的 ask/judge 关键词只服务于
 // 这两个自检函数，不参与真 Ace 的判定。
 export const TURTLE_DIFFICULTY = {
-  easy: { id: 'easy', label: '入门', color: '#8bb89b' },
-  medium: { id: 'medium', label: '进阶', color: '#d3a95e' },
-  hard: { id: 'hard', label: '烧脑', color: '#cf7564' },
+  easy: { id: 'easy', label: '入门', color: '#8bb89b', points: 10 },
+  medium: { id: 'medium', label: '进阶', color: '#d3a95e', points: 20 },
+  hard: { id: 'hard', label: '烧脑', color: '#cf7564', points: 30 },
 }
 
 const TURTLE_CASES = [
@@ -597,9 +597,17 @@ export const TURTLE_SOUPS = TURTLE_CASES.map((soup) => ({ ...soup, bottom: soup.
 
 export const TURTLE_BY_ID = Object.fromEntries(TURTLE_SOUPS.map((soup) => [soup.id, soup]))
 
-export function pickTurtle(excludeId = '') {
-  const pool = TURTLE_SOUPS.filter((soup) => soup.id !== excludeId)
-  const list = pool.length > 0 ? pool : TURTLE_SOUPS
+// 按难度随机抽题；不传难度时仍保持旧行为（从全部档案里抽）。
+// excludeId 仍然优先避开当前题，某个难度只有一题时也不会抽空。
+export function pickTurtle(difficulty = '', excludeId = '') {
+  const level = Object.prototype.hasOwnProperty.call(TURTLE_DIFFICULTY, difficulty)
+    ? difficulty
+    : ''
+  const sameLevel = level
+    ? TURTLE_SOUPS.filter((soup) => soup.difficulty === level)
+    : TURTLE_SOUPS
+  const fresh = sameLevel.filter((soup) => soup.id !== excludeId)
+  const list = fresh.length > 0 ? fresh : sameLevel
   return list[Math.floor(Math.random() * list.length)]
 }
 
