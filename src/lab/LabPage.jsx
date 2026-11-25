@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import NavIcon from '../components/NavIcon'
 import SplashScreen from '../components/SplashScreen'
 import FishingGame from './FishingGame'
+import TurtleSoup from './TurtleSoup'
 import './lab.css'
 
 // ── 实验室入口（2026-11-19）──────────────────────────────────────────
@@ -14,6 +15,7 @@ import './lab.css'
 //   · href  → 整页跳转（现有工具靠 URL 参数触发，必须真正刷新一次）
 //   · onClick: 'splash'   → 本页直接盖一层预览，不改 URL、不消耗正式时段
 //   · onClick: 'fishing'  → 本页进入「摸鱼」小游戏（不新增路由）
+//   · onClick: 'turtle'   → 本页进入「海龟汤」多人游戏（不新增路由）
 const BASE = import.meta.env.BASE_URL
 
 const EXPERIMENTS = [
@@ -36,6 +38,14 @@ const EXPERIMENTS = [
     desc: '深海下网，拼出六级单词，把 20 种鱼收进鱼库；鱼分五档稀有度，能解锁六枚成就，在线渔友还能互相看鱼库。',
     action: '下海摸鱼',
     onClick: 'fishing',
+  },
+  {
+    id: 'turtle',
+    title: '海龟汤',
+    meta: '多人游戏',
+    desc: '十份原创悬案档案。一人主持、其他人提问：是、否、无关、部分；猜中汤底或揭底就结案，还能换题继续。',
+    action: '进审讯室',
+    onClick: 'turtle',
   },
   {
     id: 'splash',
@@ -97,12 +107,12 @@ function LabCard({ index, experiment, onSplash, onGame }) {
       </button>
     )
   }
-  if (experiment.onClick === 'fishing') {
+  if (experiment.onClick === 'fishing' || experiment.onClick === 'turtle') {
     return (
       <button
         type="button"
         className="lab-card no-opacity-hover"
-        onClick={onGame}
+        onClick={() => onGame(experiment.onClick)}
         data-lab-card={experiment.id}
       >
         {content}
@@ -114,10 +124,14 @@ function LabCard({ index, experiment, onSplash, onGame }) {
 
 export default function LabPage() {
   const [splashPreview, setSplashPreview] = useState(false)
-  const [gameOpen, setGameOpen] = useState(false)
+  const [activeGame, setActiveGame] = useState(null)
 
-  if (gameOpen) {
-    return <FishingGame onExit={() => setGameOpen(false)} />
+  if (activeGame === 'fishing') {
+    return <FishingGame onExit={() => setActiveGame(null)} />
+  }
+
+  if (activeGame === 'turtle') {
+    return <TurtleSoup onExit={() => setActiveGame(null)} />
   }
 
   return (
@@ -146,7 +160,7 @@ export default function LabPage() {
               index={index}
               experiment={experiment}
               onSplash={() => setSplashPreview(true)}
-              onGame={() => setGameOpen(true)}
+              onGame={setActiveGame}
             />
           ))}
         </div>

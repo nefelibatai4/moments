@@ -2025,3 +2025,1685 @@
     transform: none;
   }
 }
+
+
+/* ────────────────────────────────────────────────────────────────
+   海龟汤（/lab → 海龟汤）
+   深色侦探档案室：墨蓝底、旧金线、红章。角色由 presence 决定，
+   样式全部收在 .turtle-page 下面，不污染其它实验室页面。
+   ──────────────────────────────────────────────────────────────── */
+
+.turtle-page {
+  --turtle-bg: #0b0d12;
+  --turtle-panel: #12151c;
+  --turtle-panel-2: #171b24;
+  --turtle-paper: #e8dcc0;
+  --turtle-paper-ink: #2b2419;
+  --turtle-ink: #ece4d4;
+  --turtle-soft: #c4b9a5;
+  --turtle-muted: #948b7d;
+  --turtle-gold: #d7b473;
+  --turtle-gold-soft: rgba(215, 180, 115, 0.12);
+  --turtle-red: #c85a4a;
+  --turtle-red-soft: rgba(200, 90, 74, 0.12);
+  --turtle-green: #8bb89b;
+  --turtle-line: rgba(215, 180, 115, 0.16);
+  --turtle-line-strong: rgba(215, 180, 115, 0.32);
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  max-width: 660px;
+  padding: 2px 0 56px;
+  color: var(--turtle-ink);
+}
+
+.turtle-page::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 26px;
+  background:
+    radial-gradient(120% 70% at 8% 0%, rgba(73, 92, 123, 0.18), transparent 58%),
+    radial-gradient(90% 60% at 100% 10%, rgba(215, 180, 115, 0.07), transparent 60%),
+    repeating-linear-gradient(0deg, transparent 0 31px, rgba(215, 180, 115, 0.018) 31px 32px);
+  pointer-events: none;
+}
+
+.turtle-page h2,
+.turtle-page h3 {
+  letter-spacing: 0;
+}
+
+.turtle-page button,
+.turtle-page input {
+  font-family: inherit;
+}
+
+.turtle-page button {
+  cursor: pointer;
+}
+
+.turtle-page button:disabled {
+  cursor: default;
+}
+
+.turtle-page :focus-visible {
+  outline: 2px solid var(--turtle-gold);
+  outline-offset: 2px;
+}
+
+.turtle-page code {
+  padding: 1px 5px;
+  border: 1px solid var(--turtle-line);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--turtle-soft);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.88em;
+}
+
+/* ── 页头 ─────────────────────────────────────────────────────── */
+.turtle-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0 15px;
+  border-bottom: 1px solid var(--turtle-line);
+}
+
+.turtle-back {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  margin: 0;
+  padding: 7px 11px;
+  border: 1px solid var(--turtle-line);
+  border-radius: 999px;
+  background: rgba(18, 21, 28, 0.82);
+  color: var(--turtle-soft);
+  font-size: 0.72rem;
+  font-weight: 500;
+  transition: border-color 0.18s ease, color 0.18s ease, background-color 0.18s ease;
+}
+
+.turtle-back:hover {
+  border-color: var(--turtle-line-strong);
+  background: var(--turtle-panel-2);
+  color: var(--turtle-ink);
+}
+
+.turtle-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.turtle-eyebrow {
+  margin: 0 0 3px;
+  color: var(--turtle-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  line-height: 1.3;
+}
+
+.turtle-title h2 {
+  margin: 0;
+  color: var(--turtle-ink);
+  font-family: "Songti SC", "Noto Serif SC", STSong, serif;
+  font-size: 1.95rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.04em;
+}
+
+.turtle-score {
+  flex: 0 0 auto;
+  min-width: 84px;
+  padding: 7px 11px;
+  border: 1px solid var(--turtle-line-strong);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(215, 180, 115, 0.12), transparent 68%),
+    rgba(15, 18, 24, 0.9);
+  text-align: right;
+}
+
+.turtle-score span {
+  display: block;
+  color: var(--turtle-muted);
+  font-size: 0.56rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.turtle-score strong {
+  display: block;
+  color: var(--turtle-gold);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.4rem;
+  font-weight: 600;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 频道状态 ─────────────────────────────────────────────────── */
+.turtle-signal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-top: 11px;
+  padding: 8px 10px;
+  border: 1px solid var(--turtle-line);
+  border-radius: 7px;
+  background: rgba(18, 21, 28, 0.66);
+  color: var(--turtle-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.62rem;
+  line-height: 1.4;
+}
+
+.turtle-signal-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #6d6559;
+}
+
+.turtle-signal.is-online .turtle-signal-dot {
+  background: var(--turtle-green);
+  box-shadow: 0 0 8px rgba(139, 184, 155, 0.7);
+  animation: turtle-signal-pulse 2.4s ease-in-out infinite;
+}
+
+.turtle-signal.is-offline .turtle-signal-dot {
+  background: var(--turtle-red);
+}
+
+.turtle-signal-copy {
+  color: var(--turtle-soft);
+}
+
+.turtle-signal-host {
+  margin-left: auto;
+  color: var(--turtle-muted);
+}
+
+.turtle-signal-host i {
+  margin: 0 5px;
+  color: var(--turtle-line-strong);
+  font-style: normal;
+}
+
+/* ── 通用按钮 ─────────────────────────────────────────────────── */
+.turtle-primary,
+.turtle-danger,
+.turtle-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  margin: 0;
+  padding: 0 14px;
+  border-radius: 7px;
+  font-size: 0.79rem;
+  font-weight: 600;
+  line-height: 1.2;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, opacity 0.18s ease;
+}
+
+.turtle-primary {
+  border: 1px solid rgba(215, 180, 115, 0.62);
+  background: linear-gradient(180deg, #e2c68d, #c9a45e);
+  color: #241d13;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.turtle-primary:hover {
+  background: linear-gradient(180deg, #ecd39d, #d5b16c);
+}
+
+.turtle-danger {
+  border: 1px solid rgba(200, 90, 74, 0.55);
+  background: var(--turtle-red-soft);
+  color: #efb3a9;
+}
+
+.turtle-danger:hover {
+  border-color: rgba(200, 90, 74, 0.85);
+  background: rgba(200, 90, 74, 0.2);
+}
+
+.turtle-ghost {
+  border: 1px solid var(--turtle-line);
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--turtle-soft);
+}
+
+.turtle-ghost:hover {
+  border-color: var(--turtle-line-strong);
+  background: rgba(215, 180, 115, 0.07);
+  color: var(--turtle-ink);
+}
+
+.turtle-primary:disabled,
+.turtle-danger:disabled,
+.turtle-ghost:disabled {
+  opacity: 0.42;
+}
+
+/* ── 候场 / 选档案 ─────────────────────────────────────────────── */
+.turtle-lobby {
+  position: relative;
+  margin-top: 16px;
+  overflow: hidden;
+  padding: 26px 22px 20px;
+  border: 1px dashed var(--turtle-line-strong);
+  border-radius: 9px;
+  background:
+    linear-gradient(135deg, rgba(215, 180, 115, 0.06), transparent 46%),
+    repeating-linear-gradient(0deg, transparent 0 30px, rgba(215, 180, 115, 0.02) 30px 31px),
+    rgba(18, 21, 28, 0.78);
+}
+
+.turtle-lobby-mark {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  color: rgba(215, 180, 115, 0.13);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 2.6rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.turtle-lobby h3 {
+  position: relative;
+  margin: 0 0 8px;
+  color: var(--turtle-ink);
+  font-family: "Songti SC", "Noto Serif SC", STSong, serif;
+  font-size: 1.55rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.turtle-lobby-copy {
+  position: relative;
+  max-width: 34em;
+  margin: 0 0 16px;
+  color: var(--turtle-soft);
+  font-size: 0.84rem;
+  line-height: 1.75;
+}
+
+.turtle-lobby-note {
+  margin: 15px 0 0;
+  color: var(--turtle-muted);
+  font-size: 0.68rem;
+  line-height: 1.65;
+}
+
+/* ── 汤面档案 ─────────────────────────────────────────────────── */
+.turtle-case {
+  position: relative;
+  margin-top: 24px;
+  padding: 24px 22px 20px;
+  border: 1px solid var(--turtle-line);
+  border-radius: 8px;
+  background:
+    radial-gradient(130% 90% at 100% 0%, rgba(215, 180, 115, 0.08), transparent 55%),
+    repeating-linear-gradient(0deg, transparent 0 29px, rgba(215, 180, 115, 0.025) 29px 30px),
+    linear-gradient(180deg, #151922 0%, #10131a 100%);
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.turtle-case::after {
+  content: '';
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 22px;
+  height: 22px;
+  border-top: 1px solid var(--turtle-line-strong);
+  border-right: 1px solid var(--turtle-line-strong);
+  pointer-events: none;
+}
+
+.turtle-case-tab {
+  position: absolute;
+  top: 0;
+  left: 18px;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 10px;
+  border-right: 1px solid var(--turtle-line);
+  border-bottom: 1px solid var(--turtle-line);
+  border-left: 1px solid var(--turtle-line);
+  border-radius: 0 0 5px 5px;
+  background: #0d0f15;
+  color: var(--turtle-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.56rem;
+  letter-spacing: 0.12em;
+}
+
+.turtle-case-tab strong {
+  color: var(--turtle-gold);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.turtle-case-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-bottom: 8px;
+  color: var(--turtle-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.04em;
+}
+
+.turtle-diff {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--turtle-diff, var(--turtle-gold));
+}
+
+.turtle-diff::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--turtle-diff, var(--turtle-gold));
+  box-shadow: 0 0 7px color-mix(in srgb, var(--turtle-diff, var(--turtle-gold)) 60%, transparent);
+}
+
+.turtle-case h3 {
+  margin: 0 0 14px;
+  padding-right: 20px;
+  color: var(--turtle-ink);
+  font-family: "Songti SC", "Noto Serif SC", STSong, serif;
+  font-size: 1.65rem;
+  font-weight: 600;
+  line-height: 1.32;
+}
+
+.turtle-surface {
+  position: relative;
+  padding: 14px 15px 14px 17px;
+  border-left: 2px solid var(--turtle-gold);
+  border-radius: 0 6px 6px 0;
+  background: linear-gradient(90deg, var(--turtle-gold-soft), rgba(215, 180, 115, 0.02));
+}
+
+.turtle-surface-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--turtle-gold);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+}
+
+.turtle-surface p {
+  margin: 0;
+  color: var(--turtle-ink);
+  font-family: "Songti SC", "Noto Serif SC", STSong, serif;
+  font-size: 0.98rem;
+  line-height: 1.9;
+}
+
+.turtle-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 13px;
+}
+
+.turtle-tags span {
+  color: var(--turtle-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.03em;
+}
+
+/* ── 主持人机密汤底 ───────────────────────────────────────────── */
+.turtle-classified {
+  margin-top: 13px;
+}
+
+.turtle-truth-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 42px;
+  margin: 0;
+  padding: 9px 13px;
+  border: 1px solid rgba(200, 90, 74, 0.34);
+  border-radius: 7px;
+  background:
+    repeating-linear-gradient(135deg, rgba(200, 90, 74, 0.055) 0 8px, transparent 8px 16px),
+    rgba(29, 18, 19, 0.52);
+  color: #e6b5aa;
+  font-size: 0.76rem;
+  font-weight: 600;
+  text-align: left;
+}
+
+.turtle-truth-toggle small {
+  color: var(--turtle-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.58rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+}
+
+.turtle-truth-toggle:hover,
+.turtle-truth-toggle.is-open {
+  border-color: rgba(200, 90, 74, 0.62);
+  background:
+    repeating-linear-gradient(135deg, rgba(200, 90, 74, 0.08) 0 8px, transparent 8px 16px),
+    rgba(38, 22, 23, 0.78);
+}
+
+.turtle-truth {
+  margin-top: 8px;
+  padding: 16px;
+  border: 1px solid rgba(200, 90, 74, 0.4);
+  border-radius: 7px;
+  background:
+    repeating-linear-gradient(135deg, rgba(200, 90, 74, 0.045) 0 10px, transparent 10px 20px),
+    rgba(25, 16, 18, 0.88);
+  animation: turtle-unfold 0.2s ease both;
+}
+
+.turtle-truth-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 9px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(200, 90, 74, 0.22);
+}
+
+.turtle-truth-head span {
+  color: rgba(226, 168, 156, 0.75);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.56rem;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+}
+
+.turtle-truth-head strong {
+  color: #f0c4b8;
+  font-family: "Songti SC", "Noto Serif SC", STSong, serif;
+  font-size: 0.96rem;
+  font-weight: 600;
+}
+
+.turtle-truth p {
+  margin: 0;
+  color: #e5d3ca;
+  font-size: 0.86rem;
+  line-height: 1.85;
+  overflow-wrap: anywhere;
+}
+
+/* ── 主持人桌面 / 猜测判定 ─────────────────────────────────────── */
+.turtle-host-desk,
+.turtle-player-desk,
+.turtle-ledger,
+.turtle-players,
+.turtle-score-card {
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid var(--turtle-line);
+  border-radius: 8px;
+  background: rgba(18, 21, 28, 0.78);
+}
+
+.turtle-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 11px;
+}
+
+.turtle-section-head h3 {
+  margin: 0;
+  color: var(--turtle-ink);
+  font-size: 0.94rem;
+  font-weight: 600;
+}
+
+.turtle-section-head > span {
+  color: var(--turtle-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.6rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  text-align: right;
+}
+
+.turtle-host-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.turtle-confirm {
+  margin-top: 10px;
+  padding: 11px 12px;
+  border: 1px solid rgba(200, 90, 74, 0.36);
+  border-radius: 7px;
+  background: rgba(200, 90, 74, 0.07);
+  animation: turtle-unfold 0.18s ease both;
+}
+
+.turtle-confirm p {
+  margin: 0 0 9px;
+  color: #e4b8ae;
+  font-size: 0.74rem;
+  line-height: 1.65;
+}
+
+.turtle-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.turtle-guess-desk {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--turtle-line);
+}
+
+.turtle-guess-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.turtle-guess {
+  padding: 11px 12px;
+  border: 1px solid var(--turtle-line);
+  border-radius: 7px;
+  background: rgba(8, 10, 14, 0.5);
+}
+
+.turtle-guess.is-correct {
+  border-color: rgba(139, 184, 155, 0.4);
+  background: rgba(139, 184, 155, 0.06);
+}
+
+.turtle-guess.is-wrong {
+  opacity: 0.72;
+}
+
+.turtle-guess-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 5px;
+}
+
+.turtle-guess-meta strong {
+  color: var(--turtle-gold);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.turtle-guess-meta span {
+  color: var(--turtle-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.58rem;
+}
+
+.turtle-guess-text {
+  margin: 0 0 8px;
+  color: var(--turtle-soft);
+  font-size: 0.8rem;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.turtle-guess.is-wrong .turtle-guess-text {
+  text-decoration: line-through;
+  text-decoration-color: rgba(200, 90, 74, 0.45);
+}
+
+.turtle-judge-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.turtle-judge-actions button {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 0.7rem;
+}
+
+.turtle-guess-state {
+  color: var(--turtle-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.03em;
+}
+
+.turtle-guess-state.is-correct {
+  color: var(--turtle-green);
+}
+
+.turtle-guess-state.is-wrong {
+  color: #d68b7e;
+}
+
+/* ── 玩家提问 / 猜底 ──────────────────────────────────────────── */
+.turtle-player-desk {
+  background:
+    linear-gradient(160deg, rgba(215, 180, 115, 0.045), transparent 45%),
+    rgba(18, 21, 28, 0.8);
+}
+
+.turtle-form + .turtle-form {
+  margin-top: 15px;
+  padding-top: 14px;
+  border-top: 1px solid var(--turtle-line);
+}
+
+.turtle-form label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px 10px;
+  margin-bottom: 7px;
+  cursor: text;
+}
+
+.turtle-form-label {
+  color: var(--turtle-ink);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.turtle-form label small {
+  color: var(--turtle-muted);
+  font-size: 0.62rem;
+  line-height: 1.5;
+}
+
+.turtle-input-row {
+  display: flex;
+  align-items: stretch;
+  gap: 7px;
+}
+
+.turtle-input-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 42px;
+  margin: 0;
+  padding: 8px 11px;
+  border: 1px solid var(--turtle-line);
+  border-radius: 7px;
+  background: #0a0c10;
+  color: var(--turtle-ink);
+  font-size: 0.84rem;
+  outline: none;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.turtle-input-row input::placeholder {
+  color: #6f685d;
+}
+
+.turtle-input-row input:focus {
+  border-color: var(--turtle-line-strong);
+  box-shadow: 0 0 0 3px rgba(215, 180, 115, 0.09);
+}
+
+.turtle-input-row input:disabled {
+  opacity: 0.5;
+}
+
+.turtle-input-row button {
+  flex: 0 0 auto;
+  min-height: 42px;
+  padding: 0 13px;
+}
+
+.turtle-own-guesses {
+  margin-top: 13px;
+  padding-top: 11px;
+  border-top: 1px dashed var(--turtle-line);
+}
+
+.turtle-own-guesses-title {
+  margin: 0 0 6px;
+  color: var(--turtle-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.turtle-own-guess {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+  padding: 5px 0;
+  color: var(--turtle-soft);
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+
+.turtle-own-guess span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.turtle-own-guess strong {
+  flex: 0 0 auto;
+  color: var(--turtle-gold);
+  font-size: 0.63rem;
+  font-weight: 600;
+}
+
+.turtle-own-guess[data-turtle-own-guess="wrong"] strong {
+  color: #d68b7e;
+}
+
+.turtle-own-guess[data-turtle-own-guess="correct"] strong {
+  color: var(--turtle-green);
+}
+
+.turtle-offline-note {
+  margin: 10px 0 0;
+  color: var(--turtle-muted);
+  font-size: 0.66rem;
+  line-height: 1.55;
+}
+
+/* ── 问答记录 ─────────────────────────────────────────────────── */
+.turtle-question-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.turtle-question {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 9px;
+  padding: 12px 0;
+  border-top: 1px solid var(--turtle-line);
+}
+
+.turtle-question:first-child {
+  padding-top: 3px;
+  border-top: 0;
+}
+
+.turtle-question-no {
+  padding-top: 1px;
+  color: rgba(215, 180, 115, 0.55);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.turtle-question-body {
+  min-width: 0;
+}
+
+.turtle-question-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.turtle-question-meta strong {
+  color: var(--turtle-gold);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.turtle-question-meta span {
+  color: var(--turtle-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.56rem;
+}
+
+.turtle-question-text {
+  margin: 0 0 7px;
+  color: var(--turtle-soft);
+  font-size: 0.82rem;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.turtle-verdict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.turtle-verdict-btn {
+  min-width: 41px;
+  min-height: 29px;
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid var(--turtle-line);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--turtle-muted);
+  font-size: 0.66rem;
+  font-weight: 600;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.turtle-verdict-btn:hover {
+  color: var(--turtle-ink);
+  border-color: var(--turtle-line-strong);
+}
+
+.turtle-verdict-btn.is-yes:hover,
+.turtle-verdict-btn.is-yes.is-active {
+  border-color: rgba(139, 184, 155, 0.55);
+  background: rgba(139, 184, 155, 0.14);
+  color: #b9dcc3;
+}
+
+.turtle-verdict-btn.is-no:hover,
+.turtle-verdict-btn.is-no.is-active {
+  border-color: rgba(200, 90, 74, 0.55);
+  background: rgba(200, 90, 74, 0.14);
+  color: #efb3a9;
+}
+
+.turtle-verdict-btn.is-irrelevant:hover,
+.turtle-verdict-btn.is-irrelevant.is-active {
+  border-color: rgba(148, 139, 125, 0.5);
+  background: rgba(148, 139, 125, 0.12);
+  color: var(--turtle-soft);
+}
+
+.turtle-verdict-btn.is-partial:hover,
+.turtle-verdict-btn.is-partial.is-active {
+  border-color: rgba(211, 169, 94, 0.55);
+  background: rgba(211, 169, 94, 0.14);
+  color: #e3c489;
+}
+
+.turtle-verdict {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--turtle-line);
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.turtle-verdict.is-yes {
+  border-color: rgba(139, 184, 155, 0.42);
+  background: rgba(139, 184, 155, 0.1);
+  color: #b9dcc3;
+}
+
+.turtle-verdict.is-no {
+  border-color: rgba(200, 90, 74, 0.42);
+  background: rgba(200, 90, 74, 0.1);
+  color: #efb3a9;
+}
+
+.turtle-verdict.is-irrelevant {
+  color: var(--turtle-muted);
+}
+
+.turtle-verdict.is-partial {
+  border-color: rgba(211, 169, 94, 0.42);
+  background: rgba(211, 169, 94, 0.1);
+  color: #e3c489;
+}
+
+.turtle-verdict-wait {
+  color: var(--turtle-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.58rem;
+  letter-spacing: 0.05em;
+}
+
+.turtle-empty {
+  margin: 4px 0;
+  color: var(--turtle-muted);
+  font-size: 0.76rem;
+  line-height: 1.7;
+}
+
+/* ── 结案：翻到汤底 ───────────────────────────────────────────── */
+.turtle-reveal {
+  position: relative;
+  margin-top: 16px;
+  padding: 26px 22px 22px;
+  border: 1px solid #b9a071;
+  border-radius: 8px;
+  background:
+    radial-gradient(120% 100% at 100% 0%, rgba(255, 255, 255, 0.38), transparent 55%),
+    repeating-linear-gradient(0deg, transparent 0 27px, rgba(77, 60, 37, 0.045) 27px 28px),
+    linear-gradient(180deg, #ede2c8 0%, #e2d3b2 100%);
+  color: var(--turtle-paper-ink);
+  box-shadow:
+    0 22px 48px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  animation: turtle-unfold 0.28s ease both;
+}
+
+.turtle-reveal::after {
+  content: '';
+  position: absolute;
+  inset: 5px;
+  border: 1px solid rgba(77, 60, 37, 0.16);
+  border-radius: 5px;
+  pointer-events: none;
+}
+
+.turtle-reveal .turtle-eyebrow {
+  color: #8b6b42;
+}
+
+.turtle-reveal h3 {
+  margin: 0 0 9px;
+  padding-right: 74px;
+  color: var(--turtle-paper-ink);
+  font-family: "Songti SC", "Noto Serif SC", STSong, serif;
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.turtle-stamp {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 1;
+  display: grid;
+  width: 55px;
+  height: 55px;
+  place-items: center;
+  border: 2px solid rgba(154, 61, 46, 0.66);
+  border-radius: 50%;
+  color: rgba(154, 61, 46, 0.78);
+  font-family: "Songti SC", "Noto Serif SC", STSong, serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.1;
+  text-align: center;
+  transform: rotate(-11deg);
+}
+
+.turtle-stamp::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border: 1px solid rgba(154, 61, 46, 0.38);
+  border-radius: 50%;
+}
+
+.turtle-winner {
+  margin: 0 0 13px;
+  color: #5b4830;
+  font-size: 0.8rem;
+  line-height: 1.65;
+}
+
+.turtle-winner strong {
+  color: #7b3327;
+  font-weight: 700;
+}
+
+.turtle-winner span {
+  display: block;
+  margin-top: 4px;
+  color: #6d5740;
+  font-family: "Songti SC", "Noto Serif SC", STSong, serif;
+  font-size: 0.86rem;
+  font-style: normal;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.turtle-reveal .turtle-truth.is-public {
+  position: relative;
+  z-index: 1;
+  margin-top: 11px;
+  padding: 15px;
+  border: 1px solid rgba(77, 60, 37, 0.26);
+  background: rgba(255, 252, 244, 0.42);
+}
+
+.turtle-reveal .turtle-truth-head {
+  border-bottom-color: rgba(77, 60, 37, 0.2);
+}
+
+.turtle-reveal .turtle-truth-head span {
+  color: #8b6b42;
+}
+
+.turtle-reveal .turtle-truth-head strong {
+  color: #3b2e1e;
+}
+
+.turtle-reveal .turtle-truth p {
+  color: #3b2e1e;
+  font-family: "Songti SC", "Noto Serif SC", STSong, serif;
+  font-size: 0.92rem;
+  line-height: 1.95;
+}
+
+.turtle-reveal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 15px;
+}
+
+.turtle-reveal-actions .turtle-primary {
+  border-color: rgba(77, 60, 37, 0.4);
+  background: #3d2f1e;
+  color: #f3e6cc;
+  box-shadow: none;
+}
+
+.turtle-reveal-actions .turtle-primary:hover {
+  background: #51402a;
+}
+
+.turtle-reveal-wait {
+  margin: 13px 0 0;
+  color: #786348;
+  font-size: 0.72rem;
+  line-height: 1.6;
+}
+
+/* 结案卡片里的档案选择是浅色的，避免深色控件落在纸上。 */
+.turtle-reveal .turtle-archive {
+  flex: 1 1 100%;
+  margin-top: 2px;
+}
+
+.turtle-reveal .turtle-archive summary {
+  border-color: rgba(77, 60, 37, 0.25);
+  background: rgba(255, 255, 255, 0.28);
+  color: #5b4830;
+}
+
+.turtle-reveal .turtle-archive summary::before {
+  color: #8b6b42;
+}
+
+.turtle-reveal .turtle-archive-card {
+  border-color: rgba(77, 60, 37, 0.18);
+  background: rgba(255, 255, 255, 0.3);
+  color: #3b2e1e;
+}
+
+.turtle-reveal .turtle-archive-card:hover {
+  border-color: rgba(77, 60, 37, 0.38);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.turtle-reveal .turtle-archive-no {
+  color: #8b6b42;
+}
+
+.turtle-reveal .turtle-archive-diff {
+  color: #6d5740;
+}
+
+/* ── 在线侦探 / 本机档案 ──────────────────────────────────────── */
+.turtle-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.turtle-player-list {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.turtle-player {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.turtle-player.is-self {
+  border-color: rgba(215, 180, 115, 0.16);
+  background: rgba(215, 180, 115, 0.05);
+}
+
+.turtle-avatar {
+  display: grid;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid rgba(215, 180, 115, 0.28);
+  border-radius: 50%;
+  background: rgba(215, 180, 115, 0.1);
+  color: var(--turtle-gold);
+  font-family: "Songti SC", "Noto Serif SC", STSong, serif;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.turtle-player-copy {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.turtle-player-copy strong {
+  overflow: hidden;
+  color: var(--turtle-ink);
+  font-size: 0.73rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turtle-player-copy small {
+  color: var(--turtle-muted);
+  font-size: 0.59rem;
+  line-height: 1.4;
+}
+
+.turtle-player-copy small i {
+  margin: 0 4px;
+  color: var(--turtle-line-strong);
+  font-style: normal;
+}
+
+.turtle-crown {
+  flex: 0 0 auto;
+  color: var(--turtle-gold);
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.turtle-score-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.turtle-score-grid > span {
+  display: block;
+  min-width: 0;
+  padding: 7px 3px;
+  border: 1px solid var(--turtle-line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.025);
+  text-align: center;
+}
+
+.turtle-score-grid small {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--turtle-muted);
+  font-size: 0.55rem;
+}
+
+.turtle-score-grid strong {
+  display: block;
+  overflow: hidden;
+  color: var(--turtle-gold);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+}
+
+.turtle-score-note {
+  margin: 10px 0 0;
+  color: var(--turtle-muted);
+  font-size: 0.62rem;
+  line-height: 1.6;
+}
+
+/* ── 档案选择 ─────────────────────────────────────────────────── */
+.turtle-archive {
+  margin-top: 14px;
+}
+
+.turtle-archive summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 11px;
+  border: 1px solid var(--turtle-line);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--turtle-soft);
+  font-size: 0.74rem;
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+}
+
+.turtle-archive summary::-webkit-details-marker {
+  display: none;
+}
+
+.turtle-archive summary::before {
+  content: '+';
+  color: var(--turtle-gold);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+}
+
+.turtle-archive[open] summary::before {
+  content: '−';
+}
+
+.turtle-archive summary:hover {
+  border-color: var(--turtle-line-strong);
+  color: var(--turtle-ink);
+}
+
+.turtle-archive-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.turtle-archive-card {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 2px 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 8px 9px;
+  border: 1px solid var(--turtle-line);
+  border-radius: 6px;
+  background: rgba(8, 10, 14, 0.42);
+  color: var(--turtle-soft);
+  text-align: left;
+  transition: border-color 0.16s ease, background-color 0.16s ease;
+}
+
+.turtle-archive-card:hover {
+  border-color: var(--turtle-line-strong);
+  background: rgba(215, 180, 115, 0.06);
+}
+
+.turtle-archive-card.is-current {
+  border-color: rgba(215, 180, 115, 0.4);
+  background: rgba(215, 180, 115, 0.08);
+}
+
+.turtle-archive-no {
+  color: var(--turtle-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.58rem;
+}
+
+.turtle-archive-title {
+  overflow: hidden;
+  color: inherit;
+  font-size: 0.71rem;
+  font-weight: 500;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turtle-archive-diff {
+  grid-column: 2;
+  color: var(--turtle-diff, var(--turtle-muted));
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.54rem;
+  letter-spacing: 0.03em;
+}
+
+.turtle-archive.is-compact .turtle-archive-grid {
+  grid-template-columns: 1fr;
+}
+
+/* ── 规则 / 页脚 / toast ──────────────────────────────────────── */
+.turtle-howto {
+  margin-top: 14px;
+  padding: 0 15px;
+  border: 1px dashed var(--turtle-line);
+  border-radius: 8px;
+  background: rgba(18, 21, 28, 0.48);
+}
+
+.turtle-howto summary {
+  padding: 12px 0;
+  color: var(--turtle-soft);
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.turtle-howto summary::-webkit-details-marker {
+  display: none;
+}
+
+.turtle-howto summary::before {
+  content: '§ ';
+  color: var(--turtle-gold);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.turtle-howto ol {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0 0 13px 17px;
+  color: var(--turtle-muted);
+  font-size: 0.7rem;
+  line-height: 1.65;
+}
+
+.turtle-howto li::marker {
+  color: var(--turtle-gold);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.62rem;
+}
+
+.turtle-foot {
+  margin: 16px 2px 0;
+  color: var(--turtle-muted);
+  font-size: 0.68rem;
+  line-height: 1.7;
+}
+
+.turtle-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(86px + env(safe-area-inset-bottom, 0px));
+  z-index: var(--z-toast, 90);
+  max-width: min(86vw, 420px);
+  padding: 8px 14px;
+  border: 1px solid var(--turtle-line-strong);
+  border-radius: 999px;
+  background: rgba(12, 14, 19, 0.94);
+  color: var(--turtle-ink);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  text-align: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  transform: translateX(-50%);
+  backdrop-filter: blur(8px);
+  animation: turtle-toast-in 0.2s ease both;
+}
+
+.turtle-toast.is-good {
+  border-color: rgba(139, 184, 155, 0.5);
+  color: #c9e5d2;
+}
+
+.turtle-toast.is-bad {
+  border-color: rgba(200, 90, 74, 0.55);
+  color: #f0c0b7;
+}
+
+/* ── 动画 ─────────────────────────────────────────────────────── */
+@keyframes turtle-signal-pulse {
+  0%, 100% { opacity: 0.65; }
+  50% { opacity: 1; }
+}
+
+@keyframes turtle-unfold {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes turtle-toast-in {
+  from { opacity: 0; transform: translate(-50%, 5px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ── 窄屏 ─────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .turtle-page {
+    padding-bottom: 44px;
+  }
+
+  .turtle-top {
+    gap: 8px;
+  }
+
+  .turtle-title h2 {
+    font-size: 1.68rem;
+  }
+
+  .turtle-score {
+    min-width: 72px;
+    padding: 6px 9px;
+  }
+
+  .turtle-score strong {
+    font-size: 1.22rem;
+  }
+
+  .turtle-back {
+    padding: 7px 9px;
+    font-size: 0.68rem;
+  }
+
+  .turtle-signal {
+    font-size: 0.58rem;
+  }
+
+  .turtle-signal-host {
+    width: 100%;
+    margin-left: 14px;
+  }
+
+  .turtle-lobby {
+    padding: 22px 16px 17px;
+  }
+
+  .turtle-lobby-mark {
+    font-size: 2rem;
+  }
+
+  .turtle-lobby h3 {
+    font-size: 1.32rem;
+  }
+
+  .turtle-case {
+    margin-top: 22px;
+    padding: 22px 16px 17px;
+  }
+
+  .turtle-case h3 {
+    font-size: 1.38rem;
+  }
+
+  .turtle-surface {
+    padding: 12px 12px 12px 14px;
+  }
+
+  .turtle-surface p {
+    font-size: 0.92rem;
+    line-height: 1.85;
+  }
+
+  .turtle-host-desk,
+  .turtle-player-desk,
+  .turtle-ledger,
+  .turtle-players,
+  .turtle-score-card {
+    padding: 13px;
+  }
+
+  .turtle-input-row input {
+    font-size: 16px;
+  }
+
+  .turtle-input-row button {
+    padding: 0 11px;
+    font-size: 0.74rem;
+  }
+
+  .turtle-question {
+    grid-template-columns: 23px minmax(0, 1fr);
+    gap: 7px;
+  }
+
+  .turtle-meta-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .turtle-score-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .turtle-archive-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .turtle-archive.is-compact .turtle-archive-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .turtle-reveal {
+    padding: 23px 16px 18px;
+  }
+
+  .turtle-reveal h3 {
+    padding-right: 60px;
+    font-size: 1.3rem;
+  }
+
+  .turtle-stamp {
+    top: 15px;
+    right: 14px;
+    width: 46px;
+    height: 46px;
+    font-size: 0.68rem;
+  }
+
+  .turtle-reveal .turtle-truth.is-public {
+    padding: 12px;
+  }
+
+  .turtle-reveal .turtle-truth p {
+    font-size: 0.86rem;
+    line-height: 1.88;
+  }
+
+  .turtle-toast {
+    bottom: calc(78px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (max-width: 370px) {
+  .turtle-title h2 {
+    font-size: 1.48rem;
+  }
+
+  .turtle-score {
+    min-width: 64px;
+    padding: 5px 7px;
+  }
+
+  .turtle-score span {
+    font-size: 0.5rem;
+  }
+
+  .turtle-score strong {
+    font-size: 1.08rem;
+  }
+
+  .turtle-case h3 {
+    font-size: 1.25rem;
+  }
+
+  .turtle-verdict-btn {
+    min-width: 37px;
+    padding: 0 6px;
+  }
+
+  .turtle-score-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turtle-signal.is-online .turtle-signal-dot,
+  .turtle-truth,
+  .turtle-confirm,
+  .turtle-reveal,
+  .turtle-toast {
+    animation: none !important;
+  }
+
+  .turtle-back,
+  .turtle-primary,
+  .turtle-danger,
+  .turtle-ghost,
+  .turtle-verdict-btn,
+  .turtle-archive-card,
+  .turtle-input-row input {
+    transition: none;
+  }
+}
