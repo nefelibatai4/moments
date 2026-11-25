@@ -34,23 +34,29 @@
 - 需要展示真实数据的新实验，先说明用途和读取范围，再动。
 - App 路由、导航、共享样式在实验室外；入口调整需要 i4 确认。
 
-## 「海龟汤」（2026-11-21 起 Ace 主持）
+## 「海龟汤」（2026-11-25 起接真 Ace）
 
-- 文件：`TurtleSoup.jsx`（多人房间/提问/自动判定/记分）、`turtleData.js`（10 个原创汤面 + clues + solution +
-  `aceAnswer` / `aceJudge` 纯函数）、`lab.css` 末尾的 `.turtle-*` 样式。入口是 `LabPage.jsx` 里的 `turtle` 卡片，不新增路由。
+- 文件：`TurtleSoup.jsx`（多人房间/排队等待判定/记分）、`turtleData.js`（10 个原创汤面 + clues + solution；
+  `aceAnswer` / `aceJudge` 只保留给离线自检）、`lab.css` 末尾的 `.turtle-*` 样式。入口是 `LabPage.jsx`
+  里的 `turtle` 卡片，不新增路由。
 - 公共频道 `moments-turtle-soup-v1`，**不建表、不写库**：
-  - presence：在线玩家（一次性 `sid`、本机随机 `pid`、昵称、进入时间、积分）。最早进入的浏览器自动成为
-    「Ace 主持端」；主持端离开后下一位自动接手。界面固定显示 Ace，不显示谁是主持。
-  - broadcast：主持端整包广播房间快照（汤面 id、提问、Ace 判定、猜测、结案/换题状态）；玩家广播提问、
-    猜测和「请 Ace 出题/投降揭底」请求。公共频道不保证送达，新玩家进来时主持端会补发当前快照。
+  - presence：在线玩家（一次性 `sid`、本机随机 `pid`、昵称、进入时间、积分）。最早进入的浏览器只负责
+    汇总房间状态；界面固定显示 Ace，不显示谁是汇总端。
+  - broadcast：汇总端整包广播房间快照（汤面 id、提问、判定、猜测、结案/换题状态）；玩家广播提问、
+    猜测和「请 Ace 出题/投降揭底」请求。公共频道不保证送达，新玩家进来时汇总端会补发当前快照。
   - 汤面/汤底来自 `turtleData.js` 的静态表；**播放中不渲染汤底（任何玩家都一样）**，结案后公开。
     汤底随前端包下发，所以这是界面约束，不是安全边界；频道里任何订阅者都可能看到发送的内容。
-- 玩家不再有人工主持桌面、判定按钮或汤底开关。提问交给主持端后，`aceAnswer(question, soup)` 用该题的
-  clues 关键词自动回答「是 / 否 / 无关 / 部分」；猜底交给 `aceJudge(guess, soup)`，命中至少两个肯定线索的
-  judge 关键词才算猜中。主持端玩家自己也能提问/猜底。
-- 任何玩家都可以请 Ace 出题、指定档案，或在推理中「投降，揭底」；换下一题不需要原主持在场。
+- **真 Ace 在频道外**：本机常驻进程 `scripts/ace-turtle-host.mjs`（`scripts/` 按仓库约定只在本机）
+  用 anon key 订阅同一频道，收到 `question` / `guess` 后按 `puzzleId` 取该题汤底，调 DeepSeek，
+  只广播 `ace-verdict`（yes / no / irrelevant / partial / correct / wrong）。汤底和模型原文不广播；
+  DeepSeek 凭据只在本机 DSH 凭据文件里，不进仓库/日志。launchd 服务是 `com.moments.turtle-ace`。
+- `TurtleSoup` 不再本地调用 `aceAnswer()` / `aceJudge()`：提问和猜底先以 pending 进房间，等
+  `ace-verdict`；**5 秒没有判定就显示「Ace 不在线」**，不补答、不猜。判定后的短评只由判定词套固定模板，
+  不包含汤底/线索。
+- 任何玩家都可以请 Ace 出题、指定档案，或在推理中「投降，揭底」；换下一题不需要原汇总端在场。
 - 积分只写本机 `localStorage`，key 为 `moments-turtle-soup-score-v1:<userId>`：
   猜中汤底 +10、被 Ace 回答的提问 +1，**没有主持加分**。用 `roundId`/提问 id 去重，刷新或重连不会重复加分。
   玩家 id 也存在本机（`moments-turtle-soup-player-v1:<userId>`），只用于关联自己的提问和猜测，不是账号 id。
-- 收到的 broadcast / presence 都会清洗字段和上限；状态只接受当前主持端（presence 中最早进入者）发来的
+- 收到的 broadcast / presence 都会清洗字段和上限；状态只接受当前汇总端（presence 中最早进入者）发来的
   版本，避免旧快照覆盖。公共频道无法验证发送者身份，Ace 主持端是客户端约定，不是服务端权限。
+  开发态的验收可加 `?turtleChannel=...` 换独立频道，生产包不读这个参数。

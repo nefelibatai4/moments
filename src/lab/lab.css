@@ -2791,6 +2791,15 @@
   color: #d68b7e;
 }
 
+.turtle-guess-state.is-timeout {
+  color: #d68b7e;
+}
+
+.turtle-guess .turtle-ace-note {
+  display: block;
+  margin-top: 4px;
+}
+
 /* ── 玩家提问 / 猜底 ──────────────────────────────────────────── */
 .turtle-player-desk {
   background:
@@ -3075,10 +3084,21 @@
   letter-spacing: 0.05em;
 }
 
+.turtle-verdict-wait.is-timeout {
+  color: #d68b7e;
+}
+
 .turtle-ace-answer {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 7px;
+}
+
+.turtle-ace-note {
+  color: var(--turtle-soft);
+  font-size: 0.66rem;
+  line-height: 1.5;
 }
 
 .turtle-ace-byline {
