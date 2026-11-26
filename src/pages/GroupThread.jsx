@@ -70,7 +70,7 @@ function mergePresence(prev, next) {
   return out
 }
 
-/** 自己消息右下角的已读回执：收件人只算群里其他人类，Ace 永远不算 */
+/** 自己消息文字末尾的已读回执：收件人只算群里其他人类，Ace 永远不算 */
 function GroupReadReceipt({ message, presence, members, me }) {
   // AI 自己不参与已读回执（不显示、也不写位置）
   if ((members ?? []).find((m) => m.id === me)?.is_ai) return null
@@ -87,7 +87,7 @@ function GroupReadReceipt({ message, presence, members, me }) {
       : '已发送'
   return (
     <ReadMark
-      className={`chat-read-status group-read-status${receipt.allRead ? ' read' : ''}`}
+      className="chat-read-status group-read-status"
       state={state}
       label={label}
       data-read-state={state}
@@ -322,6 +322,14 @@ export default function GroupThread() {
     [messages],
   )
   const byId = useMemo(() => new Map(visible.map((m) => [m.id, m])), [visible])
+  // 回执只挂在最后一条自己能收回执的文字消息上（撤回/状态/卡片没有文字气泡）。
+  const lastMineId = useMemo(() => {
+    for (let i = visible.length - 1; i >= 0; i -= 1) {
+      const m = visible[i]
+      if (m.sender_id === me && m.body?.kind === 'text') return m.id
+    }
+    return null
+  }, [visible, me])
   const members = useMemo(() => {
     const map = new Map((thread?.members ?? []).map((m) => [m.id, m]))
     return map
@@ -539,10 +547,10 @@ export default function GroupThread() {
                       <span className="group-bubble-text">
                         {body.text}
                         {body.streaming ? <span className="group-stream-caret" aria-hidden="true" /> : null}
+                        {isMine && m.id === lastMineId && (
+                          <GroupReadReceipt message={m} presence={presence} members={thread.members ?? []} me={me} />
+                        )}
                       </span>
-                    )}
-                    {isMine && body.kind === 'text' && (
-                      <GroupReadReceipt message={m} presence={presence} members={thread.members ?? []} me={me} />
                     )}
                     {hasMenu && menuFor === m.id && (
                       <div className="chat-msg-menu-wrap">

@@ -2416,23 +2416,30 @@ button:disabled {
   padding: 0;
 }
 
-/* 已读回执（ReadMark）：12px 圆点，中文只放在 title/aria 里。
-   sent 空心 / read 实心 / partial 左半实心；不占一整行文字，手机气泡不挤。 */
+/* 已读回执（ReadMark）：10px 圆点，放在气泡内文字末尾，不单独占行。
+   sent 空心 / read 实心 / partial 左半实心；只用浅灰的透明度区分：
+   sent .3 / read .65 / partial .5。中文只放在 title/aria 里。 */
 .read-mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   flex: none;
+  margin-left: 4px;
+  vertical-align: -1px;
   line-height: 1;
   color: currentColor;
+  opacity: 0.3;
 }
+
+.read-mark[data-mark-state="read"] { opacity: 0.65; }
+.read-mark[data-mark-state="partial"] { opacity: 0.5; }
 
 .read-mark-svg {
   display: block;
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
 }
 
 .read-mark-ring {
@@ -2444,34 +2451,6 @@ button:disabled {
 .read-mark-fill {
   fill: currentColor;
   stroke: none;
-}
-
-.chat-read-status {
-  margin-left: 4px;
-  opacity: 0.55;
-  vertical-align: -1px;
-  line-height: 1;
-}
-
-.chat-read-status.read {
-  opacity: 1;
-  color: var(--text-on-color);
-}
-
-/* 群聊已读回执：只统计“人类成员”，Ace 的心跳不算（见 groupChat.groupReadReceipt） */
-.group-read-status {
-  display: block;
-  width: 12px;
-  margin: 1px 0 0 auto; /* .read-mark 定了宽，靠 auto 才贴右侧 */
-  text-align: right;
-  white-space: nowrap;
-  line-height: 12px;
-}
-
-@media (max-width: 480px) {
-  /* 手机只收紧群回执的上边距；不要再写 .chat-read-status 的 margin-left，
-     否则会覆盖 .group-read-status 的 margin-left:auto，圆点会跑到气泡左边。 */
-  .group-read-status { margin-top: 0; }
 }
 
 .chat-bubble.theirs {
