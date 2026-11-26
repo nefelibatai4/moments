@@ -12,7 +12,7 @@
 | 线上 | https://nefelibatai4.github.io/moments/ |
 | 技术栈 | Vite + React 19（纯 SPA）／Supabase（Postgres + Auth + Storage + Realtime）／GitHub Pages 托管／PWA + Capacitor iOS |
 | 数据库 | Supabase `public` schema，**17 张表**（2026-10-12 起加了端到端加密相关：`user_keys`/`key_escrow`/`moment_keys`/`key_recovery_requests`/`key_escrow_access_log`；以及 `device_locations`/`ip_geo_cache`） |
-| 当前状态 | ⛔ **2026-10-18 起站点处于「关闭倒计时」状态**（使用者要求；到 2026-10-20 00:00 +08:00）——前端只渲染倒计时，**后端数据一条不动**。恢复：`src/lib/shutdown.js` 里 `SHUTDOWN_ENABLED = false`。细节见私有库 `docs/HANDOFF.md` §1 |
+| 当前状态 | **正常运营**（关闭倒计时早已结束，`SHUTDOWN_ENABLED = false`）。2026-11 的一批变化见文末「近期变化」；最新进度看私有库 `docs/STATUS.md` 末尾 |
 
 ## ⚠️ 硬约束
 
@@ -93,3 +93,36 @@ npm run cap:sync  # 构建并同步到 iOS 工程（改动 iOS 包时必需）
 3. 改了数据库就确认 `db-backups/CHANGELOG.md` 有完整记录与回退方法。
 4. 确认没有密钥进入本公开仓库。
 5. 若站点状态有变化（例如关闭倒计时恢复），同步改 `docs/HANDOFF.md` §1 与本文的「当前状态」。
+
+## 🧠 长期记忆在哪（新会话先读，不要凭记忆回答）
+
+| 想知道什么 | 去哪读 |
+|---|---|
+| 用户偏好、沟通规矩 | `~/.dsh/AGENTS.md`（全局，自动加载） |
+| 项目约定、硬约束 | 就是这份 `AGENTS.md` |
+| 踩过的坑（编号递增，现到 **#153**） | 私有库 `docs/PITFALLS.md` —— **动手前先搜关键词** |
+| 最近做了什么、当前状态 | 私有库 `docs/STATUS.md`（最新在最后） |
+| 运维/环境/交接 | 私有库 `docs/HANDOFF.md`；架构 `ARCHITECTURE.md`；安全 `SECURITY.md` |
+| Ace（群里那个 AI 分身）怎么配的 | 私有库 `docs/ACE-BRIEF.md`；桥 `scripts/ace-bridge.mjs` |
+
+私有库路径：`~/VSCood开发项目/moments-workspace`。
+
+## 🚩 近期变化（2026-11，别再按旧理解回答）
+
+- **审批与"执行"口令都没了**：群里任何人只要让它动手，它就会做；执行前桥会自动给仓库拍快照
+  （`scripts/ace-snapshot.mjs` → `~/Backups/moments-snapshots/`，`restore latest --yes` 可回退）。
+- **Ace 的执行侧是 `danger-full-access`**（整机可写、可 `git commit/push`）；聊天侧只读（保证改动必然走快照）。
+- **群消息只加载最近 300 条**（`loadGroupMessages` 必须倒序 + limit，曾经写成正序丢最新消息，
+  PITFALLS #150）；Realtime 丢事件时，切前台/联网/订阅重连会补拉（#149）。
+- **`?surface=panel/glass` 只在 < 900px 生效**：宽窗口自动退回整页形态（#151），否则小窗拉宽会像"网页坏了"。
+- 私聊图片：加密上传（会话密钥）→ 读时签名 + 解密；失败时占位行会写明原因
+  （`正在尝试…` / `解不开` / 额度类），**先看那行字再排查**（#152、#114）。
+
+## ✅ 会话开场清单
+
+1. 读全局偏好 `~/.dsh/AGENTS.md`（通常已自动加载）。
+2. 读 `docs/STATUS.md` 最近 3 条 + `docs/PITFALLS.md` 里与任务相关的编号。
+3. `git log --oneline -5` 看最近提交；`git status` 确认工作区是否干净。
+4. 涉及桥/Ace 的，先看 `~/.dsh/ace-bridge.log` 尾部与 `node scripts/ace-bridge.mjs --selfcheck`。
+5. 动手改代码前想一下"要不要先拍快照"（`node scripts/ace-snapshot.mjs "改动前"`）。
+
