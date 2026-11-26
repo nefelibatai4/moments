@@ -13,7 +13,7 @@ import { useImeGuard } from '../lib/ime'
 import { safeStorageKey } from '../lib/sanitizeFilename'
 import { compressImage } from '../lib/compressImage'
 import ImageLightbox from '../components/ImageLightbox'
-import ReadTicks from '../components/ReadTicks'
+import ReadMark from '../components/ReadMark'
 import SignedImage from '../components/SignedImage'
 import BubbleAvatar from '../components/BubbleAvatar'
 import BubbleMenu from '../components/BubbleMenu'
@@ -1241,7 +1241,7 @@ export default function ChatThread() {
                     )}
 
                     {isMine && (
-                      <ReadTicks
+                      <ReadMark
                         className={`chat-read-status${m.read_at ? ' read' : ''}`}
                         state={m.read_at ? 'read' : 'sent'}
                         label={m.read_at ? '对方已读' : '已发送，对方未读'}

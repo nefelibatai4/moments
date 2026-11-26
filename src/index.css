@@ -2416,9 +2416,9 @@ button:disabled {
   padding: 0;
 }
 
-/* 已读回执（ReadTicks）：12px 单/双勾，中文只放在 title/aria 里。
-   群里 partial = 第二勾变淡；不占一整行文字，手机气泡不挤。 */
-.read-ticks {
+/* 已读回执（ReadMark）：12px 圆点，中文只放在 title/aria 里。
+   sent 空心 / read 实心 / partial 左半实心；不占一整行文字，手机气泡不挤。 */
+.read-mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2429,28 +2429,21 @@ button:disabled {
   color: currentColor;
 }
 
-.read-ticks-svg {
+.read-mark-svg {
   display: block;
   width: 12px;
   height: 12px;
-  overflow: visible;
 }
 
-/* 单勾时把勾挪到图标中间，和双勾的视觉重心一致 */
-.read-ticks-svg.is-single {
-  transform: translateX(2.4px);
-}
-
-.read-tick {
+.read-mark-ring {
   fill: none;
   stroke: currentColor;
   stroke-width: 1.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 
-.read-tick.is-partial {
-  opacity: 0.45;
+.read-mark-fill {
+  fill: currentColor;
+  stroke: none;
 }
 
 .chat-read-status {
@@ -2469,20 +2462,15 @@ button:disabled {
 .group-read-status {
   display: block;
   width: 12px;
-  margin: 1px 0 0 auto; /* .read-ticks 定了宽，靠 auto 才贴右侧 */
+  margin: 1px 0 0 auto; /* .read-mark 定了宽，靠 auto 才贴右侧 */
   text-align: right;
   white-space: nowrap;
   line-height: 12px;
 }
 
-/* 部分已读：第一勾保持清楚，第二勾变淡（组件里 .is-partial） */
-.group-read-status.is-partial {
-  opacity: 0.8;
-}
-
 @media (max-width: 480px) {
   /* 手机只收紧群回执的上边距；不要再写 .chat-read-status 的 margin-left，
-     否则会覆盖 .group-read-status 的 margin-left:auto，勾会跑到气泡左边。 */
+     否则会覆盖 .group-read-status 的 margin-left:auto，圆点会跑到气泡左边。 */
   .group-read-status { margin-top: 0; }
 }
 

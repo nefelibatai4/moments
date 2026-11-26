@@ -4,7 +4,7 @@ import { ensurePeekLoaded, isPeekAllowed, isPeekOn, onPeekChange, setPeekOn } fr
 // 【我】→「隐身预览」（2026-11-12）
 //
 // 只有使用者本人（`PEEK_ALLOWED_IDS`）能看到这一块；对方那边**完全不出现**。
-// 打开时：进入任何会话都**不写已读**，对方会一直看到"未读"（✓ 而不是 ✓✓）。
+// 打开时：进入任何会话都**不写已读**，对方会一直看到空心圈（而不是实心圈）。
 export default function PeekModeSection({ session }) {
   const uid = session?.user?.id ?? null
   const allowed = isPeekAllowed(session?.user)
@@ -34,8 +34,8 @@ export default function PeekModeSection({ session }) {
           <span className="peek-title">隐身预览</span>
           <span className="peek-hint">
             {on
-              ? '已开启：看会话时对方不会看到"已读"。看完记得关掉 —— 他一直看到未读本身就是一种信号。'
-              : '开启后，你看会话时对方不会看到"已读"（✓✓ 不会出现）。只对你显示，对方看不到这个开关。'}
+              ? '已开启：看会话时对方不会看到"已读"。看完记得关掉 —— 他一直看到空心圈本身就是一种信号。'
+              : '开启后，你看会话时对方不会看到"已读"（实心圈不会出现）。只对你显示，对方看不到这个开关。'}
           </span>
         </div>
         <label className="peek-switch">

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Link, useOutletContext } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import SignedImage from '../components/SignedImage'
-import ReadTicks from '../components/ReadTicks'
+import ReadMark from '../components/ReadMark'
 import BubbleAvatar from '../components/BubbleAvatar'
 import BubbleMenu from '../components/BubbleMenu'
 import GroupApprovalCard from '../components/GroupApprovalCard'
@@ -79,15 +79,15 @@ function GroupReadReceipt({ message, presence, members, me }) {
   const names = receipt.readers.map((r) => r.nickname).join('、')
   const partial = !receipt.allRead && receipt.readers.length > 0
   const state = receipt.allRead ? 'read' : partial ? 'partial' : 'sent'
-  // 界面只显示勾；文字只进 title / aria（群里不挤，手机更明显）
+  // 界面只显示圆点；文字只进 title / aria（群里不挤，手机更明显）
   const label = receipt.allRead
     ? `${names || '对方'}已读`
     : partial
       ? `已读 ${receipt.readers.length}/${receipt.others.length}`
       : '已发送'
   return (
-    <ReadTicks
-      className={`chat-read-status group-read-status${receipt.allRead ? ' read' : ''}${partial ? ' is-partial' : ''}`}
+    <ReadMark
+      className={`chat-read-status group-read-status${receipt.allRead ? ' read' : ''}`}
       state={state}
       label={label}
       data-read-state={state}
@@ -272,7 +272,7 @@ export default function GroupThread() {
     }
     tick()
     const timer = setInterval(tick, 45000)
-    // 对方一打开群就会写一条 last_seen_at —— 实时收到才能马上把 ✓ 变 ✓✓
+    // 对方一打开群就会写一条 last_seen_at —— 实时收到才能马上把空心圆变实心
     const off = subscribeGroupPresence(t.id, (row) => {
       if (!row?.user_id) return
       setPresence((prev) => mergePresence(prev, { [row.user_id]: row.last_seen_at }))
