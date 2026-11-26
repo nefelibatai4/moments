@@ -616,18 +616,78 @@ export const TURTLE_SOUPS = TURTLE_CASES.map((soup) => ({ ...soup, bottom: soup.
 
 export const TURTLE_BY_ID = Object.fromEntries(TURTLE_SOUPS.map((soup) => [soup.id, soup]))
 
-// 按难度随机抽题；不传难度时仍保持旧行为（从全部档案里抽）。
-// excludeId 仍然优先避开当前题，某个难度只有一题时也不会抽空。
-export function pickTurtle(difficulty = '', excludeId = '') {
+// 用 Set 校验 id，避免把 '__proto__' / 'constructor' 这类原型键当成有效档案。
+const TURTLE_ID_SET = new Set(TURTLE_SOUPS.map((soup) => soup.id))
+
+// 房间状态里的 played 只认题库里存在的 id：去重、按入列顺序保留，
+// 避免公共频道里的伪造快照把状态撑大或塞进无效值。
+export function normalizeTurtlePlayed(played) {
+  if (!Array.isArray(played)) return []
+  const seen = new Set()
+  const list = []
+  for (const raw of played) {
+    if (typeof raw !== 'string' || !TURTLE_ID_SET.has(raw) || seen.has(raw)) continue
+    seen.add(raw)
+    list.push(raw)
+    if (list.length >= TURTLE_SOUPS.length) break
+  }
+  return list
+}
+
+// 按难度随机抽题：先排除本难度已经玩过的档案；只有该难度全部玩完，
+// 才用整组重新抽（开新一轮）。excludeId 仍优先避开当前题，
+// 某个难度只有一题时也不会抽空。
+export function pickTurtle(difficulty = '', played = [], excludeId = '') {
   const level = Object.prototype.hasOwnProperty.call(TURTLE_DIFFICULTY, difficulty)
     ? difficulty
     : ''
   const sameLevel = level
     ? TURTLE_SOUPS.filter((soup) => soup.difficulty === level)
     : TURTLE_SOUPS
-  const fresh = sameLevel.filter((soup) => soup.id !== excludeId)
-  const list = fresh.length > 0 ? fresh : sameLevel
+  const playedSet = new Set(normalizeTurtlePlayed(played))
+  const unplayed = sameLevel.filter((soup) => !playedSet.has(soup.id))
+  const base = unplayed.length > 0 ? unplayed : sameLevel
+  const fresh = base.filter((soup) => soup.id !== excludeId)
+  const list = fresh.length > 0 ? fresh : base
   return list[Math.floor(Math.random() * list.length)]
+}
+
+// 开局时推进房间的 played。当前难度还没玩完就只追加；已经全玩完则
+// 丢掉该难度的上一轮记录，只留下这一题，表示新一轮开始。
+// 手动选题也走这里，所以手动挑过的档案同样算已玩。
+export function markTurtlePlayed(played, soup) {
+  const list = normalizeTurtlePlayed(played)
+  const puzzle = TURTLE_ID_SET.has(soup?.id) ? TURTLE_BY_ID[soup.id] : null
+  if (!puzzle) return list
+  const level = puzzle.difficulty
+  if (!Object.prototype.hasOwnProperty.call(TURTLE_DIFFICULTY, level)) return list
+  const levelIds = TURTLE_SOUPS
+    .filter((item) => item.difficulty === level)
+    .map((item) => item.id)
+  const levelPlayed = list.filter((id) => TURTLE_BY_ID[id]?.difficulty === level)
+  const complete = levelIds.every((id) => levelPlayed.includes(id))
+  const others = list.filter((id) => TURTLE_BY_ID[id]?.difficulty !== level)
+  if (complete) return [...others, puzzle.id]
+  return levelPlayed.includes(puzzle.id) ? list : [...list, puzzle.id]
+}
+
+// 本机计分：只有 Ace 判「是」的提问算有效提问，每题 +1；
+// no / partial / irrelevant 和超时都不计。key 带 roundId 和提问 id，
+// 刷新、重连或重复渲染都不会重复加分。
+export function turtleQuestionAwards(room, playerId) {
+  if (!room || !room.roundId || !playerId || !Array.isArray(room.questions)) return []
+  const entries = []
+  for (const question of room.questions) {
+    if (!question || question.verdict !== 'yes' || question.pid !== playerId || !question.id) {
+      continue
+    }
+    entries.push({
+      key: `${room.roundId}:q:${question.id}`,
+      kind: 'questions',
+      points: 1,
+    })
+  }
+  return entries
 }
 
 // ── Ace 的纯函数 ───────────────────────────────────────────────────

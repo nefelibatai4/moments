@@ -3426,6 +3426,13 @@
   color: #5b4830;
 }
 
+/* 基础样式的 :hover 会把字刷成浅色，落在纸张上会看不见。 */
+.turtle-reveal .turtle-archive summary:hover {
+  border-color: rgba(77, 60, 37, 0.38);
+  background: rgba(255, 255, 255, 0.5);
+  color: #5b4830;
+}
+
 .turtle-reveal .turtle-archive summary::before {
   color: #8b6b42;
 }
@@ -3445,7 +3452,30 @@
   color: #8b6b42;
 }
 
+.turtle-reveal .turtle-archive-sub {
+  color: #6d5740;
+}
+
 .turtle-reveal .turtle-archive-diff {
+  color: #6d5740;
+}
+
+.turtle-reveal .turtle-archive-card.is-played {
+  border-color: rgba(77, 60, 37, 0.18);
+}
+
+.turtle-reveal .turtle-archive-card.is-played .turtle-archive-no,
+.turtle-reveal .turtle-archive-card.is-played .turtle-archive-title {
+  color: #7b6a55;
+}
+
+.turtle-reveal .turtle-archive-card.is-current .turtle-archive-title {
+  color: #3b2e1e;
+}
+
+.turtle-reveal .turtle-archive-played {
+  border-color: rgba(77, 60, 37, 0.24);
+  background: rgba(77, 60, 37, 0.07);
   color: #6d5740;
 }
 
@@ -3648,6 +3678,19 @@
   background: rgba(215, 180, 115, 0.08);
 }
 
+.turtle-archive-card.is-played {
+  border-color: rgba(215, 180, 115, 0.22);
+}
+
+.turtle-archive-card.is-played .turtle-archive-no,
+.turtle-archive-card.is-played .turtle-archive-title {
+  color: var(--turtle-muted);
+}
+
+.turtle-archive-card.is-current .turtle-archive-title {
+  color: var(--turtle-ink);
+}
+
 .turtle-archive-no {
   color: var(--turtle-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -3664,12 +3707,34 @@
   white-space: nowrap;
 }
 
-.turtle-archive-diff {
+.turtle-archive-sub {
   grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 6px;
+  min-width: 0;
+}
+
+.turtle-archive-diff {
   color: var(--turtle-diff, var(--turtle-muted));
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.54rem;
   letter-spacing: 0.03em;
+}
+
+.turtle-archive-played {
+  margin-left: auto;
+  padding: 1px 5px;
+  border: 1px solid var(--turtle-line);
+  border-radius: 999px;
+  background: rgba(215, 180, 115, 0.07);
+  color: var(--turtle-gold);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.5rem;
+  letter-spacing: 0.03em;
+  line-height: 1.5;
+  white-space: nowrap;
 }
 
 .turtle-archive.is-compact .turtle-archive-grid {

@@ -42,7 +42,7 @@
 - 公共频道 `moments-turtle-soup-v1`，**不建表、不写库**：
   - presence：在线玩家（一次性 `sid`、本机随机 `pid`、昵称、进入时间、积分）。最早进入的浏览器只负责
     汇总房间状态；界面固定显示 Ace，不显示谁是汇总端。
-  - broadcast：汇总端整包广播房间快照（汤面 id、提问、判定、猜测、结案/换题状态）；玩家广播提问、
+  - broadcast：汇总端整包广播房间快照（汤面 id、提问、判定、猜测、已玩列表、结案/换题状态）；玩家广播提问、
     猜测和「请 Ace 出题/投降揭底」请求。公共频道不保证送达，新玩家进来时汇总端会补发当前快照。
   - 汤面/汤底来自 `turtleData.js` 的静态表；**播放中不渲染汤底（任何玩家都一样）**，结案后公开。
     汤底随前端包下发，所以这是界面约束，不是安全边界；频道里任何订阅者都可能看到发送的内容。
@@ -59,10 +59,15 @@
   `TURTLE_DIFFICULTY[].opening` 作为 Ace 的开场白。
 - 任何玩家都可以请 Ace 出题、指定档案，或在推理中「投降，揭底」；换下一题不需要原汇总端在场。
   大厅和结案后可选难度（入门 / 进阶 / 烧脑），点「请 Ace 出题」按所选难度随机抽题；
-  `ace-request` 会带上 `difficulty`，汇总端按它调 `pickTurtle(difficulty, excludeId)`。
+  `ace-request` 会带上 `difficulty`，汇总端按 `room.played` 调
+  `pickTurtle(difficulty, played, excludeId)`：先排除该难度已玩档案，只有该难度全部玩完，
+  `markTurtlePlayed` 才清掉该难度的旧记录、开新一轮。开局（自动抽题或手动挑档案）都会把题写进
+  `room.played`，手动选题也算已玩；档案选择里会标「已玩 / 本局」。
 - 积分只写本机 `localStorage`，key 为 `moments-turtle-soup-score-v1:<userId>`：
   猜中汤底按本局难度 +10 / +20 / +30（难度分值在 `TURTLE_DIFFICULTY[].points`）、
-  被 Ace 回答的提问 +1，**没有主持加分**。用 `roundId`/提问 id 去重，刷新或重连不会重复加分。
+  **只有 Ace 判「是」的有效提问 +1**，no / partial / irrelevant 和超时都不计；「有效提问」
+  计数同样只统计 yes。**没有主持加分**。用 `roundId`/提问 id 去重，刷新或重连不会重复加分；
+  旧版本已记在本机的积分不回算。
   玩家 id 也存在本机（`moments-turtle-soup-player-v1:<userId>`），只用于关联自己的提问和猜测，不是账号 id。
 - 收到的 broadcast / presence 都会清洗字段和上限；状态只接受当前汇总端（presence 中最早进入者）发来的
   版本，避免旧快照覆盖。公共频道无法验证发送者身份，Ace 主持端是客户端约定，不是服务端权限。
