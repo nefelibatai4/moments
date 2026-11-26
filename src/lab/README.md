@@ -48,8 +48,10 @@
     汤底随前端包下发，所以这是界面约束，不是安全边界；频道里任何订阅者都可能看到发送的内容。
 - **真 Ace 在频道外**：本机常驻进程 `scripts/ace-turtle-host.mjs`（`scripts/` 按仓库约定只在本机）
   用 anon key 订阅同一频道，收到 `question` / `guess` 后按 `puzzleId` 取该题汤底，调 DeepSeek。
-  提示词要求同时返回 `verdict` 和一句最多 30 字、像群聊、只指方向的 `reply`；服务端会截断超长回复，
-  并把命中了线索/汤底片段的回复丢掉。广播 `ace-verdict` 时带上判定词和 `reply`，汤底/模型原文不广播；
+  提示词要求同时返回 `verdict` 和一句 12-30 字、像朋友聊天、只指方向的 `reply`；Ace 的人设要求不说客服套话、
+  每次换一种说法，`temperature` 为 0.7，yes / no / partial / irrelevant 各给两句语气示例。服务端会丢掉过短、
+  命中客服套话或线索/汤底片段的回复，超长才截到 30 字；`reply` 为空时前端回退到同样人设化的固定模板。
+  广播 `ace-verdict` 时带上判定词和 `reply`，汤底/模型原文不广播；
   DeepSeek 凭据只在本机 DSH 凭据文件里，不进仓库/日志。launchd 服务是 `com.moments.turtle-ace`。
 - `TurtleSoup` 不再本地调用 `aceAnswer()` / `aceJudge()`：提问和猜底先以 pending 进房间，等
   `ace-verdict`；**5 秒没有判定就显示「Ace 不在线」**，不补答、不猜。判定后的短评优先用 `reply`，
