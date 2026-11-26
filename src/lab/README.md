@@ -47,12 +47,14 @@
   - 汤面/汤底来自 `turtleData.js` 的静态表；**播放中不渲染汤底（任何玩家都一样）**，结案后公开。
     汤底随前端包下发，所以这是界面约束，不是安全边界；频道里任何订阅者都可能看到发送的内容。
 - **真 Ace 在频道外**：本机常驻进程 `scripts/ace-turtle-host.mjs`（`scripts/` 按仓库约定只在本机）
-  用 anon key 订阅同一频道，收到 `question` / `guess` 后按 `puzzleId` 取该题汤底，调 DeepSeek，
-  只广播 `ace-verdict`（yes / no / irrelevant / partial / correct / wrong）。汤底和模型原文不广播；
+  用 anon key 订阅同一频道，收到 `question` / `guess` 后按 `puzzleId` 取该题汤底，调 DeepSeek。
+  提示词要求同时返回 `verdict` 和一句最多 30 字、像群聊、只指方向的 `reply`；服务端会截断超长回复，
+  并把命中了线索/汤底片段的回复丢掉。广播 `ace-verdict` 时带上判定词和 `reply`，汤底/模型原文不广播；
   DeepSeek 凭据只在本机 DSH 凭据文件里，不进仓库/日志。launchd 服务是 `com.moments.turtle-ace`。
 - `TurtleSoup` 不再本地调用 `aceAnswer()` / `aceJudge()`：提问和猜底先以 pending 进房间，等
-  `ace-verdict`；**5 秒没有判定就显示「Ace 不在线」**，不补答、不猜。判定后的短评只由判定词套固定模板，
-  不包含汤底/线索。
+  `ace-verdict`；**5 秒没有判定就显示「Ace 不在线」**，不补答、不猜。判定后的短评优先用 `reply`，
+  缺失/为空时回退到固定的判定模板，两种情况都不包含汤底/线索。开局时按难度显示
+  `TURTLE_DIFFICULTY[].opening` 作为 Ace 的开场白。
 - 任何玩家都可以请 Ace 出题、指定档案，或在推理中「投降，揭底」；换下一题不需要原汇总端在场。
   大厅和结案后可选难度（入门 / 进阶 / 烧脑），点「请 Ace 出题」按所选难度随机抽题；
   `ace-request` 会带上 `difficulty`，汇总端按它调 `pickTurtle(difficulty, excludeId)`。

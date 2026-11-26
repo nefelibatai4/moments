@@ -14,8 +14,10 @@ import {
 //   · 任何玩家都可以请 Ace 出题（大厅/结案后），并按入门/进阶/烧脑随机抽题；
 //   · 提问和猜底通过公共频道发给外部常驻的 Ace 主持端
 //     （scripts/ace-turtle-host.mjs），由它取该题汤底问 DeepSeek；
-//   · 主持端只广播判定词（ace-verdict），浏览器不本地判定、不猜答案；
+//   · 主持端广播判定词和一句不泄底的短回复（ace-verdict.reply），
+//     浏览器不本地判定、不猜答案；
 //   · 发出请求后等事件；5 秒没有判定就提示「Ace 不在线」，不会自己补答。
+//   · 短回复缺失或不合格时，回退到固定的判定模板；模型文本不直接进页面。
 //
 // 同步边界（实验室规矩）：
 //   · 不建表、不写库：房间状态通过 Supabase Realtime 公共频道 broadcast
@@ -23,7 +25,7 @@ import {
 //   · 不广播账号 id：频道里用一次性会话 id（sid）和一个本机随机玩家 id（pid）。
 //   · 汤底只出现在结案卡片里；播放中不渲染给任何玩家。
 //     汤底本身随前端包下发，所以这是界面约束，不是安全边界；真正用于判定的
-//     汤底在外部 Ace 进程里读取，判定广播只带判定词。
+//     汤底在外部 Ace 进程里读取，判定广播只带判定词和一句 30 字内的引导。
 //   · 公共频道里任何拿到 anon key 的人都能订阅，发送的提问/猜测不应包含隐私。
 //
 // 房间状态仍由 presence 中最早进入的浏览器汇总（界面不暴露这个角色），
@@ -51,6 +53,7 @@ const COUNT_CAP = 999999
 const MAX_NAME = 20
 const MAX_QUESTION_TEXT = 140
 const MAX_GUESS_TEXT = 180
+const MAX_ACE_REPLY = 30
 const MAX_QUESTIONS = 60
 const MAX_GUESSES = 40
 const MAX_PLAYERS = 24
@@ -110,6 +113,12 @@ function cleanId(value) {
   const text = String(value ?? '').trim()
   if (!text || text.length > 96) return ''
   return /^[a-zA-Z0-9:_-]+$/.test(text) ? text : ''
+}
+
+// 主持端已经做过泄底/长度检查；前端仍按不可信输入收口，最多 30 个字。
+function cleanReply(value) {
+  const text = cleanText(value, MAX_ACE_REPLY * 4)
+  return Array.from(text).slice(0, MAX_ACE_REPLY).join('').trim()
 }
 
 function safeTime(value, fallback = 0) {
@@ -223,6 +232,7 @@ function sanitizeQuestion(raw) {
     text,
     at: safeTime(raw.at, Date.now()),
     verdict: Object.prototype.hasOwnProperty.call(VERDICT_BY_ID, raw.verdict) ? raw.verdict : '',
+    reply: cleanReply(raw.reply),
     answeredAt: safeTime(raw.answeredAt),
   }
 }
@@ -242,6 +252,7 @@ function sanitizeGuess(raw) {
     text,
     at: safeTime(raw.at, Date.now()),
     verdict,
+    reply: cleanReply(raw.reply),
     judgedAt: safeTime(raw.judgedAt),
   }
 }
@@ -264,8 +275,8 @@ function sanitizeAceRequest(raw) {
   }
 }
 
-// 外部 Ace 只会发判定词；这里仍然按类型白名单收口，避免伪造事件把任意文本
-// 带进问答记录。roundId 用来丢掉上一局的迟到判定。
+// 外部 Ace 会发判定词和一句短回复；这里仍然按类型白名单收口，避免伪造事件
+// 把任意文本带进问答记录。roundId 用来丢掉上一局的迟到判定。
 function sanitizeAceVerdict(raw) {
   if (!raw || typeof raw !== 'object') return null
   const requestId = cleanId(raw.requestId)
@@ -287,6 +298,7 @@ function sanitizeAceVerdict(raw) {
     puzzleId,
     roundId,
     verdict,
+    reply: cleanReply(raw.reply),
     at: safeTime(raw.at, Date.now()),
   }
 }
@@ -470,6 +482,9 @@ export default function TurtleSoup({ onExit }) {
   const helloTimerRef = useRef(0)
   const toastTimerRef = useRef(0)
   const lastQuestionAtRef = useRef(0)
+  // ace-verdict 可能比房间快照先到（本地 mock 时尤其明显）：短暂重试，
+  // 等提问/猜底进入房间后再写判定，避免整条答复被丢掉。
+  const aceRetryTimersRef = useRef(new Set())
   const imeGuard = useImeGuard()
 
   const applyRoom = useCallback((next) => {
@@ -606,6 +621,8 @@ export default function TurtleSoup({ onExit }) {
     window.clearTimeout(toastTimerRef.current)
     window.clearTimeout(presenceTimerRef.current)
     window.clearTimeout(helloTimerRef.current)
+    for (const timer of aceRetryTimersRef.current) window.clearTimeout(timer)
+    aceRetryTimersRef.current.clear()
   }, [])
 
   useEffect(() => {
@@ -727,6 +744,8 @@ export default function TurtleSoup({ onExit }) {
       // 用主持端收到的时间做 5 秒计时基准，减少各端时钟差。
       at: Date.now(),
       verdict: '',
+      // 判定前不接受请求里自带的引导，等 ace-verdict 再写。
+      reply: '',
       answeredAt: 0,
     }
     commitRoom({
@@ -751,6 +770,7 @@ export default function TurtleSoup({ onExit }) {
         : (guessedBy?.name || guess.name),
       at: Date.now(),
       verdict: 'pending',
+      reply: '',
       judgedAt: 0,
     }
     commitRoom({
@@ -759,7 +779,7 @@ export default function TurtleSoup({ onExit }) {
     })
   }, [commitRoom])
 
-  const applyAceVerdict = useCallback((raw) => {
+  const applyAceVerdict = useCallback(function applyAceVerdict(raw, attempt = 0) {
     const verdict = sanitizeAceVerdict(raw)
     if (!verdict) return
     const current = roomRef.current
@@ -773,14 +793,33 @@ export default function TurtleSoup({ onExit }) {
       else applyRoom({ ...next, updatedAt: Date.now() })
     }
 
+    // 判定可能先于房间快照到达；最多重试 2.4 秒，等条目出现后再落判定。
+    const retry = () => {
+      if (attempt >= 12) return
+      const timer = window.setTimeout(() => {
+        aceRetryTimersRef.current.delete(timer)
+        applyAceVerdict(raw, attempt + 1)
+      }, 200)
+      aceRetryTimersRef.current.add(timer)
+    }
+
     if (verdict.kind === 'question') {
       const target = current.questions.find((item) => item.id === verdict.requestId)
-      if (!target || target.verdict) return
+      if (!target) {
+        retry()
+        return
+      }
+      if (target.verdict) return
       publish({
         ...current,
         questions: current.questions.map((item) => (
           item.id === verdict.requestId
-            ? { ...item, verdict: verdict.verdict, answeredAt: Date.now() }
+            ? {
+              ...item,
+              verdict: verdict.verdict,
+              reply: verdict.reply,
+              answeredAt: Date.now(),
+            }
             : item
         )),
       })
@@ -788,10 +827,19 @@ export default function TurtleSoup({ onExit }) {
     }
 
     const target = current.guesses.find((item) => item.id === verdict.requestId)
-    if (!target || target.verdict !== 'pending') return
+    if (!target) {
+      retry()
+      return
+    }
+    if (target.verdict !== 'pending') return
     const guesses = current.guesses.map((item) => (
       item.id === verdict.requestId
-        ? { ...item, verdict: verdict.verdict, judgedAt: Date.now() }
+        ? {
+          ...item,
+          verdict: verdict.verdict,
+          reply: verdict.reply,
+          judgedAt: Date.now(),
+        }
         : item
     ))
 
@@ -1143,6 +1191,7 @@ export default function TurtleSoup({ onExit }) {
   const puzzle = room?.puzzleId ? (TURTLE_BY_ID[room.puzzleId] ?? null) : null
   const status = room?.status ?? 'lobby'
   const difficultyMeta = puzzle ? TURTLE_DIFFICULTY[puzzle.difficulty] : null
+  const openingLine = difficultyMeta?.opening ?? ''
   const roundPoints = difficultyMeta?.points ?? TURTLE_DIFFICULTY.easy.points
   const selectedDifficultyMeta = TURTLE_DIFFICULTY[selectedDifficulty] ?? TURTLE_DIFFICULTY.easy
   const caseIndex = puzzle ? TURTLE_SOUPS.findIndex((soup) => soup.id === puzzle.id) + 1 : 0
@@ -1275,6 +1324,11 @@ export default function TurtleSoup({ onExit }) {
         <section className="turtle-ace-console" aria-label="Ace 主持台">
           <div className="turtle-ace-console-copy">
             <strong><span className="turtle-ace-dot" aria-hidden="true" />Ace 主持</strong>
+            {openingLine && (
+              <p className="turtle-ace-opening" data-turtle-ace-opening={puzzle.difficulty}>
+                {openingLine}
+              </p>
+            )}
             <p>
               已等到 {answeredCount} 个提问判定、{guesses.length} 条猜底结果。
               任何人投降，Ace 都会立刻揭底。
@@ -1351,15 +1405,26 @@ export default function TurtleSoup({ onExit }) {
                 return (
                   <p className="turtle-own-guess" key={guess.id} data-turtle-own-guess={state}>
                     <span>“{guess.text}”</span>
-                    <strong>
-                      {state === 'correct'
-                        ? 'Ace：猜中'
-                        : state === 'wrong'
-                          ? 'Ace：不对'
-                          : state === 'timeout'
-                            ? 'Ace 不在线，没判'
-                            : 'Ace 正在判定'}
-                    </strong>
+                    <span className="turtle-own-guess-result">
+                      <strong>
+                        {state === 'correct'
+                          ? 'Ace：猜中'
+                          : state === 'wrong'
+                            ? 'Ace：不对'
+                            : state === 'timeout'
+                              ? 'Ace 不在线，没判'
+                              : 'Ace 正在判定'}
+                      </strong>
+                      {(state === 'correct' || state === 'wrong') && (
+                        <span
+                          className="turtle-ace-note"
+                          data-turtle-own-guess-reply={guess.reply || ''}
+                          data-turtle-reply-source={guess.reply ? 'ace' : 'template'}
+                        >
+                          {guess.reply || GUESS_NOTE[state]}
+                        </span>
+                      )}
+                    </span>
                   </p>
                 )
               })}
@@ -1405,8 +1470,13 @@ export default function TurtleSoup({ onExit }) {
                         <span className="turtle-ace-answer" data-turtle-ace-answer={question.verdict}>
                           <span className="turtle-ace-byline">Ace</span>
                           <VerdictChip verdict={question.verdict} />
-                          <span className="turtle-ace-note" data-turtle-ace-note={question.verdict}>
-                            {QUESTION_NOTE[question.verdict]}
+                          <span
+                            className="turtle-ace-note"
+                            data-turtle-ace-note={question.verdict}
+                            data-turtle-ace-reply={question.reply || ''}
+                            data-turtle-reply-source={question.reply ? 'ace' : 'template'}
+                          >
+                            {question.reply || QUESTION_NOTE[question.verdict]}
                           </span>
                         </span>
                       ) : state === 'timeout' ? (
@@ -1457,8 +1527,13 @@ export default function TurtleSoup({ onExit }) {
                           : 'Ace 正在判定…'}
                   </span>
                   {(state === 'correct' || state === 'wrong') && (
-                    <span className="turtle-ace-note" data-turtle-ace-note={state}>
-                      {GUESS_NOTE[state]}
+                    <span
+                      className="turtle-ace-note"
+                      data-turtle-ace-note={state}
+                      data-turtle-ace-reply={guess.reply || ''}
+                      data-turtle-reply-source={guess.reply ? 'ace' : 'template'}
+                    >
+                      {guess.reply || GUESS_NOTE[state]}
                     </span>
                   )}
                 </li>

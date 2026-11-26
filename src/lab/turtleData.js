@@ -6,16 +6,35 @@
 //
 // 主持人不再是玩家，也不再是浏览器里的纯函数：真正的 Ace 是本机的
 // scripts/ace-turtle-host.mjs，它按 puzzleId 取这里的汤底去问 DeepSeek，
-// 只把判定词广播回公共频道。汤底仍随前端包下发，所以「播放中看不到汤底」
-// 是界面约束，不是安全边界；这里不放隐私内容。
+// 把判定词和一句不泄底的引导广播回公共频道。汤底仍随前端包下发，所以
+// 「播放中看不到汤底」是界面约束，不是安全边界；这里不放隐私内容。
 //
 // `aceAnswer()` / `aceJudge()` 仍保留为确定性的离线核对工具（档案自检、
 // 旧数据回放），线上 UI 不再调用它们。clues 里的 ask/judge 关键词只服务于
 // 这两个自检函数，不参与真 Ace 的判定。
+// opening 是 Ace 开汤时按难度说的第一句话：只给方法，不碰汤底。
 export const TURTLE_DIFFICULTY = {
-  easy: { id: 'easy', label: '入门', color: '#8bb89b', points: 10 },
-  medium: { id: 'medium', label: '进阶', color: '#d3a95e', points: 20 },
-  hard: { id: 'hard', label: '烧脑', color: '#cf7564', points: 30 },
+  easy: {
+    id: 'easy',
+    label: '入门',
+    color: '#8bb89b',
+    points: 10,
+    opening: '先热个身：从汤面里最反常的那句话问起，别急着猜底。',
+  },
+  medium: {
+    id: 'medium',
+    label: '进阶',
+    color: '#d3a95e',
+    points: 20,
+    opening: '这题有点绕：先把人和时间理清，再问他们为什么这么做。',
+  },
+  hard: {
+    id: 'hard',
+    label: '烧脑',
+    color: '#cf7564',
+    points: 30,
+    opening: '烧脑局，慢慢来：先找每个人藏在话背后的那件事。',
+  },
 }
 
 const TURTLE_CASES = [
