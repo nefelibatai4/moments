@@ -2416,41 +2416,45 @@ button:disabled {
   padding: 0;
 }
 
-/* 已读回执（ReadMark）：10px 圆点，放在气泡内文字末尾，不单独占行。
-   sent 空心 / read 实心 / partial 左半实心；只用浅灰的透明度区分：
+/* 已读回执（ReadMark）：7px 心形，绝对定位在气泡右下角内部。
+   脱离文字流，所以不会撑高/撑宽气泡；pointer-events:none 不挡点击/长按。
+   sent 1 空心 / read 2 实心 / partial 1 实 1 空；用透明度区分：
    sent .3 / read .65 / partial .5。中文只放在 title/aria 里。 */
 .read-mark {
+  position: absolute;
+  right: 4px;
+  bottom: 2px;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 10px;
-  height: 10px;
-  flex: none;
-  margin-left: 4px;
-  vertical-align: -1px;
-  line-height: 1;
+  gap: 1px;
+  height: 7px;
+  line-height: 0;
+  white-space: nowrap;
   color: currentColor;
   opacity: 0.3;
+  pointer-events: none;
 }
 
 .read-mark[data-mark-state="read"] { opacity: 0.65; }
 .read-mark[data-mark-state="partial"] { opacity: 0.5; }
 
-.read-mark-svg {
+.read-mark-heart {
   display: block;
-  width: 10px;
-  height: 10px;
+  width: 7px;
+  height: 7px;
+  overflow: visible;
 }
 
-.read-mark-ring {
+.read-mark-heart path {
   fill: none;
   stroke: currentColor;
   stroke-width: 1.4;
+  stroke-linejoin: round;
 }
 
-.read-mark-fill {
+.read-mark-heart.is-solid path {
   fill: currentColor;
-  stroke: none;
+  stroke-width: 0.6;
 }
 
 .chat-bubble.theirs {

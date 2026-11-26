@@ -396,15 +396,6 @@ export default function ChatThread() {
   const inputRef = useRef(null)
   const guardImeEnter = useImeGuard()
   const me = session.user.id
-  // 回执只挂在最后一条自己的消息上：一屏都是圆点会抢正文，也看不出"现在读到哪"。
-  // 撤回的消息没有气泡，跳过它，免得最后一条可显示的气泡反而没回执。
-  const lastMineId = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const m = messages[i]
-      if (m.sender_id === me && !m.recalled_at) return m.id
-    }
-    return null
-  }, [messages, me])
 
   // 自己的昵称/头像只读一次（按登录用户），供每条自己消息旁的小头像使用。
   useEffect(() => {
@@ -1245,7 +1236,7 @@ export default function ChatThread() {
                         {!m.content && m.ciphertext && (
                           <span className="chat-encrypted-hint">🔒 这条消息在这台设备上读不到</span>
                         )}
-                        {isMine && m.id === lastMineId && (
+                        {isMine && (
                           <ReadMark
                             className="chat-read-status"
                             state={m.read_at ? 'read' : 'sent'}
