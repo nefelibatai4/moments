@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Link, useOutletContext } from 'react-router-dom'
 import { useAuth } from '../lib/AuthContext'
 import SignedImage from '../components/SignedImage'
+import ReadTicks from '../components/ReadTicks'
 import BubbleAvatar from '../components/BubbleAvatar'
 import BubbleMenu from '../components/BubbleMenu'
 import GroupApprovalCard from '../components/GroupApprovalCard'
@@ -76,23 +77,24 @@ function GroupReadReceipt({ message, presence, members, me }) {
   const receipt = groupReadReceipt(message, presence, members, me)
   if (receipt.others.length === 0) return null
   const names = receipt.readers.map((r) => r.nickname).join('、')
+  const partial = !receipt.allRead && receipt.readers.length > 0
+  const state = receipt.allRead ? 'read' : partial ? 'partial' : 'sent'
+  // 界面只显示勾；文字只进 title / aria（群里不挤，手机更明显）
   const label = receipt.allRead
     ? `${names || '对方'}已读`
-    : receipt.readers.length > 0
+    : partial
       ? `已读 ${receipt.readers.length}/${receipt.others.length}`
-      : '未读'
+      : '已发送'
   return (
-    <span
-      className={`chat-read-status group-read-status${receipt.allRead ? ' read' : ''}`}
-      data-read-state={receipt.allRead ? 'read' : 'unread'}
+    <ReadTicks
+      className={`chat-read-status group-read-status${receipt.allRead ? ' read' : ''}${partial ? ' is-partial' : ''}`}
+      state={state}
+      label={label}
+      data-read-state={state}
       data-read-count={receipt.readers.length}
       data-read-total={receipt.others.length}
       data-read-recipients={receipt.others.map((r) => r.id).join(',')}
-      title={label}
-      aria-label={label}
-    >
-      {receipt.allRead ? '✓✓ 已读' : receipt.readers.length > 0 ? `✓ ${receipt.readers.length}/${receipt.others.length}` : '✓ 未读'}
-    </span>
+    />
   )
 }
 
