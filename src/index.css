@@ -4755,8 +4755,12 @@ html[data-surface] .moment-card[data-card-color]:not([data-card-color="default"]
 .chat-media-retry-why {
   display: block;
   margin-top: 3px;
-  font-size: 10.5px;
-  opacity: 0.7;
+  /* 2026-11-25：原来 10.5px/0.7 太淡，截图里根本看不出是哪一类失败（pending/解不开/额度），
+     而这行字正是排障的入口 —— 调大一点、允许选中复制。 */
+  font-size: 11.5px;
+  opacity: 0.85;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* 【我】→ 隐身预览（2026-11-12，只对使用者本人显示） */

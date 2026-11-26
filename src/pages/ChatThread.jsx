@@ -1154,6 +1154,8 @@ export default function ChatThread() {
                         className="chat-media-retry"
                         data-media-retry="1"
                         data-media-reason={mediaFailureReason(storagePathFromUrl(m.image_url)) ?? 'pending'}
+                        // 悬停能看到完整原因（小字在手机上很难看清，2026-11-25 使用者反馈"图片无法显示"时要靠它定位）
+                        title={`图片没能显示：${mediaReasonText(mediaFailureReason(storagePathFromUrl(m.image_url)), isUnlocked())} · ${typeof __APP_BUILD__ === 'string' ? __APP_BUILD__ : ''}`}
                         onClick={() => {
                           const p = storagePathFromUrl(m.image_url)
                           if (!p) return
